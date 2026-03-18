@@ -507,10 +507,7 @@ class Lyse(object):
 if __name__ == "__main__":
 
     splash.update_text('starting GUI')
-    qapplication = QtWidgets.QApplication.instance()
-    if qapplication is None:
-        qapplication = QtWidgets.QApplication(sys.argv)
-    qapplication.setAttribute(QtCore.Qt.AA_DontShowIconsInMenus, False)
+    qapplication = labscript_utils.splash.get_qapplication()
 
     app = Lyse(qapplication)
 
