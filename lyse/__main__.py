@@ -44,10 +44,12 @@ from labscript_utils.ls_zprocess import ProcessTree
 splash.update_text('importing labscript suite modules')
 from labscript_utils.labconfig import (
     LabConfig,
+    get_app_saved_configs_dir,
     save_appconfig,
     load_appconfig,
 )
 from labscript_utils.setup_logging import setup_logging
+from labscript_utils.qtwidgets.appconfig import AppConfigActions
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils import dedent
 
@@ -143,13 +145,20 @@ class Lyse(object):
         self.filebox = lyse.filebox.FileBox(self, self.ui.verticalLayout_filebox, self.exp_config,
                                to_singleshot, from_singleshot, to_multishot, from_multishot)
 
-        self.last_save_config_file = None
-        self.last_save_data = None
-
-        self.ui.actionLoad_configuration.triggered.connect(self.on_load_configuration_triggered)
-        self.ui.actionRevert_configuration.triggered.connect(self.on_revert_configuration_triggered)
-        self.ui.actionSave_configuration.triggered.connect(self.on_save_configuration_triggered)
-        self.ui.actionSave_configuration_as.triggered.connect(self.on_save_configuration_as_triggered)
+        self.appconfig = AppConfigActions(
+            self.ui,
+            'lyse configuration',
+            self.get_default_save_configuration_path,
+            self.ui.actionSave_configuration,
+            self.ui.actionSave_configuration_as,
+            self.ui.actionLoad_configuration,
+            self.ui.actionRevert_configuration,
+            self.get_save_data,
+            self.save_configuration,
+            self.load_configuration,
+            lambda message: lyse.utils.gui.error_dialog(self.app, message),
+            default_load_path_getter=self.get_default_load_configuration_path,
+        )
         self.ui.actionSave_dataframe_as.triggered.connect(lambda: self.on_save_dataframe_triggered(True))
         self.ui.actionSave_dataframe.triggered.connect(lambda: self.on_save_dataframe_triggered(False))
         self.ui.actionLoad_dataframe.triggered.connect(self.on_load_dataframe_triggered)
@@ -206,77 +215,32 @@ class Lyse(object):
             terminated[routine.filepath] = routine.worker.returncode is not None
         return terminated
 
-    def are_you_sure(self):
-        message = ('Current configuration (which scripts are loaded and other GUI state) '
-                   'has changed: save config file \'%s\'?' % self.last_save_config_file)
-        reply = QtWidgets.QMessageBox.question(self.ui, 'Quit lyse', message,
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel)
-        if reply == QtWidgets.QMessageBox.Cancel:
-            return False
-        if reply == QtWidgets.QMessageBox.Yes:
-            self.save_configuration(self.last_save_config_file)
-        return True
-
     def on_close_event(self):
         save_data = self.get_save_data()
-        if self.last_save_data is not None and save_data != self.last_save_data:
-            if self.only_window_geometry_is_different(save_data, self.last_save_data):
-                self.save_configuration(self.last_save_config_file)
+        if self.appconfig.last_save_data is not None and save_data != self.appconfig.last_save_data:
+            if self.only_window_geometry_is_different(save_data, self.appconfig.last_save_data):
+                self.save_configuration(self.appconfig.last_save_config_file)
                 self.terminate_all_workers()
                 return True
-            elif not self.are_you_sure():
+            if not self.appconfig.prompt_to_save_if_dirty(
+                'Quit lyse',
+                ('Current configuration (which scripts are loaded and other GUI state) '
+                 'has changed: save config file \'%s\'?'
+                 % self.appconfig.last_save_config_file),
+            ):
                 return False
         self.terminate_all_workers()
         return True
 
-    def on_save_configuration_triggered(self):
-        if self.last_save_config_file is None:
-            self.on_save_configuration_as_triggered()
-            self.ui.actionSave_configuration_as.setEnabled(True)
-            self.ui.actionRevert_configuration.setEnabled(True)
-        else:
-            self.save_configuration(self.last_save_config_file)
+    def get_default_save_configuration_path(self):
+        """Return the default lyse save-configuration path."""
 
-    def on_revert_configuration_triggered(self):
-        save_data = self.get_save_data()
-        if self.last_save_data is not None and save_data != self.last_save_data:
-            message = 'Revert configuration to the last saved state in \'%s\'?' % self.last_save_config_file
-            reply = QtWidgets.QMessageBox.question(self.ui, 'Load configuration', message,
-                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel)
-            if reply == QtWidgets.QMessageBox.Cancel:
-                return
-            elif reply == QtWidgets.QMessageBox.Yes:
-                self.load_configuration(self.last_save_config_file)
-        else:
-            lyse.utils.gui.error_dialog(self.app, 'no changes to revert')
+        return os.path.join(get_app_saved_configs_dir(self.exp_config, 'lyse'), 'lyse.toml')
 
-    def on_save_configuration_as_triggered(self):
-        if self.last_save_config_file is not None:
-            default = self.last_save_config_file
-        else:
-            try:
-                default_path = os.path.join(self.exp_config.get('DEFAULT', 'app_saved_configs'), 'lyse')
-            except LabConfig.NoOptionError:
-                self.exp_config.set('DEFAULT', 'app_saved_configs', os.path.join('%(labscript_suite)s', 'userlib', 'app_saved_configs', '%(apparatus_name)s'))
-                default_path = os.path.join(self.exp_config.get('DEFAULT', 'app_saved_configs'), 'lyse')
-            if not os.path.exists(default_path):
-                os.makedirs(default_path)
+    def get_default_load_configuration_path(self):
+        """Return the default lyse load-configuration path."""
 
-            default = os.path.join(default_path, 'lyse.toml')
-        save_file = QtWidgets.QFileDialog.getSaveFileName(self.ui,
-                                                      'Select  file to save current lyse configuration',
-                                                      default,
-                                                      "Config files (*.toml)")
-        if type(save_file) is tuple:
-            save_file, _ = save_file
-
-        if not save_file:
-            # User cancelled
-            return
-        # Convert to standard platform specific path, otherwise Qt likes
-        # forward slashes:
-        save_file = os.path.abspath(save_file)
-        self.save_configuration(save_file)
+        return os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'lyse.toml')
 
     def only_window_geometry_is_different(self, current_data, old_data):
         ui_keys = ['window_size', 'window_pos', 'splitter', 'splitter_vertical', 'splitter_horizontal']
@@ -315,45 +279,10 @@ class Lyse(object):
     def save_configuration(self, save_file):
         save_data = self.get_save_data()
         save_file = save_appconfig(save_file, {'lyse_state': save_data})
-        self.last_save_config_file = save_file
-        self.last_save_data = save_data
-
-    def on_load_configuration_triggered(self):
-        save_data = self.get_save_data()
-        if self.last_save_data is not None and save_data != self.last_save_data:
-            message = ('Current configuration (which groups are active/open and other GUI state) '
-                       'has changed: save config file \'%s\'?' % self.last_save_config_file)
-            reply = QtWidgets.QMessageBox.question(self.ui, 'Load configuration', message,
-                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel)
-            if reply == QtWidgets.QMessageBox.Cancel:
-                return
-            if reply == QtWidgets.QMessageBox.Yes:
-                self.save_configuration(self.last_save_config_file)
-
-        if self.last_save_config_file is not None:
-            default = self.last_save_config_file
-        else:
-            default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'lyse.toml')
-
-        file = QtWidgets.QFileDialog.getOpenFileName(self.ui,
-                                                 'Select lyse configuration file to load',
-                                                 default,
-                                                 "Config files (*.toml *.ini)")
-        if type(file) is tuple:
-            file, _ = file
-
-        if not file:
-            # User cancelled
-            return
-        # Convert to standard platform specific path, otherwise Qt likes
-        # forward slashes:
-        file = os.path.abspath(file)
-        self.load_configuration(file)
+        self.appconfig.mark_clean(save_file, save_data)
 
     def load_configuration(self, filename, restore_window_geometry=True):
         appconfig, save_target = load_appconfig(filename, return_save_path=True)
-        self.last_save_config_file = save_target
-        self.ui.actionSave_configuration.setText('Save configuration %s' % save_target)
         save_data = appconfig.get('lyse_state', {})
         if 'singleshot' in save_data:
             self.singleshot_routinebox.add_routines(save_data['singleshot'], clear_existing=True)
@@ -372,9 +301,7 @@ class Lyse(object):
 
         # Set as self.last_save_data:
         save_data = self.get_save_data()
-        self.last_save_data = save_data
-        self.ui.actionSave_configuration_as.setEnabled(True)
-        self.ui.actionRevert_configuration.setEnabled(True)
+        self.appconfig.mark_clean(save_target, save_data)
 
     def load_window_geometry_configuration(self, filename):
         """Load only the window geometry from the config file. It's useful to have this
