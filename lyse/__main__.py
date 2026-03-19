@@ -29,7 +29,6 @@ import time
 import sys
 import queue
 import warnings
-import signal
 
 # 3rd party imports:
 splash.update_text('importing numpy')
@@ -443,15 +442,5 @@ if __name__ == "__main__":
 
     app = Lyse(qapplication)
 
-    # Let the interpreter run every 500ms so it sees Ctrl-C interrupts:
-    timer = QtCore.QTimer()
-    timer.start(500)
-    timer.timeout.connect(lambda: None)  # Let the interpreter run each 500 ms.
-    # Upon seeing a ctrl-c interrupt, quit the event loop
-    signal.signal(signal.SIGINT, lambda *args: qapplication.exit())
-    
     splash.hide()
-    qapplication.exec_()
-
-    # Shutdown the webserver.
-    app.server.shutdown()
+    labscript_utils.splash.run_qapplication(qapplication, on_shutdown=app.server.shutdown)
