@@ -42,7 +42,11 @@ splash.update_text('importing zprocess (zlog and zlock must be running)')
 from labscript_utils.ls_zprocess import ProcessTree
 
 splash.update_text('importing labscript suite modules')
-from labscript_utils.labconfig import LabConfig, save_appconfig, load_appconfig
+from labscript_utils.labconfig import (
+    LabConfig,
+    save_appconfig,
+    load_appconfig,
+)
 from labscript_utils.setup_logging import setup_logging
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils import dedent
@@ -258,11 +262,11 @@ class Lyse(object):
             if not os.path.exists(default_path):
                 os.makedirs(default_path)
 
-            default = os.path.join(default_path, 'lyse.ini')
+            default = os.path.join(default_path, 'lyse.toml')
         save_file = QtWidgets.QFileDialog.getSaveFileName(self.ui,
                                                       'Select  file to save current lyse configuration',
                                                       default,
-                                                      "config files (*.ini)")
+                                                      "Config files (*.toml)")
         if type(save_file) is tuple:
             save_file, _ = save_file
 
@@ -310,9 +314,9 @@ class Lyse(object):
 
     def save_configuration(self, save_file):
         save_data = self.get_save_data()
+        save_file = save_appconfig(save_file, {'lyse_state': save_data})
         self.last_save_config_file = save_file
         self.last_save_data = save_data
-        save_appconfig(save_file, {'lyse_state': save_data})
 
     def on_load_configuration_triggered(self):
         save_data = self.get_save_data()
@@ -329,12 +333,12 @@ class Lyse(object):
         if self.last_save_config_file is not None:
             default = self.last_save_config_file
         else:
-            default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'lyse.ini')
+            default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'lyse.toml')
 
         file = QtWidgets.QFileDialog.getOpenFileName(self.ui,
                                                  'Select lyse configuration file to load',
                                                  default,
-                                                 "config files (*.ini)")
+                                                 "Config files (*.toml *.ini)")
         if type(file) is tuple:
             file, _ = file
 
@@ -347,9 +351,10 @@ class Lyse(object):
         self.load_configuration(file)
 
     def load_configuration(self, filename, restore_window_geometry=True):
-        self.last_save_config_file = filename
-        self.ui.actionSave_configuration.setText('Save configuration %s' % filename)
-        save_data = load_appconfig(filename).get('lyse_state', {})
+        appconfig, save_target = load_appconfig(filename, return_save_path=True)
+        self.last_save_config_file = save_target
+        self.ui.actionSave_configuration.setText('Save configuration %s' % save_target)
+        save_data = appconfig.get('lyse_state', {})
         if 'singleshot' in save_data:
             self.singleshot_routinebox.add_routines(save_data['singleshot'], clear_existing=True)
         if 'lastsingleshotfolder' in save_data:
@@ -375,7 +380,7 @@ class Lyse(object):
         """Load only the window geometry from the config file. It's useful to have this
         separate from the rest of load_configuration so that it can be called before the
         window is shown."""
-        save_data = load_appconfig(filename)['lyse_state']
+        save_data = load_appconfig(filename).get('lyse_state', {})
         if 'screen_geometry' not in save_data:
             return
         screen_geometry = save_data['screen_geometry']

@@ -27,7 +27,7 @@ from types import ModuleType
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
 from qtutils.qt.QtCore import pyqtSignal as Signal
-from qtutils.qt.QtCore import QSettings, QByteArray
+from qtutils.qt.QtCore import QByteArray
 
 from qtutils import inmain, inmain_decorator, UiLoader
 import qtutils.icons
@@ -39,6 +39,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 # Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
 from labscript_utils import dedent
+from labscript_utils.labconfig import save_appconfig, load_appconfig
 
 
 # Associate app windows with OS menu shortcuts:
@@ -78,30 +79,36 @@ class PlotWindow(QtWidgets.QWidget):
 
         # configure plot window persistence
         filename = os.path.basename(os.path.splitext(filepath)[0])
-        settings_path = os.path.join(config_dir, 'lyse-'+filename+'.ini')
-        self.settings = QSettings(settings_path, QSettings.IniFormat)
+        self.settings_path = os.path.join(config_dir, 'lyse-' + filename)
 
         self.restore_geometry()
 
     def closeEvent(self, event):
         self.hide()
         if isinstance(event, PlotWindowCloseEvent) and event.force:
-            # if closing, save window geometry to QSettings
-            self.settings.setValue(f"windowGeometry-{self.identifier:d}", self.saveGeometry())
-            self.settings.sync()
+            self.save_geometry()
             self.__plot.on_close()
             event.accept()
         else:
             event.ignore()
 
     def restore_geometry(self):
-        """Restores window geometry from local QSettings config.
+        """Restores window geometry from local plot-window config.
         
         Will do nothing if config not present.
         """
-        geometry = self.settings.value(f"windowGeometry-{self.identifier:d}", QByteArray())
+        state = load_appconfig(self.settings_path).get('lyse_plot_window_state', {})
+        geometry = state.get(f"windowGeometry-{self.identifier:d}")
+        if geometry is not None:
+            geometry = QByteArray.fromBase64(geometry.encode('ascii'))
         if isinstance(geometry, QByteArray) and not geometry.isEmpty():
             self.restoreGeometry(geometry)
+
+    def save_geometry(self):
+        state = load_appconfig(self.settings_path).get('lyse_plot_window_state', {})
+        geometry = bytes(self.saveGeometry().toBase64()).decode('ascii')
+        state[f"windowGeometry-{self.identifier:d}"] = geometry
+        save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
         
 
 class Plot(object):
