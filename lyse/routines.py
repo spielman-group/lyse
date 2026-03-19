@@ -19,9 +19,9 @@ import os
 import time
 import logging
 import threading
-import subprocess
 
 # Labscript imports
+from labscript_utils.labconfig import launch_from_config
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 
 # qt imports
@@ -181,23 +181,15 @@ class RoutineBox(object):
             return
         name_item = self.model.item(index.row(), self.COL_NAME)
         routine_filepath = name_item.data(self.ROLE_FULLPATH)
-        # get path to text editor
-        editor_path = self.exp_config.get('programs', 'text_editor')
-        editor_args = self.exp_config.get('programs', 'text_editor_arguments')
-        # Get the current labscript file:
-        if not editor_path:
-            lyse.utils.gui.error_dialog(self.app, "No editor specified in the labconfig.")
-        if '{file}' in editor_args:
-            # Split the args on spaces into a list, replacing {file} with the labscript file
-            editor_args = [arg if arg != '{file}' else routine_filepath for arg in editor_args.split()]
-        else:
-            # Otherwise if {file} isn't already in there, append it to the other args:
-            editor_args = [routine_filepath] + editor_args.split()
-        try:
-            subprocess.Popen([editor_path] + editor_args)
-        except Exception as e:
-            lyse.utils.gui.error_dialog(self.app, "Unable to launch text editor specified in %s. Error was: %s" %
-                         (self.exp_config.config_path, str(e)))
+        launch_from_config(
+            self.exp_config,
+            routine_filepath,
+            'text_editor',
+            'text_editor_arguments',
+            "No editor specified in the labconfig.",
+            "Unable to launch text editor specified in %s. Error was: %s",
+            lambda message: lyse.utils.gui.error_dialog(self.app, message),
+        )
                          
     def on_remove_selection(self):
         self.remove_selection()
