@@ -22,6 +22,7 @@ import threading
 
 # Labscript imports
 from labscript_utils.labconfig import launch_from_config
+from labscript_utils.qtwidgets.appconfig import error_dialog, question_dialog, select_open_files
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 
 # qt imports
@@ -30,8 +31,6 @@ from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 
 import lyse.widgets
 import lyse.utils
-import lyse.utils.gui
-from labscript_utils.qtwidgets.appconfig import select_open_files
 
 class RoutineBox(object):
     
@@ -185,7 +184,7 @@ class RoutineBox(object):
             'text_editor_arguments',
             "No editor specified in the labconfig.",
             "Unable to launch text editor specified in %s. Error was: %s",
-            lambda message: lyse.utils.gui.error_dialog(self.app, message),
+            lambda message: error_dialog(self.ui, 'lyse', message),
         )
                          
     def on_remove_selection(self):
@@ -196,7 +195,9 @@ class RoutineBox(object):
         selected_rows = set(index.row() for index in selected_indexes)
         if not selected_rows:
             return
-        if confirm and not lyse.utils.gui.question_dialog(self.app, "Remove %d routines?" % len(selected_rows)):
+        if confirm and not question_dialog(
+            self.ui, 'lyse', "Remove %d routines?" % len(selected_rows)
+        ):
             return
         name_items = [self.model.item(row, self.COL_NAME) for row in selected_rows]
         filepaths = [item.data(self.ROLE_FULLPATH) for item in name_items]

@@ -15,22 +15,6 @@
 
 import numpy as np
 
-from labscript_utils.qtwidgets.appconfig import (
-    error_dialog as show_error_dialog,
-    question_dialog as ask_question_dialog,
-)
-
-def error_dialog(app, message):
-    """Show a lyse warning dialog."""
-
-    return show_error_dialog(app.ui, 'lyse', message)
-
-
-def question_dialog(app, message):
-    """Ask a lyse yes/no question dialog."""
-
-    return ask_question_dialog(app.ui, 'lyse', message)
-
 def scientific_notation(x, sigfigs=4, mode='eng'):
     """Returns a unicode string of the float f in scientific notation"""
 

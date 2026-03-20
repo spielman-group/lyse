@@ -50,6 +50,7 @@ from labscript_utils.labconfig import (
 from labscript_utils.setup_logging import setup_logging
 from labscript_utils.qtwidgets.appconfig import (
     AppConfigActions,
+    error_dialog,
     select_directory,
     select_open_file,
 )
@@ -148,7 +149,7 @@ class Lyse(object):
             self.get_save_data,
             self.save_configuration,
             self.load_configuration,
-            lambda message: lyse.utils.gui.error_dialog(self.app, message),
+            lambda message: error_dialog(self.ui, 'lyse', message),
             default_load_path_getter=self.get_default_load_configuration_path,
         )
         self.ui.actionSave_dataframe_as.triggered.connect(lambda: self.on_save_dataframe_triggered(True))
@@ -365,7 +366,7 @@ class Lyse(object):
                         sequence_df[col] = pandas.to_numeric(sequence_df[col], errors='ignore')
                 sequence_df.to_pickle(os.path.join(save_path, filename))
         else:
-            lyse.utils.gui.error_dialog(self.app, 'Dataframe is empty')
+            error_dialog(self.ui, 'lyse', 'Dataframe is empty')
 
     def on_load_dataframe_triggered(self):
         default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'dataframe.pkl')

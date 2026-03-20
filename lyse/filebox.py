@@ -29,6 +29,11 @@ import pandas
 # Labscript imports
 import zprocess
 from labscript_utils.labconfig import LabConfig, launch_from_config
+from labscript_utils.qtwidgets.appconfig import (
+    error_dialog,
+    question_dialog,
+    select_open_files,
+)
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 
 
@@ -43,7 +48,6 @@ import qtutils.icons
 from lyse.dataframe_utilities import concat_with_padding, get_dataframe_from_shot, replace_with_padding
 import lyse.utils
 import lyse.utils.gui
-from labscript_utils.qtwidgets.appconfig import select_open_files
 import lyse.widgets
 
 
@@ -339,7 +343,9 @@ class DataFrameModel(QtCore.QObject):
         selected_name_items = [self._model.itemFromIndex(index) for index in selected_indexes]
         if not selected_name_items:
             return
-        if confirm and not lyse.utils.gui.question_dialog(self.app, "Remove %d shots?" % len(selected_name_items)):
+        if confirm and not question_dialog(
+            self._view, 'lyse', "Remove %d shots?" % len(selected_name_items)
+        ):
             return
         # Remove from DataFrame first:
         self.dataframe = self.dataframe.drop(index.row() for index in selected_indexes)
@@ -386,7 +392,7 @@ class DataFrameModel(QtCore.QObject):
             'hdf5_viewer_arguments',
             "No hdf5 viewer specified in the labconfig.",
             "Unable to launch hdf5 viewer specified in %s. Error was: %s",
-            lambda message: lyse.utils.gui.error_dialog(self.app, message),
+            lambda message: error_dialog(self._view, 'lyse', message),
         )
         
     def set_columns_visible(self, columns_visible):
