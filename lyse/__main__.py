@@ -310,7 +310,7 @@ class Lyse(object):
         # only one now, and the splitters may not make sense in light of a
         # different window size, so better to fall back to defaults:
         current_screen_geometry = lyse.utils.gui.get_screen_geometry(self.qapplication)
-        if current_screen_geometry == screen_geometry:
+        if list(map(tuple, current_screen_geometry)) == list(map(tuple, screen_geometry)):
             if 'window_size' in save_data:
                 self.ui.resize(*save_data['window_size'])
             if 'window_pos' in save_data:
@@ -323,7 +323,7 @@ class Lyse(object):
                 self.ui.splitter_horizontal.setSizes(save_data['splitter_horizontal'])
 
     def setup_config(self):
-        required_config_params = {"DEFAULT": ["apparatus_name"],
+        required_config_params = {"default": ["apparatus_name"],
                                   "programs": ["text_editor",
                                                "text_editor_arguments",
                                                "hdf5_viewer",
