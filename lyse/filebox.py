@@ -43,6 +43,7 @@ import qtutils.icons
 from lyse.dataframe_utilities import concat_with_padding, get_dataframe_from_shot, replace_with_padding
 import lyse.utils
 import lyse.utils.gui
+from labscript_utils.qtwidgets.appconfig import select_open_files
 import lyse.widgets
 
 
@@ -764,18 +765,14 @@ class FileBox(object):
         self.edit_columns_dialog.update_columns(column_names, columns_visible)
 
     def on_add_shot_files_clicked(self):
-        shot_files = QtWidgets.QFileDialog.getOpenFileNames(self.ui,
-                                                        'Select shot files',
-                                                        self.last_opened_shots_folder,
-                                                        "HDF5 files (*.h5)")
-        if type(shot_files) is tuple:
-            shot_files, _ = shot_files
-
+        shot_files = select_open_files(
+            self.ui,
+            'Select shot files',
+            self.last_opened_shots_folder,
+            "HDF5 files (*.h5)",
+        )
         if not shot_files:
-            # User cancelled selection
             return
-        # Convert to standard platform specific path, otherwise Qt likes forward slashes:
-        shot_files = [os.path.abspath(shot_file) for shot_file in shot_files]
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_shots_folder = os.path.dirname(shot_files[0])

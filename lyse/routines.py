@@ -31,6 +31,7 @@ from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 import lyse.widgets
 import lyse.utils
 import lyse.utils.gui
+from labscript_utils.qtwidgets.appconfig import select_open_files
 
 class RoutineBox(object):
     
@@ -138,18 +139,14 @@ class RoutineBox(object):
         self.ui.toolButton_move_to_bottom.clicked.connect(self.on_move_to_bottom_clicked)
 
     def on_add_routines_clicked(self):
-        routine_files = QtWidgets.QFileDialog.getOpenFileNames(self.ui,
-                                                           'Select analysis routines',
-                                                           self.last_opened_routine_folder,
-                                                           "Python scripts (*.py)")
-        if type(routine_files) is tuple:
-            routine_files, _ = routine_files
-
+        routine_files = select_open_files(
+            self.ui,
+            'Select analysis routines',
+            self.last_opened_routine_folder,
+            "Python scripts (*.py)",
+        )
         if not routine_files:
-            # User cancelled selection
             return
-        # Convert to standard platform specific path, otherwise Qt likes forward slashes:
-        routine_files = [os.path.abspath(routine_file) for routine_file in routine_files]
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_routine_folder = os.path.dirname(routine_files[0])

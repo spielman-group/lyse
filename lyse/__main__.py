@@ -48,14 +48,18 @@ from labscript_utils.labconfig import (
     load_appconfig,
 )
 from labscript_utils.setup_logging import setup_logging
-from labscript_utils.qtwidgets.appconfig import AppConfigActions
+from labscript_utils.qtwidgets.appconfig import (
+    AppConfigActions,
+    select_directory,
+    select_open_file,
+)
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils import dedent
+from labscript_utils.splash import FirstPaintMainWindow
 
 # qt imports
 splash.update_text('importing qt modules')
 from qtutils.qt import QtCore, QtWidgets
-from qtutils.qt.QtCore import pyqtSignal as Signal
 from qtutils import UiLoader
 
 # needs to be present so that qtutils icons referenced in .ui files can be resolved.  Since this is 
@@ -70,19 +74,15 @@ import lyse.routines
 import lyse.filebox
 import lyse.communication
 
-class LyseMainWindow(QtWidgets.QMainWindow):
-    # A signal to show that the window is shown and painted.
-    firstPaint = Signal()
-
+class LyseMainWindow(FirstPaintMainWindow):
     def __init__(self, app, *args, **kwargs):
         self.app = app
-        QtWidgets.QMainWindow.__init__(self, *args, **kwargs)
-        self._previously_painted = False
+        super().__init__(*args, **kwargs)
         self.closing = False
 
     def closeEvent(self, event):
         if self.closing:
-            return QtWidgets.QMainWindow.closeEvent(self, event)
+            return super().closeEvent(event)
         if self.app.on_close_event():
             self.closing = True
             timeout_time = time.time() + 2
@@ -94,13 +94,6 @@ class LyseMainWindow(QtWidgets.QMainWindow):
             QtCore.QTimer.singleShot(50, lambda: self.delayedClose(timeout_time))
         else:
             QtCore.QTimer.singleShot(0, self.close)
-
-    def paintEvent(self, event):
-        result = QtWidgets.QMainWindow.paintEvent(self, event)
-        if not self._previously_painted:
-            self._previously_painted = True
-            self.firstPaint.emit()
-        return result
 
 class Lyse(object):
 
@@ -352,11 +345,12 @@ class Lyse(object):
         if len(df) > 0:
             default = self.exp_config.get('paths', 'experiment_shot_storage')
             if choose_folder:
-                save_path = QtWidgets.QFileDialog.getExistingDirectory(self.ui, 'Select a Folder for the Dataframes', default)
-                if type(save_path) is tuple:
-                    save_path, _ = save_path
+                save_path = select_directory(
+                    self.ui,
+                    'Select a Folder for the Dataframes',
+                    default,
+                )
                 if not save_path:
-                    # User cancelled
                     return
             sequences = df.sequence.unique()
             for sequence in sequences:
@@ -375,18 +369,14 @@ class Lyse(object):
 
     def on_load_dataframe_triggered(self):
         default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'dataframe.pkl')
-        file = QtWidgets.QFileDialog.getOpenFileName(self.ui,
-                        'Select dataframe file to load',
-                        default,
-                        "dataframe files (*.pkl *.msg)")
-        if type(file) is tuple:
-            file, _ = file
+        file = select_open_file(
+            self.ui,
+            'Select dataframe file to load',
+            default,
+            "dataframe files (*.pkl *.msg)",
+        )
         if not file:
-            # User cancelled
             return
-        # Convert to standard platform specific path, otherwise Qt likes
-        # forward slashes:
-        file = os.path.abspath(file)
         if file.endswith('.msg'):
             # try to read msgpack in case using older pandas
             try:

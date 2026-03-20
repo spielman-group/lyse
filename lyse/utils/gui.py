@@ -15,20 +15,21 @@
 
 import numpy as np
 
-# qt imports
-from qtutils import inmain_decorator
-from qtutils.qt import QtWidgets
+from labscript_utils.qtwidgets.appconfig import (
+    error_dialog as show_error_dialog,
+    question_dialog as ask_question_dialog,
+)
 
-
-@inmain_decorator()
 def error_dialog(app, message):
-    QtWidgets.QMessageBox.warning(app.ui, 'lyse', message)
+    """Show a lyse warning dialog."""
 
-@inmain_decorator()
+    return show_error_dialog(app.ui, 'lyse', message)
+
+
 def question_dialog(app, message):
-    reply = QtWidgets.QMessageBox.question(app.ui, 'lyse', message,
-                                       QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-    return (reply == QtWidgets.QMessageBox.Yes)
+    """Ask a lyse yes/no question dialog."""
+
+    return ask_question_dialog(app.ui, 'lyse', message)
 
 def scientific_notation(x, sigfigs=4, mode='eng'):
     """Returns a unicode string of the float f in scientific notation"""
