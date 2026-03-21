@@ -27,7 +27,8 @@ from types import ModuleType
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
 from qtutils.qt.QtCore import pyqtSignal as Signal
-from qtutils.qt.QtCore import QByteArray
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+from qtutils.qt.QtCore import QByteArray, QSettings
 
 from qtutils import inmain, inmain_decorator, UiLoader
 import qtutils.icons
@@ -39,7 +40,11 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 # Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
 from labscript_utils import dedent
-from labscript_utils.labconfig import save_appconfig, load_appconfig
+from labscript_utils.labconfig import (
+    backup_legacy_config,
+    load_appconfig,
+    save_appconfig,
+)
 
 
 # Associate app windows with OS menu shortcuts:
@@ -83,6 +88,54 @@ class PlotWindow(QtWidgets.QWidget):
 
         self.restore_geometry()
 
+    def _geometry_key(self):
+        return f"windowGeometry-{self.identifier:d}"
+
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+    def _legacy_settings_path(self):
+        return self.settings_path + '.ini'
+
+    def _toml_settings_path(self):
+        return self.settings_path + '.toml'
+
+    def _decode_geometry(self, geometry):
+        if geometry is None:
+            return None
+        if isinstance(geometry, QByteArray):
+            return geometry if not geometry.isEmpty() else None
+        if isinstance(geometry, str):
+            geometry = QByteArray.fromBase64(geometry.encode('ascii'))
+            return geometry if not geometry.isEmpty() else None
+        return None
+
+    def _load_state(self):
+        toml_path = self._toml_settings_path()
+        if not os.path.exists(toml_path):
+            return {}
+        return load_appconfig(toml_path).get('lyse_plot_window_state', {})
+
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+    def _migrate_legacy_geometry(self, state):
+        """Migrate legacy QSettings geometry into TOML app config."""
+        legacy_path = self._legacy_settings_path()
+        if not os.path.exists(legacy_path):
+            return state
+        settings = QSettings(legacy_path, QSettings.IniFormat)
+        migrated = dict(state)
+        for key in settings.allKeys():
+            geometry = settings.value(key, QByteArray())
+            geometry = self._decode_geometry(geometry)
+            if geometry is None:
+                continue
+            migrated.setdefault(
+                str(key), bytes(geometry.toBase64()).decode('ascii')
+            )
+        if migrated != state:
+            save_appconfig(self.settings_path, {'lyse_plot_window_state': migrated})
+        settings.sync()
+        backup_legacy_config(legacy_path)
+        return migrated
+
     def closeEvent(self, event):
         self.hide()
         if isinstance(event, PlotWindowCloseEvent) and event.force:
@@ -97,17 +150,20 @@ class PlotWindow(QtWidgets.QWidget):
         
         Will do nothing if config not present.
         """
-        state = load_appconfig(self.settings_path).get('lyse_plot_window_state', {})
-        geometry = state.get(f"windowGeometry-{self.identifier:d}")
+        state = self._load_state()
+        geometry = self._decode_geometry(state.get(self._geometry_key()))
+        if geometry is None:
+            # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+            state = self._migrate_legacy_geometry(state)
+            geometry = self._decode_geometry(state.get(self._geometry_key()))
         if geometry is not None:
-            geometry = QByteArray.fromBase64(geometry.encode('ascii'))
-        if isinstance(geometry, QByteArray) and not geometry.isEmpty():
             self.restoreGeometry(geometry)
 
     def save_geometry(self):
-        state = load_appconfig(self.settings_path).get('lyse_plot_window_state', {})
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+        state = self._migrate_legacy_geometry(self._load_state())
         geometry = bytes(self.saveGeometry().toBase64()).decode('ascii')
-        state[f"windowGeometry-{self.identifier:d}"] = geometry
+        state[self._geometry_key()] = geometry
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
         
 

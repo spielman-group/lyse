@@ -275,6 +275,7 @@ class Lyse(object):
         self.appconfig.mark_clean(save_file, save_data)
 
     def load_configuration(self, filename, restore_window_geometry=True):
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         appconfig, save_target = load_appconfig(filename, return_save_path=True)
         save_data = appconfig.get('lyse_state', {})
         if 'singleshot' in save_data:
@@ -300,6 +301,7 @@ class Lyse(object):
         """Load only the window geometry from the config file. It's useful to have this
         separate from the rest of load_configuration so that it can be called before the
         window is shown."""
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         save_data = load_appconfig(filename).get('lyse_state', {})
         if 'screen_geometry' not in save_data:
             return
