@@ -210,8 +210,15 @@ class Lyse(object):
 
     def on_close_event(self):
         save_data = self.get_save_data()
-        if self.appconfig.last_save_data is not None and save_data != self.appconfig.last_save_data:
-            if self.only_window_geometry_is_different(save_data, self.appconfig.last_save_data):
+        clean_data = self.appconfig.last_save_data
+        if clean_data is None:
+            self.appconfig.capture_initial_state()
+            clean_data = self.appconfig.initial_save_data
+        if save_data != clean_data:
+            if (
+                self.appconfig.last_save_data is not None
+                and self.only_window_geometry_is_different(save_data, clean_data)
+            ):
                 self.save_configuration(self.appconfig.last_save_config_file)
                 self.terminate_all_workers()
                 return True
@@ -219,7 +226,7 @@ class Lyse(object):
                 'Quit lyse',
                 ('Current configuration (which scripts are loaded and other GUI state) '
                  'has changed: save config file \'%s\'?'
-                 % self.appconfig.last_save_config_file),
+                 % self.appconfig.current_save_target()),
             ):
                 return False
         self.terminate_all_workers()
