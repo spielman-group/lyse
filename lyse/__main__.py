@@ -335,6 +335,7 @@ class Lyse(object):
         else:
             default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'lyse.toml')
 
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         file = QtWidgets.QFileDialog.getOpenFileName(self.ui,
                                                  'Select lyse configuration file to load',
                                                  default,
@@ -351,6 +352,7 @@ class Lyse(object):
         self.load_configuration(file)
 
     def load_configuration(self, filename, restore_window_geometry=True):
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         appconfig, save_target = load_appconfig(filename, return_save_path=True)
         self.last_save_config_file = save_target
         self.ui.actionSave_configuration.setText('Save configuration %s' % save_target)
@@ -380,6 +382,7 @@ class Lyse(object):
         """Load only the window geometry from the config file. It's useful to have this
         separate from the rest of load_configuration so that it can be called before the
         window is shown."""
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         save_data = load_appconfig(filename).get('lyse_state', {})
         if 'screen_geometry' not in save_data:
             return
