@@ -15,6 +15,7 @@
  
 import labscript_utils.excepthook # I do magic stuff, so import must be in place
 import labscript_utils.h5_lock, h5py
+import labscript_utils.splash
 
 from labscript_utils.ls_zprocess import ProcessTree
 
@@ -25,7 +26,7 @@ import traceback
 import time
 from types import ModuleType
 
-from qtutils.qt import QtCore, QtGui, QtWidgets
+from qtutils.qt import QtCore, QtGui, QtWidgets, QT_ENV
 from qtutils.qt.QtCore import pyqtSignal as Signal
 from qtutils.qt.QtCore import QSettings, QByteArray
 
@@ -102,6 +103,17 @@ class PlotWindow(QtWidgets.QWidget):
         geometry = self.settings.value(f"windowGeometry-{self.identifier:d}", QByteArray())
         if isinstance(geometry, QByteArray) and not geometry.isEmpty():
             self.restoreGeometry(geometry)
+    
+    def changeEvent(self, event):
+        
+        # theme update only for PySide6/PyQt6
+        if QT_ENV.endswith('6') and event.type() == QtCore.QEvent.Type.ThemeChange:
+            for widget in self.findChildren(QtWidgets.QWidget):
+                # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
+                widget.setStyleSheet(widget.styleSheet())
+                widget.setPalette(widget.palette())
+
+        return super().changeEvent(event)
         
 
 class Plot(object):
@@ -509,6 +521,12 @@ if __name__ == '__main__':
     qapplication = QtWidgets.QApplication.instance()
     if qapplication is None:
         qapplication = QtWidgets.QApplication(sys.argv)
+    qapplication.setProperty(
+        '_labscript_icon_path', os.path.join(lyse.utils.LYSE_DIR, 'lyse.svg')
+    )
+    qapplication.setApplicationName('lyse')
+    qapplication.setApplicationDisplayName('lyse')
+    labscript_utils.splash.configure_qapplication(qapplication)
     worker = AnalysisWorker(filepath, to_parent, from_parent)
-    qapplication.exec_()
+    qapplication.exec()
         
