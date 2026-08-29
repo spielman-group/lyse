@@ -112,10 +112,8 @@ class LyseMainWindow(QtWidgets.QMainWindow):
     
     def changeEvent(self, event):
         
-        # theme update only for PySide6/PyQt6
-        if (QT_ENV.endswith('6')
-            and (event.type() == QtCore.QEvent.Type.ApplicationPaletteChange
-            or event.type() == QtCore.QEvent.Type.StyleChange)):
+        if (event.type() == QtCore.QEvent.Type.ApplicationPaletteChange
+                or event.type() == QtCore.QEvent.Type.StyleChange):
 
             for widget in self.findChildren(QtWidgets.QWidget):
                 # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
@@ -548,19 +546,18 @@ if __name__ == "__main__":
     splash.update_text('starting GUI')
     qapplication = labscript_utils.splash.get_qapplication()
 
-    if QT_ENV.endswith('6'):
-        extra_styles = """
-        QTreeView:item:selected { color: palette(highlighted-text); }
+    extra_styles = """
+    QTreeView:item:selected { color: palette(highlighted-text); }
 
-        QTreeView:item:hover { color: palette(highlighted-text); }
+    QTreeView:item:hover { color: palette(highlighted-text); }
 
-        QTableView:item:selected { color: palette(highlighted-text); }
+    QTableView:item:selected { color: palette(highlighted-text); }
 
-        QTableView:item:hover { color: palette(highlighted-text); }
-        """
+    QTableView:item:hover { color: palette(highlighted-text); }
+    """
 
-        current_style = qapplication.styleSheet()
-        qapplication.setStyleSheet(current_style + extra_styles)
+    current_style = qapplication.styleSheet()
+    qapplication.setStyleSheet(current_style + extra_styles)
 
     app = Lyse(qapplication)
 

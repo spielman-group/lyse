@@ -26,7 +26,7 @@ import traceback
 import time
 from types import ModuleType
 
-from qtutils.qt import QtCore, QtGui, QtWidgets, QT_ENV
+from qtutils.qt import QtCore, QtGui, QtWidgets
 from qtutils.qt.QtCore import pyqtSignal as Signal
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
@@ -168,8 +168,7 @@ class PlotWindow(QtWidgets.QWidget):
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
 
     def changeEvent(self, event):
-        # theme update only for PySide6/PyQt6
-        if QT_ENV.endswith('6') and event.type() == QtCore.QEvent.Type.ThemeChange:
+        if event.type() == QtCore.QEvent.Type.ThemeChange:
             for widget in self.findChildren(QtWidgets.QWidget):
                 # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
                 widget.setStyleSheet(widget.styleSheet())
