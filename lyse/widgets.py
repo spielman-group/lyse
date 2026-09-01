@@ -73,7 +73,11 @@ class ItemDelegate(QtWidgets.QStyledItemDelegate):
                 progress_bar_option.state = QtWidgets.QStyle.State_Enabled
                 progress_bar_option.direction = self.app.qapplication.layoutDirection()
                 progress_bar_option.rect = option.rect
-                progress_bar_option.fontMetrics = self.app.qapplication.fontMetrics()
+                # option.fontMetrics, not the application's: Qt6 removed
+                # QApplication.fontMetrics(), and the metrics Qt already
+                # computed for this item are the ones sizeHint above sizes the
+                # row with.
+                progress_bar_option.fontMetrics = option.fontMetrics
                 progress_bar_option.minimum = 0
                 progress_bar_option.maximum = 100
                 progress_bar_option.textAlignment = QtCore.Qt.AlignCenter
