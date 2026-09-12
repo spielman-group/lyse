@@ -37,12 +37,17 @@ Nothing else belongs on that line. `tests/conftest.py` sets both
 module that reads it is imported, so a test run neither opens a window nor
 spawns a tkinter error dialog of its own accord.
 
-Both use `setdefault`, but only one of them can be overridden the obvious way.
-Exporting `QT_QPA_PLATFORM` yourself wins, so you can watch a test drive a real
-window. Exporting `LABSCRIPT_NO_ERROR_DIALOG` does not do what it looks like: it
-is read as `bool(os.environ.get(...))`, so `=0` suppresses the dialog just as
-`=1` does, and only an empty or unset value brings it back. A test of the dialog
-itself should set `labscript_utils.excepthook.NO_ERROR_DIALOG` directly.
+Both use `setdefault`, so exporting either yourself overrides what the conftest
+sets — `QT_QPA_PLATFORM` to watch a test drive a real window,
+`LABSCRIPT_NO_ERROR_DIALOG=0` to get the error dialog back.
+
+`=0` only started meaning that with labscript-utils `8719676`. Before it the
+variable was read as `bool(os.environ.get(...))`, so `=0` suppressed the dialog
+exactly as `=1` did. A comment anywhere in the suite still saying so is stale.
+
+A test of the dialog itself can leave the environment alone and assign to
+`labscript_utils.excepthook.NO_ERROR_DIALOG`, which the excepthook reads where
+it uses it.
 
 Note that lyse has **no CI that runs these tests** — `.github/workflows` is
 release-only. They run when someone runs them.

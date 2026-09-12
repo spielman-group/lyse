@@ -28,14 +28,20 @@ before the module that reads it is imported -- qtutils imports Qt, and
 ``labscript_utils.excepthook`` evaluates its variable at module scope -- and
 pytest imports conftest before the test modules.
 
-``setdefault`` leaves an explicit setting alone, but what that buys you differs
-between the two. Qt reads ``QT_QPA_PLATFORM`` as a platform name, so exporting
-it really does override this and lets you watch a test drive a real window.
-``LABSCRIPT_NO_ERROR_DIALOG`` is read as ``bool(os.environ.get(...))``, so *any*
-non-empty value suppresses the dialog: ``=0`` suppresses it exactly as ``=1``
-does, and only an empty or unset variable brings it back. A test that wants the
-real dialog should set ``labscript_utils.excepthook.NO_ERROR_DIALOG`` directly
-for its own duration, and stub ``subprocess.Popen`` so it cannot spawn windows.
+``setdefault`` leaves an explicit setting alone, so exporting either variable
+yourself overrides what is set here: ``QT_QPA_PLATFORM`` to watch a test drive a
+real window, ``LABSCRIPT_NO_ERROR_DIALOG=0`` to get the error dialog back.
+
+That second one only became true with labscript-utils 8719676. Before it the
+variable was read as ``bool(os.environ.get(...))``, so ``=0`` suppressed the
+dialog exactly as ``=1`` did, and only an empty or unset variable brought it
+back. A comment elsewhere in the suite still describing that is stale rather
+than a behaviour this repo is missing.
+
+Either way, a test that wants the real dialog can leave the environment alone
+and assign to ``labscript_utils.excepthook.NO_ERROR_DIALOG``, which the
+excepthook reads where it uses it rather than at the point it is set above. Such
+a test should stub ``subprocess.Popen`` so it cannot spawn windows.
 """
 import os
 
