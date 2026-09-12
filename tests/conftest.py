@@ -30,19 +30,15 @@ pytest imports conftest before the test modules.
 
 ``setdefault`` leaves an explicit setting alone, so exporting either variable
 yourself overrides what is set here: ``QT_QPA_PLATFORM`` to watch a test drive a
-real window, ``LABSCRIPT_NO_ERROR_DIALOG=0`` to get the error dialog back.
+real window, ``LABSCRIPT_NO_ERROR_DIALOG=0`` to let the error dialog through.
+``''``, ``'0'``, ``'false'``, ``'no'`` and ``'off'`` leave the dialog enabled,
+as does leaving the variable unset; anything else suppresses it, ignoring
+surrounding whitespace and case.
 
-That second one only became true with labscript-utils "Let
-LABSCRIPT_NO_ERROR_DIALOG=0 mean what it looks like" (ae73495 at the time of
-writing; the subject outlives the hash). Before it the variable was read as
-``bool(os.environ.get(...))``, so ``=0`` suppressed the dialog exactly as ``=1``
-did, and only an empty or unset variable brought it back. A comment elsewhere in the suite still describing that is stale rather
-than a behaviour this repo is missing.
-
-Either way, a test that wants the real dialog can leave the environment alone
-and assign to ``labscript_utils.excepthook.NO_ERROR_DIALOG``, which the
-excepthook reads where it uses it rather than at the point it is set above. Such
-a test should stub ``subprocess.Popen`` so it cannot spawn windows.
+A test that wants the real dialog can leave the environment alone and assign to
+``labscript_utils.excepthook.NO_ERROR_DIALOG``, which the handler reads where it
+uses it rather than at the point it is set above. Such a test should stub
+``subprocess.Popen`` so it cannot spawn windows.
 """
 import os
 

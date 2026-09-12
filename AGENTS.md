@@ -39,12 +39,9 @@ spawns a tkinter error dialog of its own accord.
 
 Both use `setdefault`, so exporting either yourself overrides what the conftest
 sets — `QT_QPA_PLATFORM` to watch a test drive a real window,
-`LABSCRIPT_NO_ERROR_DIALOG=0` to get the error dialog back.
-
-`=0` only started meaning that with the labscript-utils commit "Let
-LABSCRIPT_NO_ERROR_DIALOG=0 mean what it looks like" (`ae73495` at the time of
-writing; the subject outlives the hash). Before it the variable was read as
-`bool(os.environ.get(...))`, so `=0` suppressed the dialog exactly as `=1` did. A comment anywhere in the suite still saying so is stale.
+`LABSCRIPT_NO_ERROR_DIALOG=0` to let the error dialog through. `0`, `false`,
+`no`, `off`, empty and unset all leave the dialog enabled; anything else
+suppresses it.
 
 A test of the dialog itself can leave the environment alone and assign to
 `labscript_utils.excepthook.NO_ERROR_DIALOG`, which the excepthook reads where
