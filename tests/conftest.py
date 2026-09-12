@@ -32,10 +32,11 @@ pytest imports conftest before the test modules.
 yourself overrides what is set here: ``QT_QPA_PLATFORM`` to watch a test drive a
 real window, ``LABSCRIPT_NO_ERROR_DIALOG=0`` to get the error dialog back.
 
-That second one only became true with labscript-utils 8719676. Before it the
-variable was read as ``bool(os.environ.get(...))``, so ``=0`` suppressed the
-dialog exactly as ``=1`` did, and only an empty or unset variable brought it
-back. A comment elsewhere in the suite still describing that is stale rather
+That second one only became true with labscript-utils "Let
+LABSCRIPT_NO_ERROR_DIALOG=0 mean what it looks like" (ae73495 at the time of
+writing; the subject outlives the hash). Before it the variable was read as
+``bool(os.environ.get(...))``, so ``=0`` suppressed the dialog exactly as ``=1``
+did, and only an empty or unset variable brought it back. A comment elsewhere in the suite still describing that is stale rather
 than a behaviour this repo is missing.
 
 Either way, a test that wants the real dialog can leave the environment alone
