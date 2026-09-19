@@ -104,6 +104,13 @@ def get_nested_dict_from_shot(filepath):
             row['n_runs'] = h5_file.attrs['n_runs']
         except KeyError:
             row['n_runs'] = float('nan')
+        try:
+            row['shot_id'] = _ensure_str(h5_file.attrs['shot_id'])
+        except KeyError:
+            # Written by runmanager for a shot it queued, so that a result
+            # coming back can be matched to the shot that was asked for. A
+            # shot made any other way has none.
+            row['shot_id'] = ''
         return row
             
 def flatten_dict(dictionary, keys=tuple()):
