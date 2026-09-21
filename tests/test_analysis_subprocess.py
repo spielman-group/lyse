@@ -23,8 +23,29 @@ def a_qapplication():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
 
 
+class RecordingChild(QtWidgets.QWidget):
+    """A child that records the repaint the handler is supposed to give it.
+
+    Asserting only that no exception escaped would not distinguish a handler
+    that ran from one whose condition never matched.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.restyled = 0
+        self.repalettes = 0
+
+    def setStyleSheet(self, sheet):
+        self.restyled += 1
+        super().setStyleSheet(sheet)
+
+    def setPalette(self, palette):
+        self.repalettes += 1
+        super().setPalette(palette)
+
+
 class PlotWindowThemeChangeTests(unittest.TestCase):
-    """The event types the window asks about have to exist in the binding.
+    """The event types the window asks about have to exist, and have to arrive.
 
     An enum member that is merely absent raises AttributeError rather than
     comparing false, so naming one Qt does not have breaks the whole handler
@@ -37,6 +58,7 @@ class PlotWindowThemeChangeTests(unittest.TestCase):
             None, analysis_filepath='test_analysis_subprocess.py',
             analysis_identifier=0,
         )
+        self.child = RecordingChild(self.window)
         self.addCleanup(self.window.deleteLater)
 
     def send(self, event_type):
@@ -50,12 +72,13 @@ class PlotWindowThemeChangeTests(unittest.TestCase):
         original = sys.excepthook
         sys.excepthook = lambda cls, exc, tb: seen.append(exc)
         try:
+            self.child.restyled = self.child.repalettes = 0
             self.qapplication.sendEvent(self.window, QtCore.QEvent(event_type))
         finally:
             sys.excepthook = original
         return seen
 
-    def test_a_palette_change_is_handled(self):
+    def test_a_palette_change_repaints_the_children(self):
         """What a widget actually receives when the application palette changes.
 
         ApplicationPaletteChange goes to the application, and QWidget.event()
@@ -63,10 +86,16 @@ class PlotWindowThemeChangeTests(unittest.TestCase):
         reach the handler and would pass however broken the handler was.
         """
         self.assertEqual([], self.send(QtCore.QEvent.Type.PaletteChange))
+        self.assertEqual(1, self.child.restyled)
+        self.assertEqual(1, self.child.repalettes)
 
-    def test_a_style_change_is_handled(self):
+    def test_a_style_change_repaints_the_children(self):
         self.assertEqual([], self.send(QtCore.QEvent.Type.StyleChange))
+        self.assertEqual(1, self.child.restyled)
+        self.assertEqual(1, self.child.repalettes)
 
-    def test_an_unrelated_change_event_is_handled(self):
-        """Every other change event goes through the same method."""
+    def test_an_unrelated_change_event_repaints_nothing(self):
+        """Every change event reaches the method; only these two do the work."""
         self.assertEqual([], self.send(QtCore.QEvent.Type.WindowStateChange))
+        self.assertEqual(0, self.child.restyled)
+        self.assertEqual(0, self.child.repalettes)
