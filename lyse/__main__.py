@@ -112,7 +112,12 @@ class LyseMainWindow(QtWidgets.QMainWindow):
     
     def changeEvent(self, event):
         
-        if (event.type() == QtCore.QEvent.Type.ApplicationPaletteChange
+        # PaletteChange, not ApplicationPaletteChange: QWidget.event() does not
+        # route the application-wide event to changeEvent, so a window asking
+        # for it never hears about a theme switch. Qt re-sends the per-widget
+        # PaletteChange when the application palette changes, which is what
+        # arrives here.
+        if (event.type() == QtCore.QEvent.Type.PaletteChange
                 or event.type() == QtCore.QEvent.Type.StyleChange):
 
             for widget in self.findChildren(QtWidgets.QWidget):
