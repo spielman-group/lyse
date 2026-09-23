@@ -201,12 +201,12 @@ def replace_with_padding(df, row, index):
 
     # Change the index of the row object to equal that of where it is to be
     # inserted:
-    row.index = pandas.Int64Index([index])
+    row.index = pandas.Index([index])
 
     # Replace the target row in the dataframe by dropping, appending, then
     # sorting by index:
     df = df.drop([index])
-    df = df.append(row)
+    df = pandas.concat([df, row])
     df = df.sort_index()
     return df
     

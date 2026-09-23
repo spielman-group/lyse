@@ -14,7 +14,7 @@
 """
 
 # 3rd party imports:
-import numpy as np
+import pandas
 
 # Labscript imports
 from labscript_utils.ls_zprocess import ZMQServer
@@ -79,14 +79,7 @@ class WebServer(ZMQServer):
         return df
 
     def _retrieve_dataframe(self):
-        # infer_objects() picks fixed datatypes for columns that are compatible with
-        # fixed datatypes, dramatically speeding up pickling. It is called here
-        # rather than when updating the dataframe as calling it during updating may
-        # call it needlessly often, whereas it only needs to be called prior to
-        # sending the dataframe to a client requesting it, as we're doing now.
-        df = self._copy_dataframe()
-        df.infer_objects()
-        return df
+        return self._copy_dataframe()
 
     def _extract_n_sequences_from_df(self, df, n_sequences):
         # If the dataframe is empty, just return it, otherwise accessing columns
@@ -96,34 +89,42 @@ class WebServer(ZMQServer):
 
         # Get a list of all unique sequences, each corresponding to one call to
         # engage in runmanager. Each sequence may contain multiple runs. The
-        # below creates strings to identify sequences. To be from the same
+        # below creates tuples to identify sequences. To be from the same
         # sequence, two shots have to have the same value for 'sequence' (which
         # makes sure that the time when engage was called are the same to within
         # 1 second), 'labscript' (must have been generated from the same
         # labscript), and 'sequence_index' (a counter which keeps track of how
-        # many times engage has been called and resets to 0 at the start of each
-        # day). Typically just the value for sequence, is enough. However it
-        # only records time down to the second, so if engage() is called twice
-        # quickly then two different sequences can end up with the same value
-        # there.
-        sequences = [str(sequence) for sequence in df['sequence']]
-        labscripts = [str(labscript) for labscript in df['labscript']]
-        sequence_indices = [str(index) for index in df['sequence_index']]
-        # Combine into one string.
-        criteria = zip(sequences, labscripts, sequence_indices)
-        indentity_strings = [seq + script + ind for seq, script, ind in criteria]
+        # many times engage has been called for that labscript and resets to 0
+        # at the start of each day). Typically just the value for sequence, is
+        # enough. However it only records time down to the second, so if
+        # engage() is called twice quickly then two different sequences can end
+        # up with the same value there.
+        #
+        # The tuples are ordered so that sorting them puts the sequences in the
+        # order engage was called: by 'sequence' first, then by 'sequence_index'
+        # as an integer to order engages within the same second, then by
+        # 'labscript' so that two labscripts sharing a 'sequence_index' in the
+        # same second still sort the same way every time. The order of the rows
+        # plays no part, so shots loaded after newer ones do not count as more
+        # recent. A shot without a 'sequence_index' is given -1, so that it
+        # sorts before any sequence engaged in the same second that has one.
+        identities = [
+            (sequence, -1 if pandas.isna(index) else int(index), str(labscript))
+            for sequence, index, labscript
+            in zip(df['sequence'], df['sequence_index'], df['labscript'])
+        ]
 
-        # Find the distinct values, maintaining their ordering.
-        unique_identities = np.intersect1d(indentity_strings, indentity_strings)
+        # Find the distinct sequences, oldest first.
+        unique_identities = sorted(set(identities))
 
         # Slice the DataFrame so that only the last n_sequences sequences
         # remain. Note that slicing unique_identities just returns all of its
         # entries if n_sequences is greater than its length; it doesn't raise an
         # error.
         if n_sequences == 0:
-            identities_included = []
+            identities_included = set()
         else:
-            identities_included = unique_identities[-n_sequences:]
-        df_subset = df[[id in identities_included for id in indentity_strings]]
+            identities_included = set(unique_identities[-n_sequences:])
+        df_subset = df[[id in identities_included for id in identities]]
 
         return df_subset
