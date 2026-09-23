@@ -5,8 +5,10 @@ how it follows an OS light/dark switch. The handler is a Qt virtual method, so
 a failure in it reaches sys.excepthook rather than the caller.
 """
 import sys
+import tempfile
 import unittest
 import warnings
+from unittest import mock
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
 
@@ -50,6 +52,22 @@ class PlotWindowTests(unittest.TestCase):
         child = Child(window)
         self.assertEqual(change_theme(qapplication), [])
         self.assertGreater(child.repaints, 0)
+
+
+class NamedFigureTests(unittest.TestCase):
+
+    def test_a_figure_named_by_a_string_gets_a_window_that_keeps_its_geometry(self):
+        """A routine may name its figure, as plt.figure('Temperature') does."""
+        qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(lyse.analysis_subprocess, 'config_dir', folder):
+            def a_window():
+                return lyse.analysis_subprocess.PlotWindow(
+                    None, analysis_filepath='routine.py', analysis_identifier='Temperature')
+            window = a_window()
+            window.resize(321, 234)
+            window.save_geometry()
+            self.assertEqual(a_window().size(), QtCore.QSize(321, 234))
 
 
 if __name__ == '__main__':
