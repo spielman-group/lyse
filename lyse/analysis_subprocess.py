@@ -393,8 +393,8 @@ class AnalysisWorker(object):
                     self.close_plots()
                     inmain(qapplication.quit)
                 elif task == 'analyse':
-                    path = data
-                    success = self.do_analysis(path)
+                    path, paths = data
+                    success = self.do_analysis(path, paths)
                     if success:
                         if lyse.utils.worker._delay_flag:
                             lyse.utils.worker.delay_event.wait()
@@ -412,7 +412,7 @@ class AnalysisWorker(object):
             QtCore.QCoreApplication.instance().postEvent(plot.ui, event)
         
     @inmain_decorator()
-    def do_analysis(self, path):
+    def do_analysis(self, path, paths):
         now = time.strftime('[%x %X]')
         if path is not None:
             print('%s %s %s ' %(now, os.path.basename(self.filepath), os.path.basename(path)))
@@ -427,6 +427,7 @@ class AnalysisWorker(object):
 
         # global variables used to communicate between analysis processes and GUI functions
         lyse.utils.worker.path = path
+        lyse.utils.worker.paths = paths
         lyse.utils.worker.plots = self.plots
         lyse.utils.worker.Plot = Plot
         lyse.utils.worker._updated_data = {}

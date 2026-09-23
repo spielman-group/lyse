@@ -334,20 +334,23 @@ class RoutineBox(object):
     def analysis_loop(self):
         while True:
             filepath = self.from_filebox.get()
+            paths = None
             if self.multishot:
-                assert filepath is None
-                # TODO: get the filepath of the output h5 file: 
-                # filepath = self.filechooserentry.get_text()
+                # A multishot routine box is given the shot files analysed
+                # since its last pass, rather than a shot file:
+                filepath, paths = None, filepath
             self.logger.info('got a file to process: %s'%filepath)
-            self.do_analysis(filepath)
+            self.do_analysis(filepath, paths)
     
     def todo(self):
         """How many analysis routines are not done?"""
         return len([r for r in self.routines if r.enabled() and not r.done])
         
-    def do_analysis(self, filepath):
+    def do_analysis(self, filepath, paths):
         """Run all analysis routines once on the given filepath,
-        which is a shot file if we are a singleshot routine box"""
+        which is a shot file if we are a singleshot routine box. paths, for a
+        multishot routine box, are the shot files analysed since its last pass,
+        which its routines see as lyse.paths"""
         for routine in self.routines:
             routine.set_status('clear')
         remaining = self.todo()
@@ -363,7 +366,7 @@ class RoutineBox(object):
             if routine is not None:
                 self.logger.info('running analysis routine %s'%routine.shortname)
                 routine.set_status('working')
-                success, updated_data = routine.do_analysis(filepath)
+                success, updated_data = routine.do_analysis(filepath, paths)
                 if success:
                     routine.set_status('done')
                     self.logger.debug('success')
@@ -463,8 +466,8 @@ class AnalysisRoutine(object):
         to_worker.put(self.filepath)
         return to_worker, from_worker, worker
         
-    def do_analysis(self, filepath):
-        self.to_worker.put(['analyse', filepath])
+    def do_analysis(self, filepath, paths):
+        self.to_worker.put(['analyse', (filepath, paths)])
         signal, data = self.from_worker.get()
         if signal == 'error':
             return False, data

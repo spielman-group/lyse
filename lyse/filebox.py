@@ -731,6 +731,8 @@ class FileBox(object):
 
         self.analysis_paused = False
         self.multishot_required = False
+        # Shot files analysed since the last multishot pass:
+        self.analysed_since_multishot = []
         
         # An Event to let the analysis thread know to check for shots that
         # need analysing, rather than using a time.sleep:
@@ -983,6 +985,7 @@ class FileBox(object):
             if status_percent is not None:
                 self.shots_model.set_status_percent(filepath, status_percent)
             if signal == 'done':
+                self.analysed_since_multishot.append(filepath)
                 return
             if signal == 'error':
                 if not os.path.exists(filepath):
@@ -997,7 +1000,8 @@ class FileBox(object):
             raise ValueError('invalid signal %s' % str(signal))
                         
     def do_multishot_analysis(self):
-        self.to_multishot.put(None)
+        paths, self.analysed_since_multishot = self.analysed_since_multishot, []
+        self.to_multishot.put(paths)
         while True:
             signal, _, updated_data = self.from_multishot.get()
             for file in updated_data:
@@ -1006,6 +1010,8 @@ class FileBox(object):
                 self.multishot_required = False
                 return
             elif signal == 'error':
+                # Put them back, so that the next pass has them too:
+                self.analysed_since_multishot[:0] = paths
                 self.pause_analysis()
                 return
             

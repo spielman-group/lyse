@@ -28,6 +28,12 @@ path = None
 If running stand-alone, not from within the lyse GUI, default is None.
 Within lyse GUI, updated automatically to the correct path.
 """
+paths = None
+"""Paths to the hdf5 files analysed since the last multishot pass.
+
+Within lyse GUI, set for a multishot routine. None in a singleshot routine, and
+if running stand-alone.
+"""
 _updated_data = {}
 """Data to be sent back to the lyse GUI if running within lyse"""
 _plot_classes = {}

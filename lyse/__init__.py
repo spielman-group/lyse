@@ -47,6 +47,7 @@ __all__ = [
     'delay_results_return',
     # lyse analysis API objects
     'path',  # needed so old star imports know to pull `path` from the lazy loader here
+    'paths',  # likewise
     'routine_storage',
     'data',
     'globals_diff',
@@ -69,12 +70,18 @@ if 'sphinx' in sys.modules:
     Automatically populated by the lyse GUI.
     Can be passed as a command line argument, but this behavior is deprecated.
     """
+    paths = None
+    """Links to :attr:`lyse.utils.worker.paths` which contains the hdf5
+    filepaths analysed since the last multishot pass.
+
+    Automatically populated by the lyse GUI for a multishot routine.
+    """
 
 # lazy import so we catch updated path from analysis subprocess
 def __getattr__(name):
-    if name == 'path':
-        from lyse.utils.worker import path
-        return path
+    if name in ('path', 'paths'):
+        from lyse.utils import worker
+        return getattr(worker, name)
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
