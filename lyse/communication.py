@@ -36,19 +36,13 @@ class WebServer(ZMQServer):
         self.app.logger.info('WebServer request: %s' % str(request_data))
         if request_data == 'hello':
             return 'hello'
-        elif isinstance(request_data, tuple) and request_data[0]=='get dataframe' and len(request_data) in (3, 4):
-            # A fourth element is n_shots. Older clients send three, and a
-            # client sending four to an older server is told the request is
-            # not supported rather than quietly getting the whole sequence.
-            _, n_sequences, filter_kwargs = request_data[:3]
-            n_shots = request_data[3] if len(request_data) == 4 else None
+        elif isinstance(request_data, tuple) and request_data[0]=='get dataframe' and len(request_data)==3:
+            _, n_sequences, filter_kwargs = request_data
             df = self._retrieve_dataframe()
             df = rangeindex_to_multiindex(df, inplace=True)
             # Return only a subset of the dataframe if instructed to do so.
             if n_sequences is not None:
                 df = self._extract_n_sequences_from_df(df, n_sequences)
-            if n_shots is not None:
-                df = df.tail(n_shots)
             if filter_kwargs is not None:
                 df = df.filter(**filter_kwargs)
             return df

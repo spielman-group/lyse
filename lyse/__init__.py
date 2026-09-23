@@ -105,7 +105,7 @@ retained. An alternate method should be used to store data if desired in
 these cases."""
 
 
-def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, n_shots=None, filter_kwargs=None):
+def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None):
     """Get data from the lyse dataframe or a file.
     
     This function allows for either extracting information from a run's hdf5
@@ -143,10 +143,6 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             42519 if the labconfig has no such entry.
         timeout (float, optional): The timeout, in seconds, for the
             communication with lyse. Defaults to 5.
-        n_shots (int, optional): The maximum number of shots to return, taken
-            from the end of the dataframe. Applied after `n_sequences`. A
-            routine that only needs the shot it was called on asks for one,
-            which stays a constant cost however long a sequence grows.
         n_sequences (int, optional): The maximum number of sequences to include
             in the returned dataframe where one sequence corresponds to one call
             to engage in runmanager. The dataframe rows for the most recent
@@ -182,11 +178,6 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
                 msg = """n_sequences must be None or an integer greater than 0 but 
                     was {n_sequences}.""".format(n_sequences=n_sequences)
                 raise ValueError(dedent(msg))
-        if n_shots is not None:
-            if not (type(n_shots) is int and n_shots >= 0):
-                msg = """n_shots must be None or an integer greater than 0 but
-                    was {n_shots}.""".format(n_shots=n_shots)
-                raise ValueError(dedent(msg))
         if filter_kwargs is not None:
             if type(filter_kwargs) is not dict:
                 msg = """filter must be None or a dictionary but was 
@@ -197,17 +188,15 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
         # n_sequences and filter_kwargs aren't provided. This is for backwards
         # compatibility in case the server is running an outdated version of
         # lyse.
-        if n_sequences is None and n_shots is None and filter_kwargs is None:
+        if n_sequences is None and filter_kwargs is None:
             command = 'get dataframe'
-        elif n_shots is None:
-            command = ('get dataframe', n_sequences, filter_kwargs)
         else:
-            command = ('get dataframe', n_sequences, filter_kwargs, n_shots)
+            command = ('get dataframe', n_sequences, filter_kwargs)
         df = zmq_get(port, host, command, timeout)
         if isinstance(df, str) and df.startswith('error: operation not supported'):
             # Sending a tuple for command to an outdated lyse servers causes it
             # to reply with an error message.
-            msg = """The lyse server does not support n_sequences, n_shots or filter_kwargs.
+            msg = """The lyse server does not support n_sequences or filter_kwargs.
                 Call this function without providing those arguments to communicate
                 with this server, or upgrade the version of lyse running on the
                 server."""
