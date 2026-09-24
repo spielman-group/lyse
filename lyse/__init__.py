@@ -307,6 +307,8 @@ class Run(object):
         self.__no_write = no_write
         self.__h5_file = None
         self.__group = None
+        if not no_write and not Path(h5_path).exists():
+            raise FileNotFoundError(f'No shot file at {h5_path}')
         # Whether /results and self.group exist in the file. They are created by
         # the first open for writing, rather than here, so that a Run which
         # never writes never opens the file:
@@ -442,6 +444,11 @@ class Run(object):
             results.require_group(self.group)
         self.__result_groups_ensured = True
 
+    def _open_to_write(self, save_to_h5):
+        """Open the file for writing if save_to_h5, and otherwise not at all,
+        so that a save kept out of the file takes no file lock."""
+        return self.open('r+') if save_to_h5 else contextlib.nullcontext()
+
     def set_group(self, groupname):
         """Set the default hdf5 file group for saving results.
 
@@ -489,6 +496,10 @@ class Run(object):
             dict: Dictionary of attributes.
         """
         if group not in self.h5_file:
+            # /results and this run's default group are created when first
+            # written to, and until then are empty rather than absent:
+            if not self.no_write and group.strip('/') in ('results', f'results/{self.group}'):
+                return {}
             raise Exception('The group \'%s\' does not exist'%group)
         return get_attributes(self.h5_file[group])
 
@@ -666,8 +677,7 @@ class Run(object):
         # lazy import here so they get updated values from analysis subprocess
         from lyse.utils.worker import spinning_top, _updated_data
 
-        # The file is opened, and so locked, only if the result is written to it:
-        with self.open('r+') if save_to_h5 else contextlib.nullcontext():
+        with self._open_to_write(save_to_h5):
             if not group:
                 if self.group is None:
                     msg = """Cannot save result; no default group set. Either
@@ -680,6 +690,11 @@ class Run(object):
             elif save_to_h5 and group not in self.h5_file:
                 # Create the group if it doesn't exist
                 self.h5_file.create_group(group) 
+            if not save_to_h5 and not group.startswith('results'):
+                msg = """Cannot save result to group '{group}' with
+                    save_to_h5=False; only results in the 'results' group reach
+                    lyse's dataframe.""".format(group=group)
+                raise ValueError(dedent(msg))
             if save_to_h5:
                 if name in self.h5_file[group].attrs and not overwrite:
                     msg = """Cannot save result; group '{group}' already has
@@ -836,7 +851,7 @@ class Run(object):
         """
         names = args[::2]
         values = args[1::2]
-        with self.open('r+') if kwargs.get('save_to_h5', True) else contextlib.nullcontext():
+        with self._open_to_write(kwargs.get('save_to_h5', True)):
             for name, value in zip(names, values):
                 self.save_result(name, value, **kwargs)
 
@@ -854,7 +869,7 @@ class Run(object):
             uncertainties (bool, optional): Marks if uncertainties are provided.
             **kwargs: Extra arguments provided to :obj:`save_result`.
         """
-        with self.open('r+') if kwargs.get('save_to_h5', True) else contextlib.nullcontext():
+        with self._open_to_write(kwargs.get('save_to_h5', True)):
             for name, value in results_dict.items():
                 if not uncertainties:
                     self.save_result(name, value, **kwargs)

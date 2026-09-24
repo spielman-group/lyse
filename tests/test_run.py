@@ -75,6 +75,26 @@ class RunTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "result group 'routine' does not exist"):
             lyse.Run(self.path).get_result('routine', 'N')
 
+    def test_the_results_groups_are_empty_before_the_first_write(self):
+        """As they were when construction created them. Other groups that are
+        not there still raise."""
+        run = lyse.Run(self.path)
+        run.set_group('routine')
+        self.assertEqual(run.get_attrs('results'), {})
+        self.assertEqual(run.get_attrs('results/routine'), {})
+        with self.assertRaisesRegex(Exception, "group 'globls' does not exist"):
+            run.get_attrs('globls')
+
+    def test_a_result_outside_the_results_group_cannot_skip_the_file(self):
+        """Only results in 'results' reach the dataframe, so it would be saved
+        nowhere."""
+        with self.assertRaises(ValueError):
+            lyse.Run(self.path).save_result('N', 3, group='analysis', save_to_h5=False)
+
+    def test_a_shot_file_that_is_not_there_is_refused_at_construction(self):
+        with self.assertRaises(FileNotFoundError):
+            lyse.Run(self.path + '.missing')
+
 
 if __name__ == '__main__':
     unittest.main()
