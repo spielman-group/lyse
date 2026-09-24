@@ -47,6 +47,7 @@ __all__ = [
     'delay_results_return',
     # lyse analysis API objects
     'path',  # needed so old star imports know to pull `path` from the lazy loader here
+    'paths',  # likewise
     'routine_storage',
     'data',
     'globals_diff',
@@ -69,12 +70,18 @@ if 'sphinx' in sys.modules:
     Automatically populated by the lyse GUI.
     Can be passed as a command line argument, but this behavior is deprecated.
     """
+    paths = None
+    """Links to :attr:`lyse.utils.worker.paths` which contains the hdf5
+    filepaths analysed since the last multishot pass.
+
+    Automatically populated by the lyse GUI for a multishot routine.
+    """
 
 # lazy import so we catch updated path from analysis subprocess
 def __getattr__(name):
-    if name == 'path':
-        from lyse.utils.worker import path
-        return path
+    if name in ('path', 'paths'):
+        from lyse.utils import worker
+        return getattr(worker, name)
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
@@ -98,7 +105,7 @@ retained. An alternate method should be used to store data if desired in
 these cases."""
 
 
-def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, n_shots=None, filter_kwargs=None):
+def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None, where=None):
     """Get data from the lyse dataframe or a file.
     
     This function allows for either extracting information from a run's hdf5
@@ -136,10 +143,6 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             42519 if the labconfig has no such entry.
         timeout (float, optional): The timeout, in seconds, for the
             communication with lyse. Defaults to 5.
-        n_shots (int, optional): The maximum number of shots to return, taken
-            from the end of the dataframe. Applied after `n_sequences`. A
-            routine that only needs the shot it was called on asks for one,
-            which stays a constant cost however long a sequence grows.
         n_sequences (int, optional): The maximum number of sequences to include
             in the returned dataframe where one sequence corresponds to one call
             to engage in runmanager. The dataframe rows for the most recent
@@ -153,6 +156,14 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             then `Dataframe.filter()` will not be called. See
             :meth:`pandas:pandas.DataFrame.filter` for more information.
             Defaults to `None`.
+        where (dict, optional): Rows to return, as `{column: value}`. A
+            column is named by a string if it is top-level, e.g. `'filepath'`,
+            or by a tuple if nested, e.g. `('routine', 'result')`. A
+            list-like value -- a list, tuple, set, array and so on -- matches
+            any of its members; any other value must be equal. A row is returned only if every column
+            matches. Applied after `n_sequences` and before `filter_kwargs`.
+            A column not in the dataframe raises a `KeyError`. Defaults to
+            `None`.
 
     Raises:
         ValueError: If `n_sequences` isn't `None` or a nonnegative integer, then
@@ -172,39 +183,41 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
     else:
         if n_sequences is not None:
             if not (type(n_sequences) is int and n_sequences >= 0):
-                msg = """n_sequences must be None or an integer greater than 0 but 
-                    was {n_sequences}.""".format(n_sequences=n_sequences)
-                raise ValueError(dedent(msg))
-        if n_shots is not None:
-            if not (type(n_shots) is int and n_shots >= 0):
-                msg = """n_shots must be None or an integer greater than 0 but
-                    was {n_shots}.""".format(n_shots=n_shots)
+                msg = f"""n_sequences must be None or an integer greater than 0 but 
+                    was {n_sequences}."""
                 raise ValueError(dedent(msg))
         if filter_kwargs is not None:
             if type(filter_kwargs) is not dict:
-                msg = """filter must be None or a dictionary but was 
-                    {filter_kwargs}.""".format(filter_kwargs=filter_kwargs)
+                msg = f"""filter must be None or a dictionary but was 
+                    {filter_kwargs}."""
+                raise ValueError(dedent(msg))
+        if where is not None:
+            if type(where) is not dict:
+                msg = f"""where must be None or a dictionary but was
+                    {where}."""
                 raise ValueError(dedent(msg))
 
         # Allow sending 'get dataframe' (without the enclosing list) if
         # n_sequences and filter_kwargs aren't provided. This is for backwards
         # compatibility in case the server is running an outdated version of
         # lyse.
-        if n_sequences is None and n_shots is None and filter_kwargs is None:
+        if n_sequences is None and filter_kwargs is None and where is None:
             command = 'get dataframe'
-        elif n_shots is None:
+        elif where is None:
             command = ('get dataframe', n_sequences, filter_kwargs)
         else:
-            command = ('get dataframe', n_sequences, filter_kwargs, n_shots)
+            command = ('get dataframe', n_sequences, filter_kwargs, where)
         df = zmq_get(port, host, command, timeout)
         if isinstance(df, str) and df.startswith('error: operation not supported'):
             # Sending a tuple for command to an outdated lyse servers causes it
             # to reply with an error message.
-            msg = """The lyse server does not support n_sequences, n_shots or filter_kwargs.
+            msg = """The lyse server does not support n_sequences, filter_kwargs or where.
                 Call this function without providing those arguments to communicate
                 with this server, or upgrade the version of lyse running on the
                 server."""
             raise ValueError(dedent(msg))
+        if isinstance(df, str) and df.startswith('error: no column'):
+            raise KeyError(df[len('error: '):])
         # Ensure conversion to multiindex is done, which needs to be done here
         # if the server is running an outdated version of lyse.
         lyse.dataframe_utilities.rangeindex_to_multiindex(df, inplace=True)
@@ -294,9 +307,13 @@ class Run(object):
         self.__no_write = no_write
         self.__h5_file = None
         self.__group = None
-        if not self.no_write:
-            self._create_group_if_not_exists(h5_path, '/', 'results')
-                     
+        if not no_write and not Path(h5_path).exists():
+            raise FileNotFoundError(f'No shot file at {h5_path}')
+        # Whether /results and self.group exist in the file. They are created by
+        # the first open for writing, rather than here, so that a Run which
+        # never writes never opens the file:
+        self.__result_groups_ensured = False
+
         # The group where this run's results will be stored in the h5 file will be the
         # name of the python script which is instantiating this Run object. If the user
         # is running interactively or in an unusual environment such that the __main__
@@ -392,6 +409,8 @@ class Run(object):
         with h5py.File(self.h5_path, mode) as f:
             self.__h5_file = f
             try:
+                if mode != 'r' and not self.__result_groups_ensured:
+                    self._ensure_result_groups()
                 yield self
             finally:
                 self.__h5_file = None
@@ -417,43 +436,36 @@ class Run(object):
     def group(self, value):
         self.set_group(value)
 
-    def _create_group_if_not_exists(self, h5_path, location, groupname):
-        """Creates a group in the HDF5 file at `location` if it does not exist.
-        
-        Only opens the h5 file in write mode if a group must be created.
-        This ensures the last modified time of the file is only updated if
-        the file is actually written to."""
-        create_group = False
-        with h5py.File(h5_path, 'r') as h5_file:
-            if groupname not in h5_file[location]:
-                create_group = True
-        if create_group:
-            if self.no_write:
-                msg = "Cannot create group; this run is read-only."
-                raise PermissionError(msg)
-            with h5py.File(h5_path, 'r+') as h5_file:
-                # Catch the ValueError raised if the group was created by
-                # something else between the check above and now. 
-                try:
-                    h5_file[location].create_group(groupname)
-                except ValueError:
-                    pass
+    def _ensure_result_groups(self):
+        """Create /results, and `self.group` in it, in the file while it is open
+        for writing."""
+        results = self.h5_file.require_group('results')
+        if self.group is not None:
+            results.require_group(self.group)
+        self.__result_groups_ensured = True
+
+    def _open_to_write(self, save_to_h5):
+        """Open the file for writing if save_to_h5, and otherwise not at all,
+        so that a save kept out of the file takes no file lock."""
+        return self.open('r+') if save_to_h5 else contextlib.nullcontext()
 
     def set_group(self, groupname):
         """Set the default hdf5 file group for saving results.
 
         The `save...()` methods will save their results to `self.group` if an
         explicit value for their optional `group` argument is not given. This
-        method updates `self.group`, making sure to create the group in the hdf5
-        file if it does not already exist.
+        method updates `self.group`. The group is created in the hdf5 file when
+        it is first written to.
 
         Args:
             groupname (str): The name of the hdf5 file group in which to save
                 results by default. The group will be created in the
                 `'/results'` group of the hdf5 file.
         """
-        self._create_group_if_not_exists(self.h5_path, '/results', groupname)
         self.__group = groupname
+        self.__result_groups_ensured = False
+        if self.h5_file is not None and self.h5_file.mode != 'r':
+            self._ensure_result_groups()
 
     @open_file('r')
     def trace_names(self):
@@ -484,7 +496,11 @@ class Run(object):
             dict: Dictionary of attributes.
         """
         if group not in self.h5_file:
-            raise Exception('The group \'%s\' does not exist'%group)
+            # /results and this run's default group are created when first
+            # written to, and until then are empty rather than absent:
+            if not self.no_write and group.strip('/') in ('results', f'results/{self.group}'):
+                return {}
+            raise Exception(f"The group '{group}' does not exist")
         return get_attributes(self.h5_file[group])
 
     @open_file('r')
@@ -566,7 +582,7 @@ class Run(object):
         Returns:
             :obj:`numpy:numpy.ndarray`: Numpy array of the saved data.
         """
-        if group not in self.h5_file['results']:
+        if 'results' not in self.h5_file or group not in self.h5_file['results']:
             raise Exception('The result group \'%s\' does not exist'%group)
         if name not in self.h5_file['results'][group]:
             raise Exception('The result array \'%s\' does not exist'%name)
@@ -588,7 +604,7 @@ class Run(object):
             : Result with appropriate type, as determined by 
             :obj:`labscript-utils:labscript_utils.properties.get_attribute`.
         """
-        if group not in self.h5_file['results']:
+        if 'results' not in self.h5_file or group not in self.h5_file['results']:
             raise Exception('The result group \'%s\' does not exist'%group)
         if name not in self.h5_file['results'][group].attrs.keys():
             raise Exception('The result \'%s\' does not exist'%name)
@@ -614,8 +630,7 @@ class Run(object):
             results.append(self.get_result(group,name))
         return results
 
-    @open_file('r+')            
-    def save_result(self, name, value, group=None, overwrite=True):
+    def save_result(self, name, value, group=None, overwrite=True, save_to_h5=True):
         """Save a result to the hdf5 file.
 
         With the default argument values this method saves to `self.group` in
@@ -644,6 +659,11 @@ class Run(object):
                 previous value if the attribute already exists. If set to
                 `False` and the attribute already exists, a `PermissionError` is
                 raised. Defaults to `True`.
+            save_to_h5 (bool, optional): Whether to write the result to the
+                hdf5 file. If `False`, it only updates the shot's row in lyse's
+                dataframe and the file is not opened, so `overwrite` and
+                `no_write` do not apply; outside lyse it is saved nowhere.
+                Defaults to `True`.
 
         Raises:
             PermissionError: A `PermissionError` is raised if `self.no_write` is
@@ -657,27 +677,31 @@ class Run(object):
         # lazy import here so they get updated values from analysis subprocess
         from lyse.utils.worker import spinning_top, _updated_data
 
-        if not group:
-            if self.group is None:
-                msg = """Cannot save result; no default group set. Either
-                    specify a value for this method's optional group
-                    argument, or set a default value using the set_group()
-                    method."""
+        with self._open_to_write(save_to_h5):
+            if not group:
+                if self.group is None:
+                    msg = """Cannot save result; no default group set. Either
+                        specify a value for this method's optional group
+                        argument, or set a default value using the set_group()
+                        method."""
+                    raise ValueError(dedent(msg))
+                # Save to analysis results group by default
+                group = 'results/' + self.group
+            elif save_to_h5 and group not in self.h5_file:
+                # Create the group if it doesn't exist
+                self.h5_file.create_group(group) 
+            if not save_to_h5 and not group.startswith('results'):
+                msg = f"""Cannot save result to group '{group}' with
+                    save_to_h5=False; only results in the 'results' group reach
+                    lyse's dataframe."""
                 raise ValueError(dedent(msg))
-            # Save to analysis results group by default
-            group = 'results/' + self.group
-        elif group not in self.h5_file:
-            # Create the group if it doesn't exist
-            self.h5_file.create_group(group) 
-        if name in self.h5_file[group].attrs and not overwrite:
-            msg = """Cannot save result; group '{group}' already has
-                attribute '{name}' and overwrite is set to False. Set
-                overwrite=True to overwrite the existing value.""".format(
-                    group=group,
-                    name=name,
-                )
-            raise PermissionError(dedent(msg))
-        set_attributes(self.h5_file[group], {name: value})
+            if save_to_h5:
+                if name in self.h5_file[group].attrs and not overwrite:
+                    msg = f"""Cannot save result; group '{group}' already has
+                        attribute '{name}' and overwrite is set to False. Set
+                        overwrite=True to overwrite the existing value."""
+                    raise PermissionError(dedent(msg))
+                set_attributes(self.h5_file[group], {name: value})
         
         if spinning_top:
             if self.h5_path not in _updated_data:
@@ -795,7 +819,6 @@ class Run(object):
             results.append(self.get_result_array(group, name))
         return results
 
-    @open_file('r+')        
     def save_results(self, *args, **kwargs):
         """Save multiple results to the hdf5 file.
 
@@ -825,10 +848,10 @@ class Run(object):
         """
         names = args[::2]
         values = args[1::2]
-        for name, value in zip(names, values):
-            self.save_result(name, value, **kwargs)
+        with self._open_to_write(kwargs.get('save_to_h5', True)):
+            for name, value in zip(names, values):
+                self.save_result(name, value, **kwargs)
 
-    @open_file('r+')            
     def save_results_dict(self, results_dict, uncertainties=False, **kwargs):
         """Save results dictionary.
 
@@ -843,12 +866,13 @@ class Run(object):
             uncertainties (bool, optional): Marks if uncertainties are provided.
             **kwargs: Extra arguments provided to :obj:`save_result`.
         """
-        for name, value in results_dict.items():
-            if not uncertainties:
-                self.save_result(name, value, **kwargs)
-            else:
-                self.save_result(name, value[0], **kwargs)
-                self.save_result('u_' + name, value[1], **kwargs)
+        with self._open_to_write(kwargs.get('save_to_h5', True)):
+            for name, value in results_dict.items():
+                if not uncertainties:
+                    self.save_result(name, value, **kwargs)
+                else:
+                    self.save_result(name, value[0], **kwargs)
+                    self.save_result('u_' + name, value[1], **kwargs)
 
     @open_file('r+')
     def save_result_arrays(self, *args, **kwargs):

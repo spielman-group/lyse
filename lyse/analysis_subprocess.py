@@ -168,11 +168,8 @@ class PlotWindow(QtWidgets.QWidget):
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
 
     def changeEvent(self, event):
-        # PaletteChange, not ApplicationPaletteChange: QWidget.event() does not
-        # route the application-wide event to changeEvent, so a widget asking
-        # for it never hears about a theme switch. Qt re-sends the per-widget
-        # PaletteChange when the application palette changes, which is what
-        # arrives here.
+        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
+        # never passes ApplicationPaletteChange on to it.
         if (event.type() == QtCore.QEvent.Type.PaletteChange
                 or event.type() == QtCore.QEvent.Type.StyleChange):
             for widget in self.findChildren(QtWidgets.QWidget):
@@ -393,8 +390,8 @@ class AnalysisWorker(object):
                     self.close_plots()
                     inmain(qapplication.quit)
                 elif task == 'analyse':
-                    path = data
-                    success = self.do_analysis(path)
+                    path, paths = data
+                    success = self.do_analysis(path, paths)
                     if success:
                         if lyse.utils.worker._delay_flag:
                             lyse.utils.worker.delay_event.wait()
@@ -412,7 +409,7 @@ class AnalysisWorker(object):
             QtCore.QCoreApplication.instance().postEvent(plot.ui, event)
         
     @inmain_decorator()
-    def do_analysis(self, path):
+    def do_analysis(self, path, paths):
         now = time.strftime('[%x %X]')
         if path is not None:
             print('%s %s %s ' %(now, os.path.basename(self.filepath), os.path.basename(path)))
@@ -427,6 +424,7 @@ class AnalysisWorker(object):
 
         # global variables used to communicate between analysis processes and GUI functions
         lyse.utils.worker.path = path
+        lyse.utils.worker.paths = paths
         lyse.utils.worker.plots = self.plots
         lyse.utils.worker.Plot = Plot
         lyse.utils.worker._updated_data = {}

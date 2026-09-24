@@ -1,23 +1,27 @@
-"""Choosing the most recent sequences for ``lyse.data(n_sequences=N)``.
-
-``WebServer._extract_n_sequences_from_df`` keeps the rows of the N most recent
-sequences, one sequence per call to engage in runmanager. Most recent means most
-recently engaged, which is not the same as most recently loaded: last week's
-files dragged into lyse after today's run are older, not newer.
-
-The frames here are built the way lyse builds its own. Each shot's row comes
-from the nested dict lyse reads out of a shot file, flattened and padded to a
-common column depth, and the rows are concatenated onto the FileBox's empty
-frame. The request handler then gives the frame its row index before asking for
-the sequences, and so do these tests. That index is sorted, so the order the
-rows arrive in depends on lyse's ``integer_indexing`` setting -- by engage time
-without it, by ``sequence_index`` with it -- and every test runs under both.
-"""
+#####################################################################
+#                                                                   #
+# /tests/test_communication.py                                      #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
+"""lyse.data(n_sequences=N) returns the N most recently engaged sequences, and
+lyse.data(where={column: value}) the rows whose columns match."""
+import logging
+import types
 import unittest
 from unittest import mock
 
+import numpy
 import pandas
 
+import lyse
 from lyse import dataframe_utilities
 from lyse.communication import WebServer
 from lyse.dataframe_utilities import (
@@ -25,110 +29,99 @@ from lyse.dataframe_utilities import (
     concat_with_padding,
     flat_dict_to_hierarchical_dataframe,
     flatten_dict,
-    rangeindex_to_multiindex,
 )
 
-LAST_WEEK = '20260916T101500'
-EARLIER_TODAY = '20260923T091500'
-TODAY = '20260923T101500'
 
-
-def a_sequence(engaged, sequence_index, labscript='experiment.py'):
+def a_sequence(engaged, sequence_index):
     """The rows lyse makes for the two shots of one engage."""
-    shots = []
-    for run_number in range(2):
-        shot = {
-            'detuning': 1.5,
-            'fit': {'amplitude': 0.3},
-            'side': {'absorption': {'OD': {'exposure': 0.1}}},
-            'filepath': f'{labscript}/{engaged}_{sequence_index}/{run_number}.h5',
+    return [
+        flat_dict_to_hierarchical_dataframe(flatten_dict({
+            'filepath': f'{engaged}_{sequence_index}/{run_number}.h5',
             'sequence': asdatetime(engaged),
             'sequence_index': sequence_index,
-            'labscript': labscript,
+            'labscript': 'experiment.py',
             'run time': asdatetime(engaged) + pandas.Timedelta(seconds=run_number + 1),
             'run number': run_number,
             'run repeat': 0,
-            'n_runs': 2,
-        }
-        shots.append(flat_dict_to_hierarchical_dataframe(flatten_dict(shot)))
-    return shots
+            'fit': {'atoms': 100 + run_number},
+        }))
+        for run_number in range(2)
+    ]
 
 
-def filepaths(*sequences):
-    return [shot['filepath'].iloc[0] for sequence in sequences for shot in sequence]
+def a_server(df):
+    """The lyse server, holding df, without the port its constructor binds."""
+    server = object.__new__(WebServer)
+    server.app = types.SimpleNamespace(
+        logger=logging.getLogger('test'),
+        filebox=types.SimpleNamespace(shots_model=types.SimpleNamespace(dataframe=df)),
+    )
+    return server
 
 
 class MostRecentSequencesTests(unittest.TestCase):
-    integer_indexing = False
 
-    def dataframe(self, *sequences):
-        """The frame the request handler holds once these sequences are loaded
-        into lyse, in the order given."""
-        index = pandas.MultiIndex.from_tuples([('filepath', '')])
-        df = pandas.DataFrame({'filepath': []}, columns=index)
-        shots = [shot for sequence in sequences for shot in sequence]
-        if shots:
-            df = concat_with_padding(df, *shots)
-        with mock.patch.object(
-            dataframe_utilities.LABCONFIG, 'getboolean', return_value=self.integer_indexing
-        ):
-            return rangeindex_to_multiindex(df, inplace=True)
-
-    def most_recent(self, n_sequences, *sequences):
-        df = self.dataframe(*sequences)
-        # The method uses nothing of the server, whose constructor binds a port.
-        result = WebServer._extract_n_sequences_from_df(None, df, n_sequences)
-        return list(result['filepath'])
-
-    def test_engages_in_the_same_second_are_ordered_by_sequence_index(self):
-        ninth = a_sequence(TODAY, 9)
-        tenth = a_sequence(TODAY, 10)
-        self.assertEqual(self.most_recent(1, ninth, tenth), filepaths(tenth))
-
-    def test_files_loaded_after_todays_run_are_older(self):
-        today = a_sequence(TODAY, 0)
-        last_week = a_sequence(LAST_WEEK, 3)
-        self.assertEqual(self.most_recent(1, today, last_week), filepaths(today))
-
-    def test_two_most_recent_sequences_come_in_engage_order(self):
-        earlier_today = a_sequence(EARLIER_TODAY, 0)
-        today = a_sequence(TODAY, 1)
-        last_week = a_sequence(LAST_WEEK, 3)
-        self.assertEqual(
-            self.most_recent(2, today, earlier_today, last_week),
-            filepaths(earlier_today, today),
-        )
-
-    def test_shots_without_a_sequence_index_are_one_sequence_ordered_by_engage_time(self):
-        today = a_sequence(TODAY, 0)
-        last_week = a_sequence(LAST_WEEK, None)
-        self.assertEqual(self.most_recent(1, today, last_week), filepaths(today))
-        self.assertCountEqual(self.most_recent(2, today, last_week), filepaths(last_week, today))
-
-    def test_a_missing_sequence_index_sorts_before_one_engaged_in_the_same_second(self):
-        indexed = a_sequence(TODAY, 0)
-        unindexed = a_sequence(TODAY, None)
-        self.assertEqual(self.most_recent(1, indexed, unindexed), filepaths(indexed))
-
-    def test_labscripts_sharing_a_sequence_index_in_the_same_second_are_two_sequences(self):
-        first = a_sequence(TODAY, 0, labscript='a.py')
-        second = a_sequence(TODAY, 0, labscript='b.py')
-        for loaded, label in [((first, second), 'a.py first'), ((second, first), 'b.py first')]:
-            with self.subTest(label):
-                self.assertEqual(self.most_recent(1, *loaded), filepaths(second))
-                self.assertCountEqual(self.most_recent(2, *loaded), filepaths(first, second))
-
-    def test_an_empty_dataframe_is_returned_as_it_is(self):
-        df = self.dataframe()
-        self.assertIs(WebServer._extract_n_sequences_from_df(None, df, 1), df)
-
-    def test_zero_sequences_is_no_rows(self):
-        self.assertEqual(self.most_recent(0, a_sequence(TODAY, 0)), [])
+    def test_the_most_recently_engaged_sequences_are_returned(self):
+        today_9 = a_sequence('20260923T101500', 9)
+        today_10 = a_sequence('20260923T101500', 10)
+        # Loaded after today's run, and with a higher sequence_index:
+        last_week = a_sequence('20260916T101500', 30)
+        # From before shots had a sequence_index:
+        last_year = a_sequence('20250916T101500', None)
+        df = concat_with_padding(*today_10, *today_9, *last_week, *last_year)
+        server = a_server(df)
+        # lyse's integer_indexing setting decides the order it holds rows in,
+        # which the answer must not depend on:
+        for integer_indexing in (False, True):
+            with self.subTest(integer_indexing=integer_indexing), mock.patch.object(
+                dataframe_utilities.LABCONFIG, 'getboolean', return_value=integer_indexing
+            ), mock.patch.object(lyse, 'zmq_get', lambda port, host, command, timeout:
+                                 server.handler(command)):
+                self.assertCountEqual(
+                    lyse.data(n_sequences=1)['filepath'],
+                    [shot['filepath'].iloc[0] for shot in today_10])
+                self.assertCountEqual(
+                    lyse.data(n_sequences=2)['filepath'],
+                    [shot['filepath'].iloc[0] for shot in today_9 + today_10])
 
 
-class MostRecentSequencesUnderIntegerIndexingTests(MostRecentSequencesTests):
-    """The same, with the rows arriving sorted by sequence_index."""
-    integer_indexing = True
+class WhereTests(unittest.TestCase):
+
+    def setUp(self):
+        self.older = a_sequence('20260923T091500', 0)
+        self.newer = a_sequence('20260923T101500', 1)
+        self.server = a_server(concat_with_padding(*self.older, *self.newer))
+
+    def data(self, **kwargs):
+        with mock.patch.object(dataframe_utilities.LABCONFIG, 'getboolean', return_value=False), \
+             mock.patch.object(lyse, 'zmq_get', lambda port, host, command, timeout:
+                               self.server.handler(command)):
+            return lyse.data(**kwargs)
+
+    def test_rows_are_chosen_by_a_list_of_filepaths(self):
+        wanted = [self.older[1]['filepath'].iloc[0], self.newer[0]['filepath'].iloc[0]]
+        for kind in (list, numpy.array, frozenset):
+            with self.subTest(kind.__name__):
+                self.assertCountEqual(self.data(where={'filepath': kind(wanted)})['filepath'], wanted)
+
+    def test_rows_are_chosen_by_equality_on_a_nested_column(self):
+        rows = self.data(where={('fit', 'atoms'): 101})
+        self.assertCountEqual(rows['filepath'],
+                              [self.older[1]['filepath'].iloc[0], self.newer[1]['filepath'].iloc[0]])
+
+    def test_a_column_not_in_the_dataframe_is_refused_by_name(self):
+        with self.assertRaisesRegex(KeyError, 'no_such_column'):
+            self.data(where={'no_such_column': 1})
+
+    def test_rows_are_chosen_after_n_sequences(self):
+        """A row of an older sequence is not among the most recent one's."""
+        older_shot = self.older[0]['filepath'].iloc[0]
+        self.assertEqual(len(self.data(n_sequences=1, where={'filepath': older_shot})), 0)
+
+    def test_a_request_with_something_else_in_that_place_is_refused(self):
+        """A client still passing n_shots sends an integer there."""
+        reply = self.server.handler(('get dataframe', None, None, 1))
+        self.assertTrue(reply.startswith('error: operation not supported'))
 
 
 if __name__ == '__main__':

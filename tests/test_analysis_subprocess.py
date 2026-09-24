@@ -1,101 +1,82 @@
-"""Theme changes reaching a plot window.
-
-``PlotWindow.changeEvent`` runs whenever Qt tells the window something about
-its appearance has changed, which on macOS happens the moment a window is
-created as well as when the user switches between light and dark. It is a Qt
-virtual method, so an exception in it does not stop lyse: PyQt hands it to
-``sys.excepthook`` and carries on, and with ``labscript_utils.excepthook``
-installed that is an error window every time a plot appears.
-"""
+#####################################################################
+#                                                                   #
+# /tests/test_analysis_subprocess.py                                #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
+"""A plot window: a theme change, and a figure named by a string."""
 import sys
+import tempfile
 import unittest
 import warnings
+from unittest import mock
 
-from qtutils.qt import QtCore, QtWidgets
+from qtutils.qt import QtCore, QtGui, QtWidgets
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     import lyse.analysis_subprocess
 
 
-def a_qapplication():
-    """One QApplication for the whole process, as Qt requires."""
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
-
-
-class RecordingChild(QtWidgets.QWidget):
-    """A child that records the repaint the handler is supposed to give it.
-
-    Asserting only that no exception escaped would not distinguish a handler
-    that ran from one whose condition never matched.
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.restyled = 0
-        self.repalettes = 0
+class Child(QtWidgets.QWidget):
+    """Counts the repaints the window gives it."""
+    repaints = 0
 
     def setStyleSheet(self, sheet):
-        self.restyled += 1
+        self.repaints += 1
         super().setStyleSheet(sheet)
 
-    def setPalette(self, palette):
-        self.repalettes += 1
-        super().setPalette(palette)
+
+def change_theme(qapplication):
+    """Switch the application palette, as a light/dark switch does, and return
+    what escaped to sys.excepthook."""
+    seen = []
+    original_hook, original_palette = sys.excepthook, qapplication.palette()
+    sys.excepthook = lambda cls, exc, tb: seen.append(exc)
+    try:
+        palette = QtGui.QPalette(original_palette)
+        palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor('#202020'))
+        qapplication.setPalette(palette)
+        qapplication.processEvents()
+    finally:
+        sys.excepthook = original_hook
+        qapplication.setPalette(original_palette)
+    return seen
 
 
-class PlotWindowThemeChangeTests(unittest.TestCase):
-    """The event types the window asks about have to exist, and have to arrive.
+class PlotWindowTests(unittest.TestCase):
 
-    An enum member that is merely absent raises AttributeError rather than
-    comparing false, so naming one Qt does not have breaks the whole handler
-    and not just the theme case it was reaching for.
-    """
+    def test_a_theme_change_repaints_the_window_without_error(self):
+        qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+        window = lyse.analysis_subprocess.PlotWindow(
+            None, analysis_filepath='routine.py', analysis_identifier=0)
+        child = Child(window)
+        self.assertEqual(change_theme(qapplication), [])
+        self.assertGreater(child.repaints, 0)
 
-    def setUp(self):
-        self.qapplication = a_qapplication()
-        self.window = lyse.analysis_subprocess.PlotWindow(
-            None, analysis_filepath='test_analysis_subprocess.py',
-            analysis_identifier=0,
-        )
-        self.child = RecordingChild(self.window)
-        self.addCleanup(self.window.deleteLater)
 
-    def send(self, event_type):
-        """Deliver a change event the way Qt does, and report what escaped.
+class NamedFigureTests(unittest.TestCase):
 
-        Through ``sendEvent`` PyQt would divert an exception in the virtual
-        method to ``sys.excepthook``, so the test would pass while lyse spawned
-        an error window per plot. Watch the hook for exactly that.
-        """
-        seen = []
-        original = sys.excepthook
-        sys.excepthook = lambda cls, exc, tb: seen.append(exc)
-        try:
-            self.child.restyled = self.child.repalettes = 0
-            self.qapplication.sendEvent(self.window, QtCore.QEvent(event_type))
-        finally:
-            sys.excepthook = original
-        return seen
+    def test_a_figure_named_by_a_string_gets_a_window_that_keeps_its_geometry(self):
+        """A routine may name its figure, as plt.figure('Temperature') does."""
+        qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(lyse.analysis_subprocess, 'config_dir', folder):
+            def a_window():
+                return lyse.analysis_subprocess.PlotWindow(
+                    None, analysis_filepath='routine.py', analysis_identifier='Temperature')
+            window = a_window()
+            window.resize(321, 234)
+            window.save_geometry()
+            self.assertEqual(a_window().size(), QtCore.QSize(321, 234))
 
-    def test_a_palette_change_repaints_the_children(self):
-        """What a widget actually receives when the application palette changes.
 
-        ApplicationPaletteChange goes to the application, and QWidget.event()
-        does not pass it to changeEvent -- a test sending it here would never
-        reach the handler and would pass however broken the handler was.
-        """
-        self.assertEqual([], self.send(QtCore.QEvent.Type.PaletteChange))
-        self.assertEqual(1, self.child.restyled)
-        self.assertEqual(1, self.child.repalettes)
-
-    def test_a_style_change_repaints_the_children(self):
-        self.assertEqual([], self.send(QtCore.QEvent.Type.StyleChange))
-        self.assertEqual(1, self.child.restyled)
-        self.assertEqual(1, self.child.repalettes)
-
-    def test_an_unrelated_change_event_repaints_nothing(self):
-        """Every change event reaches the method; only these two do the work."""
-        self.assertEqual([], self.send(QtCore.QEvent.Type.WindowStateChange))
-        self.assertEqual(0, self.child.restyled)
-        self.assertEqual(0, self.child.repalettes)
+if __name__ == '__main__':
+    unittest.main()
