@@ -610,8 +610,7 @@ class Run(object):
             results.append(self.get_result(group,name))
         return results
 
-    @open_file('r+')            
-    def save_result(self, name, value, group=None, overwrite=True):
+    def save_result(self, name, value, group=None, overwrite=True, save_to_h5=True):
         """Save a result to the hdf5 file.
 
         With the default argument values this method saves to `self.group` in
@@ -640,6 +639,11 @@ class Run(object):
                 previous value if the attribute already exists. If set to
                 `False` and the attribute already exists, a `PermissionError` is
                 raised. Defaults to `True`.
+            save_to_h5 (bool, optional): Whether to write the result to the
+                hdf5 file. If `False`, it only updates the shot's row in lyse's
+                dataframe and the file is not opened, so `overwrite` and
+                `no_write` do not apply; outside lyse it is saved nowhere.
+                Defaults to `True`.
 
         Raises:
             PermissionError: A `PermissionError` is raised if `self.no_write` is
@@ -653,27 +657,30 @@ class Run(object):
         # lazy import here so they get updated values from analysis subprocess
         from lyse.utils.worker import spinning_top, _updated_data
 
-        if not group:
-            if self.group is None:
-                msg = """Cannot save result; no default group set. Either
-                    specify a value for this method's optional group
-                    argument, or set a default value using the set_group()
-                    method."""
-                raise ValueError(dedent(msg))
-            # Save to analysis results group by default
-            group = 'results/' + self.group
-        elif group not in self.h5_file:
-            # Create the group if it doesn't exist
-            self.h5_file.create_group(group) 
-        if name in self.h5_file[group].attrs and not overwrite:
-            msg = """Cannot save result; group '{group}' already has
-                attribute '{name}' and overwrite is set to False. Set
-                overwrite=True to overwrite the existing value.""".format(
-                    group=group,
-                    name=name,
-                )
-            raise PermissionError(dedent(msg))
-        set_attributes(self.h5_file[group], {name: value})
+        # The file is opened, and so locked, only if the result is written to it:
+        with self.open('r+') if save_to_h5 else contextlib.nullcontext():
+            if not group:
+                if self.group is None:
+                    msg = """Cannot save result; no default group set. Either
+                        specify a value for this method's optional group
+                        argument, or set a default value using the set_group()
+                        method."""
+                    raise ValueError(dedent(msg))
+                # Save to analysis results group by default
+                group = 'results/' + self.group
+            elif save_to_h5 and group not in self.h5_file:
+                # Create the group if it doesn't exist
+                self.h5_file.create_group(group) 
+            if save_to_h5:
+                if name in self.h5_file[group].attrs and not overwrite:
+                    msg = """Cannot save result; group '{group}' already has
+                        attribute '{name}' and overwrite is set to False. Set
+                        overwrite=True to overwrite the existing value.""".format(
+                            group=group,
+                            name=name,
+                        )
+                    raise PermissionError(dedent(msg))
+                set_attributes(self.h5_file[group], {name: value})
         
         if spinning_top:
             if self.h5_path not in _updated_data:
