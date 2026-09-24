@@ -112,11 +112,8 @@ class LyseMainWindow(QtWidgets.QMainWindow):
     
     def changeEvent(self, event):
         
-        # PaletteChange, not ApplicationPaletteChange: QWidget.event() does not
-        # route the application-wide event to changeEvent, so a window asking
-        # for it never hears about a theme switch. Qt re-sends the per-widget
-        # PaletteChange when the application palette changes, which is what
-        # arrives here.
+        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
+        # never passes ApplicationPaletteChange on to it.
         if (event.type() == QtCore.QEvent.Type.PaletteChange
                 or event.type() == QtCore.QEvent.Type.StyleChange):
 
@@ -479,10 +476,9 @@ class Lyse(LabscriptApplication):
                     save_path = os.path.dirname(sequence_df['filepath'].iloc[0])
                 for col in sequence_df.columns :
                     if sequence_df[col].dtype == object:
-                        # Convert a column only if every value is numeric, and
-                        # leave the rest as they are: image attributes arrive
-                        # as bytes (ValueError), and array-valued results
-                        # cannot be converted at all (TypeError).
+                        # Convert only all-numeric columns: image attributes
+                        # arrive as bytes (ValueError), and array-valued
+                        # results cannot be converted at all (TypeError).
                         try:
                             sequence_df[col] = pandas.to_numeric(sequence_df[col])
                         except (ValueError, TypeError):

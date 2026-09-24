@@ -1,3 +1,16 @@
+#####################################################################
+#                                                                   #
+# /tests/test_communication.py                                      #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
 """lyse.data(n_sequences=N) returns the N most recently engaged sequences, and
 lyse.data(where={column: value}) the rows whose columns match.
 

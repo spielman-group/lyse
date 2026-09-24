@@ -183,18 +183,18 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
     else:
         if n_sequences is not None:
             if not (type(n_sequences) is int and n_sequences >= 0):
-                msg = """n_sequences must be None or an integer greater than 0 but 
-                    was {n_sequences}.""".format(n_sequences=n_sequences)
+                msg = f"""n_sequences must be None or an integer greater than 0 but 
+                    was {n_sequences}."""
                 raise ValueError(dedent(msg))
         if filter_kwargs is not None:
             if type(filter_kwargs) is not dict:
-                msg = """filter must be None or a dictionary but was 
-                    {filter_kwargs}.""".format(filter_kwargs=filter_kwargs)
+                msg = f"""filter must be None or a dictionary but was 
+                    {filter_kwargs}."""
                 raise ValueError(dedent(msg))
         if where is not None:
             if type(where) is not dict:
-                msg = """where must be None or a dictionary but was
-                    {where}.""".format(where=where)
+                msg = f"""where must be None or a dictionary but was
+                    {where}."""
                 raise ValueError(dedent(msg))
 
         # Allow sending 'get dataframe' (without the enclosing list) if
@@ -500,7 +500,7 @@ class Run(object):
             # written to, and until then are empty rather than absent:
             if not self.no_write and group.strip('/') in ('results', f'results/{self.group}'):
                 return {}
-            raise Exception('The group \'%s\' does not exist'%group)
+            raise Exception(f"The group '{group}' does not exist")
         return get_attributes(self.h5_file[group])
 
     @open_file('r')
@@ -691,18 +691,15 @@ class Run(object):
                 # Create the group if it doesn't exist
                 self.h5_file.create_group(group) 
             if not save_to_h5 and not group.startswith('results'):
-                msg = """Cannot save result to group '{group}' with
+                msg = f"""Cannot save result to group '{group}' with
                     save_to_h5=False; only results in the 'results' group reach
-                    lyse's dataframe.""".format(group=group)
+                    lyse's dataframe."""
                 raise ValueError(dedent(msg))
             if save_to_h5:
                 if name in self.h5_file[group].attrs and not overwrite:
-                    msg = """Cannot save result; group '{group}' already has
+                    msg = f"""Cannot save result; group '{group}' already has
                         attribute '{name}' and overwrite is set to False. Set
-                        overwrite=True to overwrite the existing value.""".format(
-                            group=group,
-                            name=name,
-                        )
+                        overwrite=True to overwrite the existing value."""
                     raise PermissionError(dedent(msg))
                 set_attributes(self.h5_file[group], {name: value})
         

@@ -97,7 +97,7 @@ class WebServer(ZMQServer):
             column = (key,) if isinstance(key, str) else tuple(key)
             column += ('',) * (df.columns.nlevels - len(column))
             if column not in df.columns:
-                return 'error: no column {!r} in the lyse dataframe'.format(key)
+                return f'error: no column {key!r} in the lyse dataframe'
             if pandas.api.types.is_list_like(value):
                 df = df[df[column].isin(value)]
             else:
@@ -123,14 +123,9 @@ class WebServer(ZMQServer):
         # engage() is called twice quickly then two different sequences can end
         # up with the same value there.
         #
-        # The tuples are ordered so that sorting them puts the sequences in the
-        # order engage was called: by 'sequence' first, then by 'sequence_index'
-        # as an integer to order engages within the same second, then by
-        # 'labscript' so that two labscripts sharing a 'sequence_index' in the
-        # same second still sort the same way every time. The order of the rows
-        # plays no part, so shots loaded after newer ones do not count as more
-        # recent. A shot without a 'sequence_index' is given -1, so that it
-        # sorts before any sequence engaged in the same second that has one.
+        # Sorting the tuples orders sequences by 'sequence', then within one
+        # second by 'sequence_index' as an integer, then by 'labscript' to
+        # break ties; the order of the rows plays no part.
         identities = [
             (sequence, -1 if pandas.isna(index) else int(index), str(labscript))
             for sequence, index, labscript

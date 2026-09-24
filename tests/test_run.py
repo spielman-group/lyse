@@ -1,3 +1,16 @@
+#####################################################################
+#                                                                   #
+# /tests/test_run.py                                                #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
 """Run: saving results to the shot file and to the shot's row in lyse's
 dataframe, opening the file, and so taking its lock, only to write to it."""
 import contextlib

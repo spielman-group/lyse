@@ -444,7 +444,7 @@ class DataFrameModel(QtCore.QObject):
         status_item.setData(100, self.ROLE_STATUS_PERCENT)
         status_item.setToolTip("Shot has been deleted off disk or is unreadable")
         status_item.setIcon(QtGui.QIcon(':qtutils/fugue/drive--minus'))
-        self.app.output_box.output('Warning: Shot deleted from disk or no longer readable %s\n' % filepath, red=True)
+        self.app.output_box.output(f'Warning: Shot deleted from disk or no longer readable {filepath}\n', red=True)
 
     @inmain_decorator()
     def update_row(self, filepath, dataframe_already_updated=False, updated_row_data=None):
@@ -460,7 +460,7 @@ class DataFrameModel(QtCore.QObject):
             # a result not saved to the shot file is kept nowhere else:
             if updated_row_data:
                 self.app.output_box.output(
-                    'Warning: results not recorded for %s, which has no row\n' % filepath, red=True)
+                    f'Warning: results not recorded for {filepath}, which has no row\n', red=True)
             return
 
         # To speed things up block signals to the model during update

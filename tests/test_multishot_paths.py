@@ -1,3 +1,16 @@
+#####################################################################
+#                                                                   #
+# /tests/test_multishot_paths.py                                    #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
 """lyse.paths: the shot files a multishot routine is run for.
 
 Each test runs the real chain -- filebox, routine box, routine, worker -- with

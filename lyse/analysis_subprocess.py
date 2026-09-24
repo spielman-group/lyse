@@ -168,11 +168,8 @@ class PlotWindow(QtWidgets.QWidget):
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
 
     def changeEvent(self, event):
-        # PaletteChange, not ApplicationPaletteChange: QWidget.event() does not
-        # route the application-wide event to changeEvent, so a widget asking
-        # for it never hears about a theme switch. Qt re-sends the per-widget
-        # PaletteChange when the application palette changes, which is what
-        # arrives here.
+        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
+        # never passes ApplicationPaletteChange on to it.
         if (event.type() == QtCore.QEvent.Type.PaletteChange
                 or event.type() == QtCore.QEvent.Type.StyleChange):
             for widget in self.findChildren(QtWidgets.QWidget):

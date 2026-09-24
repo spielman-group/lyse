@@ -1,3 +1,16 @@
+#####################################################################
+#                                                                   #
+# /tests/test_main_window.py                                        #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
 """The lyse main window: a theme change, and saving the dataframe.
 
 ``lyse.__main__`` builds a ``Splash`` and calls ``.show()`` at module scope, so
@@ -57,12 +70,9 @@ def import_main_without_splash():
     fake.Splash = FakeSplash
     fake.get_qapplication = lambda *args, **kwargs: None
 
-    # Both halves are needed. `import labscript_utils.splash` is satisfied by
-    # sys.modules, but the `labscript_utils.splash.Splash(...)` that follows
-    # reads an attribute of the parent package, which the import system would
-    # normally have set. Without the setattr the real module is used whenever
-    # anything else has already imported it, and the stub silently does
-    # nothing.
+    # The fake goes in sys.modules and on the parent package: lyse.__main__'s
+    # import is satisfied by sys.modules, but `labscript_utils.splash.Splash`
+    # then reads the package attribute, the real module if already imported.
     import labscript_utils
 
     saved_module = sys.modules.get('labscript_utils.splash')
