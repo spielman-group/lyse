@@ -130,5 +130,42 @@ class LysePathsTests(unittest.TestCase):
         self.assertEqual(self.calls(multishot=False), [None])
 
 
+class Stop(BaseException):
+    """Ends the analysis loop, which carries on through any Exception."""
+
+
+class FailedPassTests(unittest.TestCase):
+
+    def test_a_failed_pass_is_not_run_again_until_analysis_resumes(self):
+        """A pass started during singleshot analysis, by the Run multishot
+        button, fails and pauses analysis; it runs again on resuming."""
+        waits = []
+
+        def wait():
+            waits.append(None)
+            if len(waits) > 1:
+                raise Stop
+
+        def singleshot(filepath):
+            box.multishot_required = True  # the button, pressed meanwhile
+
+        incomplete = ['1.h5']
+        box = types.SimpleNamespace(
+            analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None),
+            analysis_paused=False, multishot_required=False, analysed_since_multishot=[],
+            to_multishot=queue.Queue(), from_multishot=queue.Queue(),
+            pause_analysis=lambda: setattr(box, 'analysis_paused', True),
+            shots_model=types.SimpleNamespace(
+                get_first_incomplete=lambda: incomplete.pop() if incomplete else None),
+            do_singleshot_analysis=singleshot,
+        )
+        box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
+        for _ in range(2):
+            box.from_multishot.put(['error', None, {}])  # every pass fails
+        with self.assertRaises(Stop):
+            lyse.filebox.FileBox.analysis_loop(box)
+        self.assertEqual(box.to_multishot.qsize(), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

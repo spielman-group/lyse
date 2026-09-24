@@ -41,7 +41,7 @@ from qtutils.auto_scroll_to_end import set_auto_scroll_to_end
 import qtutils.icons
 
 # Lyse imports
-from lyse.dataframe_utilities import concat_with_padding, get_dataframe_from_shot, replace_with_padding
+from lyse.dataframe_utilities import concat_with_padding, get_dataframe_from_shot
 import lyse.utils
 import lyse.utils.gui
 import lyse.widgets
@@ -447,30 +447,24 @@ class DataFrameModel(QtCore.QObject):
         self.app.output_box.output('Warning: Shot deleted from disk or no longer readable %s\n' % filepath, red=True)
 
     @inmain_decorator()
-    def infer_objects(self):
-        """Convert columns in the dataframe with dtype 'object' into compatible, more
-        specific types, if possible. This improves pickling performance and ensures
-        multishot analysis code does not encounter columns with dtype 'object' for
-        non-mixed numerical data, which it might choke on.
-        """
-        self.dataframe = self.dataframe.infer_objects()
-
-    @inmain_decorator()
-    def update_row(self, filepath, dataframe_already_updated=False, new_row_data=None, updated_row_data=None):
+    def update_row(self, filepath, dataframe_already_updated=False, updated_row_data=None):
         """"Updates a row in the dataframe and Qt model to the data in the HDF5 file for
         that shot."""
-        # To speed things up block signals to the model during update
-        self._model.blockSignals(True)
-
-        # Update the row in the dataframe first:
-        if (new_row_data is None) == (updated_row_data is None) and not dataframe_already_updated:
-            raise ValueError('Exactly one of new_row_data or updated_row_data must be provided')
+        if updated_row_data is None and not dataframe_already_updated:
+            raise ValueError('updated_row_data must be provided unless dataframe_already_updated')
 
         try:
             row_number = self.row_number_by_filepath[filepath]
         except KeyError:
-            # Row has been deleted, nothing to do here:
+            # The row has been deleted, so its results cannot be recorded, and
+            # a result not saved to the shot file is kept nowhere else:
+            if updated_row_data:
+                self.app.output_box.output(
+                    'Warning: results not recorded for %s, which has no row\n' % filepath, red=True)
             return
+
+        # To speed things up block signals to the model during update
+        self._model.blockSignals(True)
 
         filepath_colname = ('filepath',) + ('',) * (self.nlevels - 1)
         assert filepath == self.dataframe.at[row_number, filepath_colname]
@@ -494,13 +488,6 @@ class DataFrameModel(QtCore.QObject):
                     self.dataframe.at[row_number, column_name] = value
 
             dataframe_already_updated = True
-
-        if not dataframe_already_updated:
-            if new_row_data is None:
-                raise ValueError("If dataframe_already_updated is False, then new_row_data, as returned "
-                                 "by dataframe_utils.get_dataframe_from_shot(filepath) must be provided.")
-            self.dataframe = replace_with_padding(self.dataframe, new_row_data, row_number)
-            self.update_column_levels()
 
         # Check and create necessary new columns in the Qt model:
         new_column_names = set(self.dataframe.columns) - set(self.column_names.values())
@@ -924,6 +911,7 @@ class FileBox(object):
                 self.analysis_pending.wait()
                 self.analysis_pending.clear()
                 at_least_one_shot_analysed = False
+                multishot_failed = False
                 while True:
                     if not self.analysis_paused:
                         # Find the first shot that has not finished being analysed:
@@ -938,11 +926,13 @@ class FileBox(object):
                             break
                         if self.multishot_required:
                             logger.info('doing multishot analysis')
-                            self.do_multishot_analysis()
+                            multishot_failed = not self.do_multishot_analysis()
                     else:
                         logger.info('analysis is paused')
                         break
-                if self.multishot_required:
+                # A pass that has just failed paused analysis, and runs again
+                # when analysis resumes rather than now:
+                if self.multishot_required and not multishot_failed:
                     logger.info('doing multishot analysis')
                     self.do_multishot_analysis()
             except Exception:
@@ -1008,10 +998,10 @@ class FileBox(object):
                 self.shots_model.update_row(file, updated_row_data=updated_data[file])
             if signal == 'done':
                 self.multishot_required = False
-                return
+                return True
             elif signal == 'error':
                 # Put them back, so that the next pass has them too:
                 self.analysed_since_multishot[:0] = paths
                 self.pause_analysis()
-                return
+                return False
             
