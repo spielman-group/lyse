@@ -36,13 +36,29 @@ class WebServer(ZMQServer):
         self.app.logger.info('WebServer request: %s' % str(request_data))
         if request_data == 'hello':
             return 'hello'
-        elif isinstance(request_data, tuple) and request_data[0]=='get dataframe' and len(request_data)==3:
-            _, n_sequences, filter_kwargs = request_data
+        elif (isinstance(request_data, tuple) and request_data[0]=='get dataframe'
+              and (len(request_data) == 3
+                   or len(request_data) == 4 and isinstance(request_data[3], dict))):
+            # A fourth element is `where`, a dict of {column: value} choosing
+            # rows. Anything else there is answered as unsupported, below,
+            # rather than misread.
+            _, n_sequences, filter_kwargs = request_data[:3]
+            where = request_data[3] if len(request_data) == 4 else None
             df = self._retrieve_dataframe()
             df = rangeindex_to_multiindex(df, inplace=True)
             # Return only a subset of the dataframe if instructed to do so.
             if n_sequences is not None:
                 df = self._extract_n_sequences_from_df(df, n_sequences)
+            for key, value in (where or {}).items():
+                # A string names a top-level column, a tuple a nested one:
+                column = (key,) if isinstance(key, str) else tuple(key)
+                column += ('',) * (df.columns.nlevels - len(column))
+                if column not in df.columns:
+                    return 'error: no column {!r} in the lyse dataframe'.format(key)
+                if isinstance(value, (list, tuple, set)):
+                    df = df[df[column].isin(value)]
+                else:
+                    df = df[df[column] == value]
             if filter_kwargs is not None:
                 df = df.filter(**filter_kwargs)
             return df

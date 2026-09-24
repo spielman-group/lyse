@@ -105,7 +105,7 @@ retained. An alternate method should be used to store data if desired in
 these cases."""
 
 
-def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None):
+def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None, where=None):
     """Get data from the lyse dataframe or a file.
     
     This function allows for either extracting information from a run's hdf5
@@ -156,6 +156,14 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             then `Dataframe.filter()` will not be called. See
             :meth:`pandas:pandas.DataFrame.filter` for more information.
             Defaults to `None`.
+        where (dict, optional): Rows to return, as `{column: value}`. A
+            column is named by a string if it is top-level, e.g. `'filepath'`,
+            or by a tuple if nested, e.g. `('routine', 'result')`. A value
+            that is a list, tuple or set matches any of its members; any other
+            value must be equal. A row is returned only if every column
+            matches. Applied after `n_sequences` and before `filter_kwargs`.
+            A column not in the dataframe raises a `KeyError`. Defaults to
+            `None`.
 
     Raises:
         ValueError: If `n_sequences` isn't `None` or a nonnegative integer, then
@@ -183,24 +191,33 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
                 msg = """filter must be None or a dictionary but was 
                     {filter_kwargs}.""".format(filter_kwargs=filter_kwargs)
                 raise ValueError(dedent(msg))
+        if where is not None:
+            if type(where) is not dict:
+                msg = """where must be None or a dictionary but was
+                    {where}.""".format(where=where)
+                raise ValueError(dedent(msg))
 
         # Allow sending 'get dataframe' (without the enclosing list) if
         # n_sequences and filter_kwargs aren't provided. This is for backwards
         # compatibility in case the server is running an outdated version of
         # lyse.
-        if n_sequences is None and filter_kwargs is None:
+        if n_sequences is None and filter_kwargs is None and where is None:
             command = 'get dataframe'
-        else:
+        elif where is None:
             command = ('get dataframe', n_sequences, filter_kwargs)
+        else:
+            command = ('get dataframe', n_sequences, filter_kwargs, where)
         df = zmq_get(port, host, command, timeout)
         if isinstance(df, str) and df.startswith('error: operation not supported'):
             # Sending a tuple for command to an outdated lyse servers causes it
             # to reply with an error message.
-            msg = """The lyse server does not support n_sequences or filter_kwargs.
+            msg = """The lyse server does not support n_sequences, filter_kwargs or where.
                 Call this function without providing those arguments to communicate
                 with this server, or upgrade the version of lyse running on the
                 server."""
             raise ValueError(dedent(msg))
+        if isinstance(df, str) and df.startswith('error: no column'):
+            raise KeyError(df[len('error: '):])
         # Ensure conversion to multiindex is done, which needs to be done here
         # if the server is running an outdated version of lyse.
         lyse.dataframe_utilities.rangeindex_to_multiindex(df, inplace=True)
