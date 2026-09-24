@@ -44,28 +44,27 @@ class WebServer(ZMQServer):
             # rather than misread.
             _, n_sequences, filter_kwargs = request_data[:3]
             where = request_data[3] if len(request_data) == 4 else None
-            df = self._retrieve_dataframe()
-            df = rangeindex_to_multiindex(df, inplace=True)
             # Return only a subset of the dataframe if instructed to do so.
-            if n_sequences is not None:
-                df = self._extract_n_sequences_from_df(df, n_sequences)
-            for key, value in (where or {}).items():
-                # A string names a top-level column, a tuple a nested one:
-                column = (key,) if isinstance(key, str) else tuple(key)
-                column += ('',) * (df.columns.nlevels - len(column))
-                if column not in df.columns:
-                    return 'error: no column {!r} in the lyse dataframe'.format(key)
-                if isinstance(value, (list, tuple, set)):
-                    df = df[df[column].isin(value)]
-                else:
-                    df = df[df[column] == value]
+            if n_sequences is None:
+                # where chooses the rows before the dataframe is copied, so
+                # that a request for a few rows copies only those:
+                df = self._copy_dataframe(where)
+            else:
+                # where applies after n_sequences, which, run in the main
+                # thread where the copy is made, would cost more than it saves:
+                df = self._extract_n_sequences_from_df(self._copy_dataframe(), n_sequences)
+                df = self._select_rows(df, where)
+            if isinstance(df, str):
+                # where named a column the dataframe does not have:
+                return df
+            df = rangeindex_to_multiindex(df, inplace=True)
             if filter_kwargs is not None:
                 df = df.filter(**filter_kwargs)
             return df
         elif request_data == 'get dataframe':
             # Ensure backwards compatability with clients using outdated
             # versions of lyse.
-            return self._retrieve_dataframe()
+            return self._copy_dataframe()
         elif isinstance(request_data, dict):
             if 'filepath' in request_data:
                 h5_filepath = shared_drive.path_to_local(request_data['filepath'])
@@ -84,12 +83,26 @@ class WebServer(ZMQServer):
                 "'get dataframe'\n 'hello'\n {'filepath': <some_h5_filepath>}")
 
     @inmain_decorator(wait_for_return=True)
-    def _copy_dataframe(self):
-        df = self.app.filebox.shots_model.dataframe.copy(deep=True)
-        return df
+    def _copy_dataframe(self, where=None):
+        """Copy the rows of lyse's dataframe that where chooses, or all of
+        them, in the main thread, where the dataframe is changed."""
+        df = self._select_rows(self.app.filebox.shots_model.dataframe, where)
+        return df if isinstance(df, str) else df.copy(deep=True)
 
-    def _retrieve_dataframe(self):
-        return self._copy_dataframe()
+    def _select_rows(self, df, where):
+        """The rows of df matching where, a dict of {column: value}, or an
+        error string naming a column df does not have."""
+        for key, value in (where or {}).items():
+            # A string names a top-level column, a tuple a nested one:
+            column = (key,) if isinstance(key, str) else tuple(key)
+            column += ('',) * (df.columns.nlevels - len(column))
+            if column not in df.columns:
+                return 'error: no column {!r} in the lyse dataframe'.format(key)
+            if pandas.api.types.is_list_like(value):
+                df = df[df[column].isin(value)]
+            else:
+                df = df[df[column] == value]
+        return df
 
     def _extract_n_sequences_from_df(self, df, n_sequences):
         # If the dataframe is empty, just return it, otherwise accessing columns

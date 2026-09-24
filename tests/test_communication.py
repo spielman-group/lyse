@@ -11,6 +11,7 @@ import types
 import unittest
 from unittest import mock
 
+import numpy
 import pandas
 
 import lyse
@@ -90,7 +91,9 @@ class WhereTests(unittest.TestCase):
 
     def test_rows_are_chosen_by_a_list_of_filepaths(self):
         wanted = [self.older[1]['filepath'].iloc[0], self.newer[0]['filepath'].iloc[0]]
-        self.assertCountEqual(self.data(where={'filepath': wanted})['filepath'], wanted)
+        for kind in (list, numpy.array, frozenset):
+            with self.subTest(kind.__name__):
+                self.assertCountEqual(self.data(where={'filepath': kind(wanted)})['filepath'], wanted)
 
     def test_rows_are_chosen_by_equality_on_a_nested_column(self):
         rows = self.data(where={('fit', 'atoms'): 101})

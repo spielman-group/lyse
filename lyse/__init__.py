@@ -158,9 +158,9 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             Defaults to `None`.
         where (dict, optional): Rows to return, as `{column: value}`. A
             column is named by a string if it is top-level, e.g. `'filepath'`,
-            or by a tuple if nested, e.g. `('routine', 'result')`. A value
-            that is a list, tuple or set matches any of its members; any other
-            value must be equal. A row is returned only if every column
+            or by a tuple if nested, e.g. `('routine', 'result')`. A
+            list-like value -- a list, tuple, set, array and so on -- matches
+            any of its members; any other value must be equal. A row is returned only if every column
             matches. Applied after `n_sequences` and before `filter_kwargs`.
             A column not in the dataframe raises a `KeyError`. Defaults to
             `None`.
