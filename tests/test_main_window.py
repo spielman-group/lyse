@@ -138,13 +138,27 @@ class MainWindowTests(unittest.TestCase):
                 'side': {'absorption': {'atoms': {'CLASS': numpy.bytes_(b'IMAGE')}}},
                 'routine': {'best': numpy.array([1.0, 2.0])},
             }))
-            app = types.SimpleNamespace(
-                filebox=types.SimpleNamespace(shots_model=types.SimpleNamespace(dataframe=df)),
-                exp_config=types.SimpleNamespace(get=lambda section, option: folder),
-            )
-            self.main.Lyse.on_save_dataframe_triggered(app, choose_folder=False)
-            (saved,) = glob.glob(os.path.join(folder, '*.pkl'))
+            (saved,) = self.save(folder, df)
             self.assertEqual(list(pandas.read_pickle(saved)['filepath']), [df['filepath'][0]])
+
+    def test_labscripts_engaged_in_the_same_second_are_saved_apart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            df = pandas.concat([flat_dict_to_hierarchical_dataframe(flatten_dict({
+                'sequence': pandas.Timestamp('2026-09-22 10:00:00', tz='UTC'),
+                'labscript': script,
+                'filepath': os.path.join(folder, script + '.h5'),
+            })) for script in ('a.py', 'b.py')], ignore_index=True)
+            self.assertEqual([os.path.basename(path) for path in self.save(folder, df)],
+                             ['dataframe_20260922T100000_a.pkl', 'dataframe_20260922T100000_b.pkl'])
+
+    def save(self, folder, df):
+        """Save df as lyse does, beside its shots, and return the files written."""
+        app = types.SimpleNamespace(
+            filebox=types.SimpleNamespace(shots_model=types.SimpleNamespace(dataframe=df)),
+            exp_config=types.SimpleNamespace(get=lambda section, option: folder),
+        )
+        self.main.Lyse.on_save_dataframe_triggered(app, choose_folder=False)
+        return sorted(glob.glob(os.path.join(folder, '*.pkl')))
 
 
 if __name__ == '__main__':

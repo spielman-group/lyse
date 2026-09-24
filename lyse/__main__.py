@@ -469,10 +469,11 @@ class Lyse(LabscriptApplication):
                 if not save_path:
                     # User cancelled
                     return
-            sequences = df.sequence.unique()
-            for sequence in sequences:
-                sequence_df = pandas.DataFrame(df[df['sequence'] == sequence], columns=df.columns).dropna(axis=1, how='all')
-                labscript = sequence_df['labscript'].iloc[0]
+            # A sequence is its engage time and labscript: two labscripts
+            # engaged in the same second are two sequences, saved apart.
+            for sequence, labscript in dict.fromkeys(zip(df['sequence'], df['labscript'])):
+                rows = (df['sequence'] == sequence) & (df['labscript'] == labscript)
+                sequence_df = pandas.DataFrame(df[rows], columns=df.columns).dropna(axis=1, how='all')
                 filename = "dataframe_{}_{}.pkl".format(sequence.to_pydatetime().strftime("%Y%m%dT%H%M%S"),labscript[:-3])
                 if not choose_folder:
                     save_path = os.path.dirname(sequence_df['filepath'].iloc[0])
