@@ -11,13 +11,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The lyse main window: a theme change, and saving the dataframe.
-
-``lyse.__main__`` builds a ``Splash`` and calls ``.show()`` at module scope, so
-importing it would put a banner on the screen of whoever runs the tests. The
-splash module is stubbed before the import, so that no QApplication is created
-and nothing is shown, while the module's classes stay borrowable.
-"""
+"""The lyse main window: a theme change, and saving the dataframe."""
 import glob
 import os
 import sys
@@ -38,13 +32,10 @@ def a_qapplication():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
 
 
+# At module scope: lyse.__main__ is imported once per process, and the splash
+# it builds is an instance of the class current at that import.
 class FakeSplash:
-    """Stands in for ``labscript_utils.splash.Splash``, and shows nothing.
-
-    Defined once, at module scope: ``lyse.__main__`` is imported only once per
-    process however many tests ask for it, so the splash it built is an
-    instance of whichever class was current at that first import.
-    """
+    """Stands in for ``labscript_utils.splash.Splash``, and shows nothing."""
 
     def __init__(self, *args, **kwargs):
         pass
@@ -60,12 +51,7 @@ class FakeSplash:
 
 
 def import_main_without_splash():
-    """Import ``lyse.__main__`` with a splash that does nothing.
-
-    The real ``Splash.__init__`` creates the QApplication and shows a window
-    that only ``if __name__ == '__main__'`` ever hides. A fake leaves the real
-    module's classes borrowable without either happening.
-    """
+    """Import ``lyse.__main__`` with a splash that does nothing."""
     fake = types.ModuleType('labscript_utils.splash')
     fake.Splash = FakeSplash
     fake.get_qapplication = lambda *args, **kwargs: None

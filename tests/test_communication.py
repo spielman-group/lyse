@@ -12,13 +12,7 @@
 #                                                                   #
 #####################################################################
 """lyse.data(n_sequences=N) returns the N most recently engaged sequences, and
-lyse.data(where={column: value}) the rows whose columns match.
-
-Most recent means most recently engaged in runmanager, not most recently loaded
-into lyse, and two engages in the same second are ordered by sequence_index.
-lyse's integer_indexing setting decides the order the rows are held in, so the
-answer must not depend on it.
-"""
+lyse.data(where={column: value}) the rows whose columns match."""
 import logging
 import types
 import unittest
@@ -76,6 +70,8 @@ class MostRecentSequencesTests(unittest.TestCase):
         last_year = a_sequence('20250916T101500', None)
         df = concat_with_padding(*today_10, *today_9, *last_week, *last_year)
         server = a_server(df)
+        # lyse's integer_indexing setting decides the order it holds rows in,
+        # which the answer must not depend on:
         for integer_indexing in (False, True):
             with self.subTest(integer_indexing=integer_indexing), mock.patch.object(
                 dataframe_utilities.LABCONFIG, 'getboolean', return_value=integer_indexing
@@ -123,7 +119,7 @@ class WhereTests(unittest.TestCase):
         self.assertEqual(len(self.data(n_sequences=1, where={'filepath': older_shot})), 0)
 
     def test_a_request_with_something_else_in_that_place_is_refused(self):
-        """An integer there was once n_shots."""
+        """A client still passing n_shots sends an integer there."""
         reply = self.server.handler(('get dataframe', None, None, 1))
         self.assertTrue(reply.startswith('error: operation not supported'))
 

@@ -11,12 +11,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""lyse.paths: the shot files a multishot routine is run for.
-
-Each test runs the real chain -- filebox, routine box, routine, worker -- with
-every queue replaced by one that runs the next stage when an item is put on
-it, so a routine reads lyse.paths as it would inside lyse.
-"""
+"""lyse.paths: the shot files a multishot routine is run for."""
 import json
 import logging
 import os

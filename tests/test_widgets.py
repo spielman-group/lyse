@@ -1,9 +1,17 @@
-"""The FileBox status column, painted for a shot still being analysed.
-
-A failure while painting does not reach the caller: PyQt hands it to
-sys.excepthook and paints again, so with lyse's excepthook installed it is an
-error window on every repaint.
-"""
+#####################################################################
+#                                                                   #
+# /tests/test_widgets.py                                            #
+#                                                                   #
+# Copyright 2026, JQI                                               #
+# Author: Ian Spielman                                              #
+#                                                                   #
+# This file is part of lyse, in the labscript suite                 #
+# (see http://labscriptsuite.org), and is licensed under the        #
+# Simplified BSD License. See the license.txt file in the root of   #
+# the project for the full license.                                 #
+#                                                                   #
+#####################################################################
+"""The FileBox status column, painted for a shot still being analysed."""
 import sys
 import types
 import unittest
@@ -26,6 +34,7 @@ class StatusColumnTests(unittest.TestCase):
         view.setModel(model)
         app = types.SimpleNamespace(qapplication=qapplication)
         view.setItemDelegate(lyse.widgets.ItemDelegate(app, view, model, status, role))
+        # A failure while painting goes to sys.excepthook, not to the caller.
         seen = []
         original = sys.excepthook
         sys.excepthook = lambda cls, exc, tb: seen.append(exc)

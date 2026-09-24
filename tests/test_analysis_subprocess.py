@@ -11,12 +11,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""A theme change reaching a plot window.
-
-The window repaints its widgets when the application palette changes, which is
-how it follows an OS light/dark switch. The handler is a Qt virtual method, so
-a failure in it reaches sys.excepthook rather than the caller.
-"""
+"""A plot window: a theme change, and a figure named by a string."""
 import sys
 import tempfile
 import unittest
