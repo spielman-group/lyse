@@ -90,7 +90,7 @@ class PlotWindow(QtWidgets.QWidget):
         self.restore_geometry()
 
     def _geometry_key(self):
-        return f"windowGeometry-{self.identifier:d}"
+        return f"windowGeometry-{self.identifier}"
 
     # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
     def _legacy_settings_path(self):

@@ -476,10 +476,16 @@ class Lyse(LabscriptApplication):
                 filename = "dataframe_{}_{}.pkl".format(sequence.to_pydatetime().strftime("%Y%m%dT%H%M%S"),labscript[:-3])
                 if not choose_folder:
                     save_path = os.path.dirname(sequence_df['filepath'].iloc[0])
-                sequence_df.infer_objects()
                 for col in sequence_df.columns :
                     if sequence_df[col].dtype == object:
-                        sequence_df[col] = pandas.to_numeric(sequence_df[col], errors='ignore')
+                        # Convert a column only if every value is numeric, and
+                        # leave the rest as they are: image attributes arrive
+                        # as bytes (ValueError), and array-valued results
+                        # cannot be converted at all (TypeError).
+                        try:
+                            sequence_df[col] = pandas.to_numeric(sequence_df[col])
+                        except (ValueError, TypeError):
+                            pass
                 sequence_df.to_pickle(os.path.join(save_path, filename))
         else:
             lyse.utils.gui.error_dialog(self.app, 'Dataframe is empty')
