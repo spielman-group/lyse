@@ -307,9 +307,11 @@ class Run(object):
         self.__no_write = no_write
         self.__h5_file = None
         self.__group = None
-        if not self.no_write:
-            self._create_group_if_not_exists(h5_path, '/', 'results')
-                     
+        # Whether /results and self.group exist in the file. They are created by
+        # the first open for writing, rather than here, so that a Run which
+        # never writes never opens the file:
+        self.__result_groups_ensured = False
+
         # The group where this run's results will be stored in the h5 file will be the
         # name of the python script which is instantiating this Run object. If the user
         # is running interactively or in an unusual environment such that the __main__
@@ -405,6 +407,8 @@ class Run(object):
         with h5py.File(self.h5_path, mode) as f:
             self.__h5_file = f
             try:
+                if mode != 'r' and not self.__result_groups_ensured:
+                    self._ensure_result_groups()
                 yield self
             finally:
                 self.__h5_file = None
@@ -430,43 +434,31 @@ class Run(object):
     def group(self, value):
         self.set_group(value)
 
-    def _create_group_if_not_exists(self, h5_path, location, groupname):
-        """Creates a group in the HDF5 file at `location` if it does not exist.
-        
-        Only opens the h5 file in write mode if a group must be created.
-        This ensures the last modified time of the file is only updated if
-        the file is actually written to."""
-        create_group = False
-        with h5py.File(h5_path, 'r') as h5_file:
-            if groupname not in h5_file[location]:
-                create_group = True
-        if create_group:
-            if self.no_write:
-                msg = "Cannot create group; this run is read-only."
-                raise PermissionError(msg)
-            with h5py.File(h5_path, 'r+') as h5_file:
-                # Catch the ValueError raised if the group was created by
-                # something else between the check above and now. 
-                try:
-                    h5_file[location].create_group(groupname)
-                except ValueError:
-                    pass
+    def _ensure_result_groups(self):
+        """Create /results, and `self.group` in it, in the file while it is open
+        for writing."""
+        results = self.h5_file.require_group('results')
+        if self.group is not None:
+            results.require_group(self.group)
+        self.__result_groups_ensured = True
 
     def set_group(self, groupname):
         """Set the default hdf5 file group for saving results.
 
         The `save...()` methods will save their results to `self.group` if an
         explicit value for their optional `group` argument is not given. This
-        method updates `self.group`, making sure to create the group in the hdf5
-        file if it does not already exist.
+        method updates `self.group`. The group is created in the hdf5 file when
+        it is first written to.
 
         Args:
             groupname (str): The name of the hdf5 file group in which to save
                 results by default. The group will be created in the
                 `'/results'` group of the hdf5 file.
         """
-        self._create_group_if_not_exists(self.h5_path, '/results', groupname)
         self.__group = groupname
+        self.__result_groups_ensured = False
+        if self.h5_file is not None and self.h5_file.mode != 'r':
+            self._ensure_result_groups()
 
     @open_file('r')
     def trace_names(self):
@@ -579,7 +571,7 @@ class Run(object):
         Returns:
             :obj:`numpy:numpy.ndarray`: Numpy array of the saved data.
         """
-        if group not in self.h5_file['results']:
+        if 'results' not in self.h5_file or group not in self.h5_file['results']:
             raise Exception('The result group \'%s\' does not exist'%group)
         if name not in self.h5_file['results'][group]:
             raise Exception('The result array \'%s\' does not exist'%name)
@@ -601,7 +593,7 @@ class Run(object):
             : Result with appropriate type, as determined by 
             :obj:`labscript-utils:labscript_utils.properties.get_attribute`.
         """
-        if group not in self.h5_file['results']:
+        if 'results' not in self.h5_file or group not in self.h5_file['results']:
             raise Exception('The result group \'%s\' does not exist'%group)
         if name not in self.h5_file['results'][group].attrs.keys():
             raise Exception('The result \'%s\' does not exist'%name)
@@ -815,7 +807,6 @@ class Run(object):
             results.append(self.get_result_array(group, name))
         return results
 
-    @open_file('r+')        
     def save_results(self, *args, **kwargs):
         """Save multiple results to the hdf5 file.
 
@@ -845,10 +836,10 @@ class Run(object):
         """
         names = args[::2]
         values = args[1::2]
-        for name, value in zip(names, values):
-            self.save_result(name, value, **kwargs)
+        with self.open('r+') if kwargs.get('save_to_h5', True) else contextlib.nullcontext():
+            for name, value in zip(names, values):
+                self.save_result(name, value, **kwargs)
 
-    @open_file('r+')            
     def save_results_dict(self, results_dict, uncertainties=False, **kwargs):
         """Save results dictionary.
 
@@ -863,12 +854,13 @@ class Run(object):
             uncertainties (bool, optional): Marks if uncertainties are provided.
             **kwargs: Extra arguments provided to :obj:`save_result`.
         """
-        for name, value in results_dict.items():
-            if not uncertainties:
-                self.save_result(name, value, **kwargs)
-            else:
-                self.save_result(name, value[0], **kwargs)
-                self.save_result('u_' + name, value[1], **kwargs)
+        with self.open('r+') if kwargs.get('save_to_h5', True) else contextlib.nullcontext():
+            for name, value in results_dict.items():
+                if not uncertainties:
+                    self.save_result(name, value, **kwargs)
+                else:
+                    self.save_result(name, value[0], **kwargs)
+                    self.save_result('u_' + name, value[1], **kwargs)
 
     @open_file('r+')
     def save_result_arrays(self, *args, **kwargs):

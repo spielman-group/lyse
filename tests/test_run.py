@@ -1,5 +1,6 @@
-"""Run.save_result, which saves a result to the shot file and to the shot's row
-in lyse's dataframe, or with save_to_h5=False to the row alone."""
+"""Run: saving results to the shot file and to the shot's row in lyse's
+dataframe, opening the file, and so taking its lock, only to write to it."""
+import contextlib
 import os
 import tempfile
 import unittest
@@ -12,11 +13,31 @@ import lyse.utils.worker
 import h5py
 
 
-class SaveResultTests(unittest.TestCase):
+@contextlib.contextmanager
+def counting_opens():
+    """Record the mode of every open of an hdf5 file, each of which takes the
+    file's lock."""
+    opens = []
+    original = h5py.File
+
+    class File(original):
+        def __init__(self, name, mode='r', *args, **kwargs):
+            opens.append(mode)
+            super().__init__(name, mode, *args, **kwargs)
+
+    h5py.File = File
+    try:
+        yield opens
+    finally:
+        h5py.File = original
+
+
+class RunTests(unittest.TestCase):
 
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
+        # A shot as compiled, before any result is saved to it:
         self.path = os.path.join(folder.name, 'shot.h5')
         with h5py.File(self.path, 'w') as f:
             f.create_group('globals')
@@ -25,27 +46,34 @@ class SaveResultTests(unittest.TestCase):
         lyse.utils.worker.spinning_top, lyse.utils.worker._updated_data = True, {}
         self.addCleanup(setattr, lyse.utils.worker, 'spinning_top', saved[0])
         self.addCleanup(setattr, lyse.utils.worker, '_updated_data', saved[1])
-        self.run_ = lyse.Run(self.path)
-        self.run_.set_group('routine')
 
     def row(self):
         return lyse.utils.worker._updated_data[self.path]
 
-    def attributes(self):
+    def test_a_run_saving_only_to_the_dataframe_never_opens_the_file(self):
+        with counting_opens() as opens:
+            run = lyse.Run(self.path)
+            run.set_group('routine')
+            run.save_result('N', 3, save_to_h5=False)
+            run.save_results('width', 1.5, save_to_h5=False)
+            run.save_results_dict({'height': 2.5}, save_to_h5=False)
+        self.assertEqual(opens, [])
+        self.assertEqual(self.row(), {('routine', 'N'): 3, ('routine', 'width'): 1.5,
+                                      ('routine', 'height'): 2.5})
+
+    def test_a_first_write_creates_the_group_and_writes_in_one_open(self):
+        with counting_opens() as opens:
+            run = lyse.Run(self.path)
+            run.set_group('routine')
+            run.save_result('N', 3)
+        self.assertEqual(opens, ['r+'])
+        self.assertEqual(self.row(), {('routine', 'N'): 3})
         with h5py.File(self.path, 'r') as f:
-            return dict(f['results/routine'].attrs)
+            self.assertEqual(f['results/routine'].attrs['N'], 3)
 
-    def test_a_result_not_saved_to_h5_updates_the_row_without_opening_the_file(self):
-        os.rename(self.path, self.path + '.away')
-        self.run_.save_result('N', 3, save_to_h5=False)
-        os.rename(self.path + '.away', self.path)
-        self.assertEqual(self.row()[('routine', 'N')], 3)
-        self.assertNotIn('N', self.attributes())
-
-    def test_by_default_a_result_is_saved_to_the_file_and_the_row(self):
-        self.run_.save_result('N', 3)
-        self.assertEqual(self.row()[('routine', 'N')], 3)
-        self.assertEqual(self.attributes()['N'], 3)
+    def test_a_result_not_yet_saved_is_reported_as_before(self):
+        with self.assertRaisesRegex(Exception, "result group 'routine' does not exist"):
+            lyse.Run(self.path).get_result('routine', 'N')
 
 
 if __name__ == '__main__':
