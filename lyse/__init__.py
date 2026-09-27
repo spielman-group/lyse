@@ -27,7 +27,6 @@ import numpy as np
 from .__version__ import __version__
 
 from labscript_utils import dedent
-from labscript_utils.ls_zprocess import zmq_get
 from labscript_utils.dict_diff import dict_diff
 
 from labscript_utils.properties import get_attributes, get_attribute, set_attributes
@@ -35,6 +34,7 @@ from labscript_utils.properties import get_attributes, get_attribute, set_attrib
 # lyse imports
 import lyse.dataframe_utilities
 import lyse.utils
+from lyse.client import LyseClient
 
 # Import this way so LYSE_DIR is exposed when someone does import lyse or from lyse import *
 from lyse.utils import LYSE_DIR
@@ -104,6 +104,9 @@ from lyse, or the lyse analysis subprocess is restarted, data will not be
 retained. An alternate method should be used to store data if desired in
 these cases."""
 
+# One client per host, port and timeout, so that data() reuses its socket:
+_client = functools.cache(LyseClient)
+
 
 def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None, where=None):
     """Get data from the lyse dataframe or a file.
@@ -162,7 +165,7 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             list-like value -- a list, tuple, set, array and so on -- matches
             any of its members; any other value must be equal. A row is returned only if every column
             matches. Applied after `n_sequences` and before `filter_kwargs`.
-            A column not in the dataframe raises a `KeyError`. Defaults to
+            A column not in the dataframe raises a `ValueError`. Defaults to
             `None`.
 
     Raises:
@@ -197,31 +200,7 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
                     {where}."""
                 raise ValueError(dedent(msg))
 
-        # Allow sending 'get dataframe' (without the enclosing list) if
-        # n_sequences and filter_kwargs aren't provided. This is for backwards
-        # compatibility in case the server is running an outdated version of
-        # lyse.
-        if n_sequences is None and filter_kwargs is None and where is None:
-            command = 'get dataframe'
-        elif where is None:
-            command = ('get dataframe', n_sequences, filter_kwargs)
-        else:
-            command = ('get dataframe', n_sequences, filter_kwargs, where)
-        df = zmq_get(port, host, command, timeout)
-        if isinstance(df, str) and df.startswith('error: operation not supported'):
-            # Sending a tuple for command to an outdated lyse servers causes it
-            # to reply with an error message.
-            msg = """The lyse server does not support n_sequences, filter_kwargs or where.
-                Call this function without providing those arguments to communicate
-                with this server, or upgrade the version of lyse running on the
-                server."""
-            raise ValueError(dedent(msg))
-        if isinstance(df, str) and df.startswith('error: no column'):
-            raise KeyError(df[len('error: '):])
-        # Ensure conversion to multiindex is done, which needs to be done here
-        # if the server is running an outdated version of lyse.
-        lyse.dataframe_utilities.rangeindex_to_multiindex(df, inplace=True)
-        return df
+        return _client(host, port, timeout).get_dataframe(n_sequences, filter_kwargs, where)
 
 def globals_diff(run1, run2, group=None):
     """Take a diff of the globals between two runs.
