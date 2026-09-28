@@ -147,7 +147,7 @@ class Lyse(LabscriptApplication):
 
         # Forth: start remote communication server
         self.port = int(self.exp_config.get('ports', 'lyse'))
-        self.server = lyse.communication.WebServer(self,  self.port)
+        self.server = lyse.communication.LyseServer(self, self.port)
         self.logger.info(f'Started lyse server on port {self.port}')
 
         # Last: UI setup

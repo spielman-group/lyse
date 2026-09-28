@@ -11,19 +11,25 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""lyse.data(n_sequences=N) returns the N most recently engaged sequences, and
-lyse.data(where={column: value}) the rows whose columns match."""
-import logging
+"""lyse.data(n_sequences=N) returns the N most recently engaged sequences,
+lyse.data(where={column: value}) the rows whose columns match, and
+LyseClient.add_shot queues a shot, each through a real lyse server."""
+import concurrent.futures
+import os
+import queue
 import types
 import unittest
 from unittest import mock
 
 import numpy
 import pandas
+from qtutils.qt import QtWidgets
 
 import lyse
+from labscript_utils import shared_drive
 from lyse import dataframe_utilities
-from lyse.communication import WebServer
+from lyse.client import LyseClient
+from lyse.communication import LyseServer
 from lyse.dataframe_utilities import (
     asdatetime,
     concat_with_padding,
@@ -49,14 +55,27 @@ def a_sequence(engaged, sequence_index):
     ]
 
 
+# The server copies lyse's dataframe in the main thread, through this
+# application's events:
+qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+
+
 def a_server(df):
-    """The lyse server, holding df, without the port its constructor binds."""
-    server = object.__new__(WebServer)
-    server.app = types.SimpleNamespace(
-        logger=logging.getLogger('test'),
-        filebox=types.SimpleNamespace(shots_model=types.SimpleNamespace(dataframe=df)),
-    )
-    return server
+    """A lyse server on a free port, reading df and its queue of incoming shots
+    from a stand-in for the application."""
+    return LyseServer(types.SimpleNamespace(filebox=types.SimpleNamespace(
+        shots_model=types.SimpleNamespace(dataframe=df), incoming_queue=queue.Queue())),
+        bind_address='tcp://127.0.0.1')
+
+
+def in_thread(f, **kwargs):
+    """Return f(**kwargs), called in a thread while this one, the main thread,
+    processes the events by which the server works in it."""
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        call = pool.submit(f, **kwargs)
+        while concurrent.futures.wait([call], timeout=0.001).not_done:
+            qapplication.processEvents()
+    return call.result()
 
 
 class MostRecentSequencesTests(unittest.TestCase):
@@ -70,18 +89,18 @@ class MostRecentSequencesTests(unittest.TestCase):
         last_year = a_sequence('20250916T101500', None)
         df = concat_with_padding(*today_10, *today_9, *last_week, *last_year)
         server = a_server(df)
+        self.addCleanup(server.shutdown)
         # lyse's integer_indexing setting decides the order it holds rows in,
         # which the answer must not depend on:
         for integer_indexing in (False, True):
             with self.subTest(integer_indexing=integer_indexing), mock.patch.object(
                 dataframe_utilities.LABCONFIG, 'getboolean', return_value=integer_indexing
-            ), mock.patch.object(lyse, 'zmq_get', lambda port, host, command, timeout:
-                                 server.handler(command)):
+            ):
                 self.assertCountEqual(
-                    lyse.data(n_sequences=1)['filepath'],
+                    in_thread(lyse.data, port=server.port, n_sequences=1)['filepath'],
                     [shot['filepath'].iloc[0] for shot in today_10])
                 self.assertCountEqual(
-                    lyse.data(n_sequences=2)['filepath'],
+                    in_thread(lyse.data, port=server.port, n_sequences=2)['filepath'],
                     [shot['filepath'].iloc[0] for shot in today_9 + today_10])
 
 
@@ -91,12 +110,11 @@ class WhereTests(unittest.TestCase):
         self.older = a_sequence('20260923T091500', 0)
         self.newer = a_sequence('20260923T101500', 1)
         self.server = a_server(concat_with_padding(*self.older, *self.newer))
+        self.addCleanup(self.server.shutdown)
 
     def data(self, **kwargs):
-        with mock.patch.object(dataframe_utilities.LABCONFIG, 'getboolean', return_value=False), \
-             mock.patch.object(lyse, 'zmq_get', lambda port, host, command, timeout:
-                               self.server.handler(command)):
-            return lyse.data(**kwargs)
+        with mock.patch.object(dataframe_utilities.LABCONFIG, 'getboolean', return_value=False):
+            return in_thread(lyse.data, port=self.server.port, **kwargs)
 
     def test_rows_are_chosen_by_a_list_of_filepaths(self):
         wanted = [self.older[1]['filepath'].iloc[0], self.newer[0]['filepath'].iloc[0]]
@@ -110,7 +128,7 @@ class WhereTests(unittest.TestCase):
                               [self.older[1]['filepath'].iloc[0], self.newer[1]['filepath'].iloc[0]])
 
     def test_a_column_not_in_the_dataframe_is_refused_by_name(self):
-        with self.assertRaisesRegex(KeyError, 'no_such_column'):
+        with self.assertRaisesRegex(ValueError, 'no_such_column'):
             self.data(where={'no_such_column': 1})
 
     def test_rows_are_chosen_after_n_sequences(self):
@@ -118,10 +136,15 @@ class WhereTests(unittest.TestCase):
         older_shot = self.older[0]['filepath'].iloc[0]
         self.assertEqual(len(self.data(n_sequences=1, where={'filepath': older_shot})), 0)
 
-    def test_a_request_with_something_else_in_that_place_is_refused(self):
-        """A client still passing n_shots sends an integer there."""
-        reply = self.server.handler(('get dataframe', None, None, 1))
-        self.assertTrue(reply.startswith('error: operation not supported'))
+
+class AddShotTests(unittest.TestCase):
+
+    def test_a_submitted_shot_reaches_the_incoming_queue_as_a_local_path(self):
+        server = a_server(None)
+        self.addCleanup(server.shutdown)
+        path = os.path.join(shared_drive.prefix, 'shot.h5')
+        LyseClient('localhost', server.port, 5).add_shot(shared_drive.path_to_agnostic(path))
+        self.assertEqual(server.app.filebox.incoming_queue.get(timeout=5), path)
 
 
 if __name__ == '__main__':
