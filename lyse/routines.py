@@ -28,7 +28,7 @@ from zprocess import Interruptor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
-from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
+from qtutils import inmain, inmain_decorator, UiLoader, DisconnectContextManager
 
 import lyse.widgets
 import lyse.utils
@@ -485,6 +485,12 @@ class AnalysisRoutine(object):
         return to_worker, from_worker, worker
         
     def do_analysis(self, filepath, paths):
+        # Wait out a pending shutdown, rather than send the shot to a worker that is quitting.
+        while inmain(lambda: self.shutdown is not None):
+            time.sleep(0.05)
+        if self.worker.poll() is not None:
+            # Removed, or its worker died: nothing would answer.
+            return False, {}
         self.to_worker.put(['analyse', (filepath, paths)])
         signal, data = self.from_worker.get()
         if signal == 'error':
@@ -557,7 +563,9 @@ class AnalysisRoutine(object):
             if not restart:
                 self.shutdown.restart = False
             return
-        self.to_worker.put(['quit', None])
+        # A worker that has exited never takes the quit, and the put would wait forever.
+        if self.worker.poll() is None:
+            self.to_worker.put(['quit', None])
         timeout_time = time.time() + 2
         self.shutdown = types.SimpleNamespace(
             worker=self.worker, from_worker=self.from_worker, restart=restart)

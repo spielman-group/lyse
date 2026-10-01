@@ -91,7 +91,8 @@ class LysePathsTests(unittest.TestCase):
         worker.modulewatcher = types.SimpleNamespace(lock=threading.Lock())
         worker.to_parent = queue.Queue()
         routine = types.SimpleNamespace(shortname='routine.py', done=False, enabled=lambda: True,
-                                        from_worker=worker.to_parent)
+                                        from_worker=worker.to_parent, shutdown=None,
+                                        worker=types.SimpleNamespace(poll=lambda: None))
         routine.to_worker = runs_on_put(worker.mainloop, worker, 'from_parent')
         routine.set_status = lambda status: setattr(routine, 'done', status == 'done')
         routine.do_analysis = types.MethodType(lyse.routines.AnalysisRoutine.do_analysis, routine)
