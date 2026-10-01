@@ -163,22 +163,38 @@ class RoutineBox(object):
     def add_routines(self, routine_files, clear_existing=False):
         """Add routines to the routine box, where routine_files is a list of
         tuples containing the filepath and whether the routine is enabled or
-        not when it is added. if clear_existing == True, then any existing
-        analysis routines will be cleared before the new ones are added."""
+        not when it is added. if clear_existing == True, then existing routines
+        not in routine_files are removed and those in it are restarted, so
+        that the box holds routine_files in order, as if just added."""
+        existing = {routine.filepath: routine for routine in self.routines}
         if clear_existing:
+            filepaths = [filepath for filepath, checked in routine_files]
             for routine in self.routines[:]:
-                routine.remove()
-                self.routines.remove(routine)
+                if routine.filepath not in filepaths:
+                    routine.remove()
+                    self.routines.remove(routine)
 
         # Queue the files to be opened:
+        added = []
         for filepath, checked in routine_files:
-            if filepath in [routine.filepath for routine in self.routines]:
+            if filepath in added or (not clear_existing and filepath in existing):
                 self.app.output_box.output('Warning: Ignoring duplicate analysis routine %s\n'%filepath, red=True)
+                continue
+            added.append(filepath)
+            if clear_existing and filepath in existing:
+                # A restart, unlike a new routine, ends the old worker before the new one starts.
+                routine = existing[filepath]
+                routine.restart()
+                routine.set_status('clear')
+                active_item = self.model.item(routine.get_row_index(), self.COL_ACTIVE)
+                active_item.setCheckState(QtCore.Qt.CheckState(checked))
                 continue
             self.logger.info(f'adding routine for {filepath}')
             routine = AnalysisRoutine(self.app, filepath, self.model, self.output_box_port,
                                       QtCore.Qt.CheckState(checked))
             self.routines.append(routine)
+        if clear_existing:
+            self.reorder([added.index(routine.filepath) for routine in self.routines])
         self.update_select_all_checkstate()
         
     def on_treeview_double_left_clicked(self, index):
