@@ -23,6 +23,7 @@ import subprocess
 
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
+from zprocess import Interruptor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
@@ -562,7 +563,8 @@ class AnalysisRoutine(object):
             self.app.output_box.output('%s worker exited cleanly\n'%self.shortname)
         
         # if analysis was running notify analysisloop that analysis has failed
-        self.from_worker.put(('error', {}))
+        # Its own Interruptor: on the queue's, put() waits forever while get() holds it.
+        self.from_worker.put(('error', {}), interruptor=Interruptor())
 
         if restart:
             self.to_worker, self.from_worker, self.worker = self.start_worker()
