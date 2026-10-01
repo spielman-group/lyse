@@ -17,6 +17,7 @@ analysis GUI code
 
 import os
 import time
+import types
 import logging
 import threading
 import subprocess
@@ -450,7 +451,7 @@ class AnalysisRoutine(object):
         name_item.setData(self.filepath, self.ROLE_FULLPATH)
         self.model.appendRow([active_item, info_item, name_item])
             
-        self.exiting = False
+        self.shutdown = None
         
     def start_worker(self):
         # Start a worker process for this analysis routine:
@@ -534,29 +535,42 @@ class AnalysisRoutine(object):
         self.model.removeRow(index)
          
     def end_child(self, restart=False):
+        if self.shutdown is not None:
+            # One shutdown at a time: a removal or quit cancels a pending restart,
+            # and a restart changes nothing.
+            if not restart:
+                self.shutdown.restart = False
+            return
         self.to_worker.put(['quit', None])
         timeout_time = time.time() + 2
-        self.exiting = True
-        QtCore.QTimer.singleShot(50,
-            lambda: self.check_child_exited(self.worker, timeout_time, kill=False, restart=restart))
+        self.shutdown = types.SimpleNamespace(
+            worker=self.worker, from_worker=self.from_worker, restart=restart)
+        QtCore.QTimer.singleShot(50, lambda: self.check_child_exited(timeout_time))
 
-    def check_child_exited(self, worker, timeout_time, kill=False, restart=False):
+    def check_child_exited(self, timeout_time, kill=False):
+        shutdown = self.shutdown
+        worker = shutdown.worker
         worker.poll()
-        if worker.returncode is None and time.time() < timeout_time:
+        # timeout_time is None once kill() has been sent: only wait for the process to go.
+        if worker.returncode is None and (timeout_time is None or time.time() < timeout_time):
             QtCore.QTimer.singleShot(50,
-                lambda: self.check_child_exited(worker, timeout_time, kill, restart))
+                lambda: self.check_child_exited(timeout_time, kill))
             return
         elif worker.returncode is None:
             if not kill:
                 worker.terminate()
                 self.app.output_box.output('%s worker not responding.\n'%self.shortname)
                 timeout_time = time.time() + 2
-                QtCore.QTimer.singleShot(50,
-                    lambda: self.check_child_exited(worker, timeout_time, kill=True, restart=restart))
-                return
             else:
                 worker.kill()
                 self.app.output_box.output('%s worker killed\n'%self.shortname, red=True)
+                timeout_time = None
+            QtCore.QTimer.singleShot(50,
+                lambda: self.check_child_exited(timeout_time, kill=True))
+            return
+        elif timeout_time is None:
+            # killed: the message was printed when kill() was sent.
+            pass
         elif kill:
             self.app.output_box.output('%s worker terminated\n'%self.shortname, red=True)
         else:
@@ -564,9 +578,9 @@ class AnalysisRoutine(object):
         
         # if analysis was running notify analysisloop that analysis has failed
         # Its own Interruptor: on the queue's, put() waits forever while get() holds it.
-        self.from_worker.put(('error', {}), interruptor=Interruptor())
+        shutdown.from_worker.put(('error', {}), interruptor=Interruptor())
+        self.shutdown = None
 
-        if restart:
+        if shutdown.restart:
             self.to_worker, self.from_worker, self.worker = self.start_worker()
             self.app.output_box.output('%s worker restarted\n'%self.shortname)
-        self.exiting = False
