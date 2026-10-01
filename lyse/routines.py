@@ -597,6 +597,9 @@ class AnalysisRoutine(object):
             pass
         elif kill:
             self.app.output_box.output('%s worker terminated\n'%self.shortname, red=True)
+        elif worker.returncode != 0:
+            self.app.output_box.output(
+                f'{self.shortname} worker exited with return code {worker.returncode}\n', red=True)
         else:
             self.app.output_box.output('%s worker exited cleanly\n'%self.shortname)
         
