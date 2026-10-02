@@ -78,7 +78,7 @@ import lyse.routines
 import lyse.filebox
 import lyse.communication
 
-class LyseMainWindow(QtWidgets.QMainWindow):
+class LyseMainWindow(lyse.utils.gui.ThemedWindow, QtWidgets.QMainWindow):
     # A signal to show that the window is shown and painted.
     firstPaint = Signal()
 
@@ -109,20 +109,6 @@ class LyseMainWindow(QtWidgets.QMainWindow):
             self._previously_painted = True
             self.firstPaint.emit()
         return result
-    
-    def changeEvent(self, event):
-        
-        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
-        # never passes ApplicationPaletteChange on to it.
-        if (event.type() == QtCore.QEvent.Type.PaletteChange
-                or event.type() == QtCore.QEvent.Type.StyleChange):
-
-            for widget in self.findChildren(QtWidgets.QWidget):
-                # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
-                widget.setStyleSheet(widget.styleSheet())
-                widget.setPalette(widget.palette())
-
-        return super().changeEvent(event)
 
 class Lyse(LabscriptApplication):
 

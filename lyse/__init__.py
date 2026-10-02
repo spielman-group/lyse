@@ -82,6 +82,7 @@ def __getattr__(name):
     if name in ('path', 'paths'):
         from lyse.utils import worker
         return getattr(worker, name)
+    # Lazy, so that import lyse stays free of Qt.
     elif name == 'Routine':
         from lyse.routine import Routine
         return Routine

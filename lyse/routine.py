@@ -21,9 +21,47 @@ from itertools import count
 from keyword import iskeyword
 from pathlib import Path
 
+# Before matplotlib's Qt backend, which follows the Qt binding that is already imported.
+from qtutils import UiLoader
+from qtutils.qt import QtCore, QtGui, QtWidgets
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.figure import Figure
+
 from labscript_utils.labconfig import load_appconfig, save_appconfig
+from lyse.utils import LYSE_DIR
+import lyse.utils.gui as gui
+import lyse.utils.worker as worker
 
 CONTROL_VALUE_TYPES = (bool, int, float, str)
+
+# Constructing a UiLoader replaces sys.modules['qtutils.widgets'], which erases the
+# custom widgets a routine has registered on its own loader. Windows share this loader,
+# made before any routine runs, so that opening one erases nothing.
+loader = UiLoader()
+
+
+def fill_plot_form(form, toolbar, on_copy):
+    """Fill a plot form with a toolbar and its canvas; return the toolbar's new Copy action."""
+    action = toolbar.addAction(
+        QtGui.QIcon(':qtutils/fugue/clipboard--arrow'), 'Copy to clipboard', on_copy)
+    action.setToolTip('Copy to clipboard')
+    form.verticalLayout_canvas.addWidget(toolbar.canvas)
+    form.verticalLayout_navigation_toolbar.addWidget(toolbar)
+    return action
+
+
+class RoutineWindow(gui.ThemedWindow, QtWidgets.QMainWindow):
+    """A routine's window, with its Output dock. Closing it hides it."""
+
+    def __init__(self):
+        super().__init__()
+        loader.load(str(LYSE_DIR / 'user_interface' / 'routine_window.ui'), self)
+        self.menu_view.addAction(self.dock_output.toggleViewAction())
+
+    def closeEvent(self, event):
+        # Refused, so that Qt does not count the last window closed and quit the application.
+        event.ignore()
+        self.hide()
 
 
 class Routine:
@@ -41,6 +79,8 @@ class Routine:
     ----------
     values : namedtuple
         The saved controls' values by objectName; immutable, new for each analysis, empty at first.
+    window : QMainWindow
+        The routine's window: the controls are its central widget, the figures and output are docks.
     """
 
     def run(self, path, paths):
@@ -58,6 +98,18 @@ class Routine:
 
     def close(self):
         """Release the routine's resources, on the GUI thread, once the last `run` returns."""
+
+    def load_ui(self, filename):
+        """Load a Qt Designer file as the window's central widget, and return it.
+
+        Parameters
+        ----------
+        filename : str or Path
+            The file, absolute or relative to the routine file.
+        """
+        ui = loader.load(str(self._folder / filename))
+        self.window.setCentralWidget(ui)
+        return ui
 
     def saved_widgets(self, *widgets):
         """Register controls whose values lyse restores, saves and supplies to `run` as `values`.
@@ -89,6 +141,40 @@ class Routine:
             if saved is not None and not user_property.write(widget, saved):
                 print(f'Ignoring {saved!r} for {name!r}: the widget rejects it.', file=sys.stderr)
             self._saved_widgets[name] = widget
+
+    def add_figure(self, name):
+        """Return the Figure in the dock called `name`, adding the dock the first time.
+
+        Call on the GUI thread. Repeating a call returns the same Figure and leaves the dock as it
+        is. The dock has lyse's navigation toolbar; Ctrl+C copies the Figure while focus is in it.
+
+        Parameters
+        ----------
+        name : str
+            A nonempty string, which identifies the dock in the saved layout.
+
+        Raises
+        ------
+        ValueError
+            If `name` is not a nonempty string.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError('A figure name must be a nonempty string.')
+        if name not in self._figures:
+            form = loader.load(str(LYSE_DIR / 'user_interface' / 'plot_window.ui'))
+            figure = Figure()
+            toolbar = NavigationToolbar2QT(FigureCanvasQTAgg(figure), form)
+            copy_action = fill_plot_form(form, toolbar, lambda: worker.figure_to_clipboard(figure))
+            dock = QtWidgets.QDockWidget(name, self.window, objectName=name)
+            dock.setWidget(form)
+            QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Copy, dock, copy_action.trigger,
+                            context=QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            # A dock added after the layout was restored takes its saved place, if it has one.
+            if not self.window.restoreDockWidget(dock):
+                self.window.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+            self.window.menu_view.addAction(dock.toggleViewAction())
+            self._figures[name] = figure
+        return self._figures[name]
 
 
 def routine_mode(source, filename):
@@ -125,15 +211,30 @@ def routine_class(namespace):
     return classes.pop()
 
 
-def construct(cls, controls):
+def construct(cls, controls, window, routine_path):
     # Allocated apart from __init__(), so that the worker can install state
     # on the instance first.
     routine = cls.__new__(cls)
     routine._saved_controls = controls
     routine._saved_widgets = {}
+    routine._figures = {}
+    routine._folder = Path(routine_path).parent
+    routine.window = window
     routine.values = namedtuple('Values', [])()
     routine.__init__()
     return routine
+
+
+def save_layout(window):
+    return {'geometry': bytes(window.saveGeometry()), 'state': bytes(window.saveState())}
+
+
+def restore_layout(window, layout):
+    """Restore the layout `save_layout` returned, and show the Output dock whatever it says."""
+    for name, restore in [('geometry', window.restoreGeometry), ('state', window.restoreState)]:
+        if layout.get(name) and not restore(layout[name]):
+            print(f'Ignoring layout entry {name!r}: Qt rejects it.', file=sys.stderr)
+    window.dock_output.show()
 
 
 def read_saved_widgets(routine):

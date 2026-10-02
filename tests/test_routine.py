@@ -13,16 +13,22 @@
 #####################################################################
 """Tests of lyse.Routine and the pieces the worker builds one from."""
 import contextlib
+import importlib
 import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from qtutils.qt import QtCore, QtWidgets
+import matplotlib.pyplot as plt
+from qtutils.qt import QT_ENV, QtCore, QtWidgets
 
 import lyse
 from lyse.routine import (
-    RoutineSettings, construct, read_saved_widgets, routine_class, routine_mode)
+    RoutineSettings, RoutineWindow, construct, read_saved_widgets, restore_layout, routine_class,
+    routine_mode, save_layout)
+
+QtTest = importlib.import_module(f'{QT_ENV}.QtTest')
 
 
 def namespace_of(source, **imports):
@@ -82,13 +88,13 @@ class SavedWidgetsTests(unittest.TestCase):
                 self.saved_widgets(self.box)
 
         # A saved 0 is falsy, and is still restored over the box's default of 5.
-        routine = construct(Analysis, {'threshold': 0})
+        routine = construct(Analysis, {'threshold': 0}, RoutineWindow(), 'routine.py')
         self.assertEqual(routine.box.value(), 0)
         self.assertEqual(len(routine.values), 0)
 
         # A saved value the box rejects is reported and ignored.
         with contextlib.redirect_stderr(io.StringIO()) as report:
-            rejected = construct(Analysis, {'threshold': 'text'})
+            rejected = construct(Analysis, {'threshold': 'text'}, RoutineWindow(), 'routine.py')
         self.assertEqual(rejected.box.value(), 5)
         self.assertIn('threshold', report.getvalue())
 
@@ -107,7 +113,7 @@ class SavedWidgetsTests(unittest.TestCase):
         routine.saved_widgets(QtWidgets.QSpinBox(objectName='threshold'))
 
     def test_bad_names_duplicate_names_and_unsupported_values_are_errors(self):
-        routine = construct(lyse.Routine, {})
+        routine = construct(lyse.Routine, {}, RoutineWindow(), 'routine.py')
         box = QtWidgets.QSpinBox(objectName='threshold')
         # Numbers, strings and booleans are saved, and the same widget twice is no duplicate.
         routine.saved_widgets(box, box, QtWidgets.QDoubleSpinBox(objectName='scale'),
@@ -119,6 +125,96 @@ class SavedWidgetsTests(unittest.TestCase):
                            (QtWidgets.QWidget, 'frame')]:
             with self.subTest(kind=kind.__name__, name=name), self.assertRaises(ValueError):
                 routine.saved_widgets(kind(objectName=name))
+
+
+class OneFigure(lyse.Routine):
+    def __init__(self):
+        self.figure = self.add_figure('Counts')
+
+
+class WindowTests(unittest.TestCase):
+
+    def setUp(self):
+        self.qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+        self.pyplot_figures = plt.get_fignums()
+        self.window = RoutineWindow()
+        self.routine = construct(OneFigure, {}, self.window, 'routine.py')
+        self.dock = self.window.findChild(QtWidgets.QDockWidget, 'Counts')
+
+    def test_a_named_figure_is_made_once_and_kept_when_hidden(self):
+        figure = self.routine.figure
+        self.window.show()
+        self.assertIs(self.routine.add_figure('Counts'), figure)
+        self.assertEqual(plt.get_fignums(), self.pyplot_figures)
+
+        self.dock.close()
+        self.assertIs(self.routine.add_figure('Counts'), figure)
+        self.assertFalse(self.dock.isVisible())
+        view = next(a for a in self.window.menuBar().actions() if a.text() == 'View').menu()
+        next(a for a in view.actions() if a.text() == 'Counts').trigger()
+        self.assertTrue(self.dock.isVisible())
+
+        # Refused and then hidden, so that Qt does not count the last window closed and quit.
+        self.assertFalse(self.window.close())
+        self.assertFalse(self.window.isVisible())
+        self.assertIs(self.routine.add_figure('Counts'), figure)
+
+    def test_ctrl_c_copies_the_figure_only_from_within_its_dock(self):
+        box = QtWidgets.QLineEdit('text', self.window)
+        button = QtWidgets.QPushButton(self.window)
+        self.window.show()
+        self.window.activateWindow()
+        self.qapplication.processEvents()
+        box.selectAll()
+        self.qapplication.clipboard().clear()
+        with mock.patch('zprocess.start_daemon') as daemon:
+            # A line edit keeps Ctrl+C for itself, so only a button tells a dock's shortcut
+            # from a window's.
+            for widget, copies in [(box, 0), (button, 0), (self.routine.figure.canvas, 1)]:
+                widget.setFocus()
+                self.assertIs(self.qapplication.focusWidget(), widget)
+                QtTest.QTest.keyClick(widget, QtCore.Qt.Key.Key_C,
+                                      QtCore.Qt.KeyboardModifier.ControlModifier)
+                self.assertEqual(daemon.call_count, copies)
+        self.assertEqual(self.qapplication.clipboard().text(), 'text')
+        Path(daemon.call_args.args[0][-1]).unlink()
+
+    def test_the_layout_comes_back_with_the_output_dock_shown(self):
+        second = RoutineWindow()
+        construct(OneFigure, {}, second, 'routine.py')
+        self.window.show()
+        self.window.resize(500, 400)
+        self.dock.close()
+        self.window.dock_output.close()
+
+        restore_layout(second, save_layout(self.window))
+        second.show()
+        self.assertFalse(second.findChild(QtWidgets.QDockWidget, 'Counts').isVisible())
+        self.assertTrue(second.dock_output.isVisible())
+        self.assertEqual(second.size(), QtCore.QSize(500, 400))
+
+        # Damaged state is reported and ignored, and the Output dock is still shown.
+        second.dock_output.close()
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            restore_layout(second, {'state': b'damaged'})
+        self.assertIn('state', report.getvalue())
+        self.assertTrue(second.dock_output.isVisible())
+
+    def test_load_ui_finds_a_relative_file_beside_the_routine_file(self):
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (folder / 'controls.ui').write_text(
+            '<ui version="4.0"><class>Form</class><widget class="QWidget" name="Form">'
+            '<widget class="QLineEdit" name="label"/></widget></ui>')
+        (folder / 'elsewhere').mkdir()
+
+        class Analysis(lyse.Routine):
+            def __init__(self):
+                self.ui = self.load_ui('controls.ui')
+
+        with contextlib.chdir(folder / 'elsewhere'):
+            routine = construct(Analysis, {}, self.window, folder / 'routine.py')
+        self.assertIs(self.window.centralWidget(), routine.ui)
+        self.assertIsInstance(routine.ui.label, QtWidgets.QLineEdit)
 
 
 class SettingsTests(unittest.TestCase):

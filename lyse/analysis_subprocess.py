@@ -31,7 +31,7 @@ from qtutils.qt.QtCore import pyqtSignal as Signal
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
 
-from qtutils import inmain, inmain_decorator, UiLoader
+from qtutils import inmain, inmain_decorator
 import qtutils.icons
 
 import multiprocessing
@@ -54,8 +54,10 @@ desktop_app.set_process_appid('lyse')
 
 # lyse imports
 import lyse.utils
+import lyse.utils.gui
 import lyse.utils.worker
 import lyse.figure_manager
+import lyse.routine
 
 # This process is not fork-safe. Spawn fresh processes on platforms that would fork:
 if (
@@ -68,17 +70,12 @@ if (
 autoload_config_file = lyse.utils.LABCONFIG.get('lyse', 'autoload_config_file')
 config_dir = os.path.dirname(autoload_config_file)
 
-# Constructing a UiLoader replaces sys.modules['qtutils.widgets'], which erases the
-# custom widgets a routine has registered on its own loader. Plot windows share this
-# loader, made before any routine runs, so that opening one erases nothing.
-loader = UiLoader()
-
 class PlotWindowCloseEvent(QtGui.QCloseEvent):
     def __init__(self, force, *args, **kwargs):
         QtGui.QCloseEvent.__init__(self, *args, **kwargs)
         self.force = force
 
-class PlotWindow(QtWidgets.QWidget):
+class PlotWindow(lyse.utils.gui.ThemedWindow, QtWidgets.QWidget):
     # A signal for when the window manager has created a new window for this widget:
     close_signal = Signal()
 
@@ -172,25 +169,13 @@ class PlotWindow(QtWidgets.QWidget):
         state[self._geometry_key()] = geometry
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
 
-    def changeEvent(self, event):
-        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
-        # never passes ApplicationPaletteChange on to it.
-        if (event.type() == QtCore.QEvent.Type.PaletteChange
-                or event.type() == QtCore.QEvent.Type.StyleChange):
-            for widget in self.findChildren(QtWidgets.QWidget):
-                # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
-                widget.setStyleSheet(widget.styleSheet())
-                widget.setPalette(widget.palette())
-
-        return super().changeEvent(event)
-
 
 class Plot(object):
     def __init__(self, figure, identifier, filepath):
         self.identifier = identifier
-        self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/plot_window.ui'),
-                              PlotWindow(self, analysis_filepath=filepath,
-                                         analysis_identifier=identifier))
+        self.ui = lyse.routine.loader.load(
+            os.path.join(lyse.utils.LYSE_DIR, 'user_interface/plot_window.ui'),
+            PlotWindow(self, analysis_filepath=filepath, analysis_identifier=identifier))
 
         self.set_window_title(identifier, filepath)
 
@@ -205,15 +190,9 @@ class Plot(object):
         self.lock_action.setCheckable(True)
         self.lock_action.setToolTip('Lock axes')
 
-        self.copy_to_clipboard_action = self.navigation_toolbar.addAction(
-            QtGui.QIcon(':qtutils/fugue/clipboard--arrow'),
-           'Copy to clipboard', self.on_copy_to_clipboard_triggered)
-        self.copy_to_clipboard_action.setToolTip('Copy to clipboard')
+        self.copy_to_clipboard_action = lyse.routine.fill_plot_form(
+            self.ui, self.navigation_toolbar, self.on_copy_to_clipboard_triggered)
         self.copy_to_clipboard_action.setShortcut(QtGui.QKeySequence.Copy)
-
-
-        self.ui.verticalLayout_canvas.addWidget(self.canvas)
-        self.ui.verticalLayout_navigation_toolbar.addWidget(self.navigation_toolbar)
 
         self.lock_axes = False
         self.axis_limits = None

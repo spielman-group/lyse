@@ -17,7 +17,7 @@ import numpy as np
 
 # qt imports
 from qtutils import inmain_decorator
-from qtutils.qt import QtWidgets
+from qtutils.qt import QtCore, QtWidgets
 
 
 @inmain_decorator()
@@ -123,3 +123,19 @@ def get_check_state(qcheckbox):
         return int(qcheckbox.checkState())
     except Exception as e:
         raise RuntimeError('Input is not a recognized QCheckBox type') from e
+
+
+class ThemedWindow:
+    """A mixin for a window that refreshes its widgets when the theme changes."""
+
+    def changeEvent(self, event):
+        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
+        # never passes ApplicationPaletteChange on to it.
+        if (event.type() == QtCore.QEvent.Type.PaletteChange
+                or event.type() == QtCore.QEvent.Type.StyleChange):
+            for widget in self.findChildren(QtWidgets.QWidget):
+                # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
+                widget.setStyleSheet(widget.styleSheet())
+                widget.setPalette(widget.palette())
+
+        return super().changeEvent(event)
