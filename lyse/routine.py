@@ -12,7 +12,6 @@
 #                                                                   #
 #####################################################################
 """The Routine base class of GUI routines, and the pieces the worker builds one from."""
-import ast
 import base64
 import hashlib
 import sys
@@ -29,7 +28,6 @@ from matplotlib.figure import Figure
 
 from labscript_utils.labconfig import load_appconfig, save_appconfig
 from labscript_utils.ls_zprocess import get_config
-from labscript_utils.qtwidgets.outputbox import OutputBox
 from lyse.utils import LYSE_DIR
 import lyse.utils.gui as gui
 import lyse.utils.worker as worker
@@ -70,9 +68,9 @@ class RoutineWindow(gui.ThemedWindow, QtWidgets.QMainWindow):
 class Routine:
     """The base class of a lyse GUI routine.
 
-    A routine file that declares ``LYSE_MODE = "gui"`` defines exactly one
-    subclass. The worker constructs it once, calls `run` for each analysis,
-    and calls `close` once as it quits.
+    A GUI routine is a folder whose name ends in ``.lyse``. Its ``lyse_routine.py``
+    defines exactly one subclass. The worker constructs it once, calls `run` for each
+    analysis, and calls `close` once as it quits.
 
     ``__init__()`` and `close` are optional. The worker constructs the object,
     so ``__init__()`` takes no arguments and need not call
@@ -111,7 +109,7 @@ class Routine:
         Parameters
         ----------
         filename : str or Path
-            The file, absolute or relative to the routine file.
+            The file, absolute or relative to the routine folder.
         """
         ui = loader.load(str(self._folder / filename))
         self.window.setCentralWidget(ui)
@@ -183,50 +181,31 @@ class Routine:
         return self._figures[name]
 
 
-def routine_mode(source, filename):
-    """Return 'gui', or None for a classic script. Raise SyntaxError or
-    ValueError if the file's mode cannot be read."""
-    tree = ast.parse(source, filename)
-    bindings = [node for node in ast.walk(tree)
-                if (isinstance(node, ast.Name) and node.id == 'LYSE_MODE'
-                    and isinstance(node.ctx, ast.Store))
-                or (isinstance(node, ast.alias) and (node.asname or node.name) == 'LYSE_MODE')]
-    if not bindings:
-        return None
-    declaration = ast.dump(ast.parse('LYSE_MODE = "gui"').body[0])
-    if len(bindings) == 1 and declaration in map(ast.dump, tree.body):
-        return 'gui'
-    raise ValueError(
-        f'{filename}: LYSE_MODE must be assigned once, at the top level, as "gui", or not at all.')
-
-
 def routine_class(namespace):
-    """Return the one Routine subclass that the executed file defines. Raise
-    ValueError if it defines none or several."""
-    # Classes defined in the file carry its __name__ as __module__; imported classes do not.
+    """Return the one Routine subclass defined in the namespace of lyse_routine.py's module.
+    Raise ValueError if it defines none or several."""
+    # Classes defined in the module carry its __name__ as __module__; imported classes do not.
     classes = {value for value in namespace.values()
                if isinstance(value, type) and issubclass(value, Routine)
                and value.__module__ == namespace['__name__']}
     if not classes:
-        raise ValueError('The routine file defines no subclass of lyse.Routine.')
+        raise ValueError('lyse_routine.py defines no subclass of lyse.Routine.')
     if len(classes) > 1:
         names = ', '.join(sorted(cls.__name__ for cls in classes))
         raise ValueError(
-            f'The routine file defines more than one subclass of lyse.Routine: {names}. '
+            f'lyse_routine.py defines more than one subclass of lyse.Routine: {names}. '
             'A shared base class belongs in an imported module.')
     return classes.pop()
 
 
-def route_output(window):
-    """Send all of the process's output to a new box in the window's Output dock; return the box."""
-    box = OutputBox(window.verticalLayout_output)
+def route_output(port):
+    """Send all of the process's output to the OutputBox at `port`."""
     config = get_config()
     for name in ('stdout', 'stderr'):
         if startup := OutputInterceptor.streams_connected[name]:
             startup.disconnect()
-        OutputInterceptor('localhost', box.port, name, shared_secret=config['shared_secret'],
+        OutputInterceptor('localhost', port, name, shared_secret=config['shared_secret'],
                           allow_insecure=config['allow_insecure']).connect()
-    return box
 
 
 def construct(cls, controls, window, routine_path, output_port):
@@ -236,7 +215,7 @@ def construct(cls, controls, window, routine_path, output_port):
     routine._saved_controls = controls
     routine._saved_widgets = {}
     routine._figures = {}
-    routine._folder = Path(routine_path).parent
+    routine._folder = Path(routine_path)
     routine.window = window
     routine.output_port = output_port
     routine.values = namedtuple('Values', [])()
@@ -271,13 +250,13 @@ def read_saved_widgets(routine):
 class RoutineSettings:
     """The settings file of one routine: its control values and window layout.
 
-    The file is named for the routine's full path, so routines with one file name
-    in different folders keep their own. Problems are reported on stderr, never raised."""
+    The file is named for the routine folder's full path, so routines whose folders
+    share a name keep their own. Problems are reported on stderr, never raised."""
 
-    def __init__(self, routine_path, folder):
+    def __init__(self, routine_path, config_dir):
         routine = Path(routine_path).resolve()
         digest = hashlib.sha256(str(routine).encode()).hexdigest()[:12]
-        self.path = Path(folder) / f'lyse-routine-{routine.stem}-{digest}.toml'
+        self.path = Path(config_dir) / f'lyse-routine-{routine.stem}-{digest}.toml'
         # An unreadable file that could not be renamed aside must not be saved over.
         self.writable = True
 

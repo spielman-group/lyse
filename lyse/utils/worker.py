@@ -34,6 +34,8 @@ paths = None
 Within lyse GUI, set for a multishot routine. None in a singleshot routine, and
 if running stand-alone.
 """
+routine_path = None
+"""The GUI routine's folder; None in a classic script and when running stand-alone."""
 _updated_data = {}
 """Data to be sent back to the lyse GUI if running within lyse"""
 _plot_classes = {}
