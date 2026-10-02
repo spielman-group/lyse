@@ -68,6 +68,11 @@ if (
 autoload_config_file = lyse.utils.LABCONFIG.get('lyse', 'autoload_config_file')
 config_dir = os.path.dirname(autoload_config_file)
 
+# Constructing a UiLoader replaces sys.modules['qtutils.widgets'], which erases the
+# custom widgets a routine has registered on its own loader. Plot windows share this
+# loader, made before any routine runs, so that opening one erases nothing.
+loader = UiLoader()
+
 class PlotWindowCloseEvent(QtGui.QCloseEvent):
     def __init__(self, force, *args, **kwargs):
         QtGui.QCloseEvent.__init__(self, *args, **kwargs)
@@ -183,7 +188,6 @@ class PlotWindow(QtWidgets.QWidget):
 class Plot(object):
     def __init__(self, figure, identifier, filepath):
         self.identifier = identifier
-        loader = UiLoader()
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/plot_window.ui'),
                               PlotWindow(self, analysis_filepath=filepath,
                                          analysis_identifier=identifier))

@@ -17,12 +17,14 @@ analysis GUI code
 
 import os
 import time
+import types
 import logging
 import threading
 import subprocess
 
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
+from zprocess import Interruptor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
@@ -161,22 +163,38 @@ class RoutineBox(object):
     def add_routines(self, routine_files, clear_existing=False):
         """Add routines to the routine box, where routine_files is a list of
         tuples containing the filepath and whether the routine is enabled or
-        not when it is added. if clear_existing == True, then any existing
-        analysis routines will be cleared before the new ones are added."""
+        not when it is added. if clear_existing == True, then existing routines
+        not in routine_files are removed and those in it are restarted, so
+        that the box holds routine_files in order, as if just added."""
+        existing = {routine.filepath: routine for routine in self.routines}
         if clear_existing:
+            filepaths = [filepath for filepath, checked in routine_files]
             for routine in self.routines[:]:
-                routine.remove()
-                self.routines.remove(routine)
+                if routine.filepath not in filepaths:
+                    routine.remove()
+                    self.routines.remove(routine)
 
         # Queue the files to be opened:
+        added = []
         for filepath, checked in routine_files:
-            if filepath in [routine.filepath for routine in self.routines]:
+            if filepath in added or (not clear_existing and filepath in existing):
                 self.app.output_box.output('Warning: Ignoring duplicate analysis routine %s\n'%filepath, red=True)
+                continue
+            added.append(filepath)
+            if clear_existing and filepath in existing:
+                # A restart, unlike a new routine, ends the old worker before the new one starts.
+                routine = existing[filepath]
+                routine.restart()
+                routine.set_status('clear')
+                active_item = self.model.item(routine.get_row_index(), self.COL_ACTIVE)
+                active_item.setCheckState(QtCore.Qt.CheckState(checked))
                 continue
             self.logger.info(f'adding routine for {filepath}')
             routine = AnalysisRoutine(self.app, filepath, self.model, self.output_box_port,
                                       QtCore.Qt.CheckState(checked))
             self.routines.append(routine)
+        if clear_existing:
+            self.reorder([added.index(routine.filepath) for routine in self.routines])
         self.update_select_all_checkstate()
         
     def on_treeview_double_left_clicked(self, index):
@@ -449,7 +467,7 @@ class AnalysisRoutine(object):
         name_item.setData(self.filepath, self.ROLE_FULLPATH)
         self.model.appendRow([active_item, info_item, name_item])
             
-        self.exiting = False
+        self.shutdown = None
         
     def start_worker(self):
         # Start a worker process for this analysis routine:
@@ -466,9 +484,27 @@ class AnalysisRoutine(object):
         to_worker.put(self.filepath)
         return to_worker, from_worker, worker
         
-    def do_analysis(self, filepath, paths):
+    @inmain_decorator()
+    def send_analysis(self, filepath, paths):
+        # On the GUI thread, where shutdowns start, so that none can start between the
+        # check and the send. Returns whether one is pending, and the reply's queue if sent.
+        if self.shutdown is not None:
+            return True, None
+        if self.worker.poll() is not None:
+            return False, None
         self.to_worker.put(['analyse', (filepath, paths)])
-        signal, data = self.from_worker.get()
+        return False, self.from_worker
+
+    def do_analysis(self, filepath, paths):
+        # Wait out a pending shutdown, rather than send the shot to a worker that is quitting.
+        pending, from_worker = self.send_analysis(filepath, paths)
+        while pending:
+            time.sleep(0.05)
+            pending, from_worker = self.send_analysis(filepath, paths)
+        if from_worker is None:
+            # Removed, or its worker died: nothing would answer.
+            return False, {}
+        signal, data = from_worker.get()
         if signal == 'error':
             return False, data
         elif signal == 'done':
@@ -533,38 +569,57 @@ class AnalysisRoutine(object):
         self.model.removeRow(index)
          
     def end_child(self, restart=False):
-        self.to_worker.put(['quit', None])
+        if self.shutdown is not None:
+            # One shutdown at a time: a removal or quit cancels a pending restart,
+            # and a restart changes nothing.
+            if not restart:
+                self.shutdown.restart = False
+            return
+        # A worker that has exited never takes the quit, and the put would wait forever.
+        if self.worker.poll() is None:
+            self.to_worker.put(['quit', None])
         timeout_time = time.time() + 2
-        self.exiting = True
-        QtCore.QTimer.singleShot(50,
-            lambda: self.check_child_exited(self.worker, timeout_time, kill=False, restart=restart))
+        self.shutdown = types.SimpleNamespace(
+            worker=self.worker, from_worker=self.from_worker, restart=restart)
+        QtCore.QTimer.singleShot(50, lambda: self.check_child_exited(timeout_time))
 
-    def check_child_exited(self, worker, timeout_time, kill=False, restart=False):
+    def check_child_exited(self, timeout_time, kill=False):
+        shutdown = self.shutdown
+        worker = shutdown.worker
         worker.poll()
-        if worker.returncode is None and time.time() < timeout_time:
+        # timeout_time is None once kill() has been sent: only wait for the process to go.
+        if worker.returncode is None and (timeout_time is None or time.time() < timeout_time):
             QtCore.QTimer.singleShot(50,
-                lambda: self.check_child_exited(worker, timeout_time, kill, restart))
+                lambda: self.check_child_exited(timeout_time, kill))
             return
         elif worker.returncode is None:
             if not kill:
                 worker.terminate()
                 self.app.output_box.output('%s worker not responding.\n'%self.shortname)
                 timeout_time = time.time() + 2
-                QtCore.QTimer.singleShot(50,
-                    lambda: self.check_child_exited(worker, timeout_time, kill=True, restart=restart))
-                return
             else:
                 worker.kill()
                 self.app.output_box.output('%s worker killed\n'%self.shortname, red=True)
+                timeout_time = None
+            QtCore.QTimer.singleShot(50,
+                lambda: self.check_child_exited(timeout_time, kill=True))
+            return
+        elif timeout_time is None:
+            # killed: the message was printed when kill() was sent.
+            pass
         elif kill:
             self.app.output_box.output('%s worker terminated\n'%self.shortname, red=True)
+        elif worker.returncode != 0:
+            self.app.output_box.output(
+                f'{self.shortname} worker exited with return code {worker.returncode}\n', red=True)
         else:
             self.app.output_box.output('%s worker exited cleanly\n'%self.shortname)
         
         # if analysis was running notify analysisloop that analysis has failed
-        self.from_worker.put(('error', {}))
+        # Its own Interruptor: on the queue's, put() waits forever while get() holds it.
+        shutdown.from_worker.put(('error', {}), interruptor=Interruptor())
+        self.shutdown = None
 
-        if restart:
+        if shutdown.restart:
             self.to_worker, self.from_worker, self.worker = self.start_worker()
             self.app.output_box.output('%s worker restarted\n'%self.shortname)
-        self.exiting = False
