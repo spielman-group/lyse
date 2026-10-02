@@ -301,11 +301,10 @@ class Run(object):
         # name of the python script which is instantiating this Run object. If the user
         # is running interactively or in an unusual environment such that the __main__
         # module isn't in sys.modules or doesn't have a non-None __file__ attribute,
-        # then self.group will not be set. A GUI routine's folder takes the place of its script.
-        script_path = (lyse.utils.worker.routine_path
-                       or getattr(sys.modules.get('__main__'), '__file__', None))
-        if not self.no_write and script_path is not None:
-            self.set_group(Path(script_path).stem)
+        # then self.group will not be set.
+        main_module_path = getattr(sys.modules.get('__main__'), '__file__', None)
+        if not self.no_write and main_module_path is not None:
+            self.set_group(Path(main_module_path).stem)
 
     @property
     def h5_path(self):

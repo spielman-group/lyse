@@ -28,6 +28,7 @@ from matplotlib.figure import Figure
 
 from labscript_utils.labconfig import load_appconfig, save_appconfig
 from labscript_utils.ls_zprocess import get_config
+import lyse
 from lyse.utils import LYSE_DIR
 import lyse.utils.gui as gui
 import lyse.utils.worker as worker
@@ -78,31 +79,29 @@ class Routine:
 
     Attributes
     ----------
+    group : str or None
+        The group that `get_run` and `get_sequence` save results in; None means the class's name.
     icon : str or Path or None
         The window's icon file, absolute or relative to the routine folder; None keeps lyse's icon.
     output_port : int
         The port of the window's Output box; a child process started with it as its
         ``output_redirection_port`` shows its output there.
+    path : str or None
+        The shot file of a singleshot analysis, as ``lyse.path``; None otherwise.
+    paths : list of str or None
+        The shot files analysed since the last multishot pass, as ``lyse.paths``; None otherwise.
     values : namedtuple
         The saved controls' values by objectName; immutable, new for each analysis, empty at first.
     window : QMainWindow
         The routine's window: the controls are its central widget, the figures and output are docks.
     """
 
+    group = None
     icon = None
 
-    def run(self, path, paths):
-        """Analyse the shots of one analysis request; every routine defines it.
-
-        Parameters
-        ----------
-        path : str or None
-            The shot file of a singleshot analysis, as ``lyse.path``.
-        paths : list of str or None
-            The shot files analysed since the last multishot pass, as
-            ``lyse.paths``.
-        """
-        raise NotImplementedError(f'{type(self).__name__} must define run(path, paths).')
+    def run(self):
+        """Analyse the shots in `path` and `paths`; every routine defines it."""
+        raise NotImplementedError(f'{type(self).__name__} must define run().')
 
     def close(self):
         """Release the routine's resources, on the GUI thread, once the last `run` returns."""
@@ -184,6 +183,56 @@ class Routine:
             self._figures[name] = figure
         return self._figures[name]
 
+    def get_run(self, path=None, no_write=False):
+        """Return a `lyse.Run` that saves its results in the routine's `group`.
+
+        Parameters
+        ----------
+        path : str, optional
+            The shot file; ``self.path`` by default, or a ValueError if that is None.
+        no_write : bool, optional
+            True makes the Run read-only, as for `lyse.Run`.
+        """
+        if path is None and self.path is None:
+            raise ValueError(
+                'This analysis has no self.path, as in a multishot routine, so pass a path.')
+        run = lyse.Run(self.path if path is None else path, no_write)
+        run.set_group(self.group or type(self).__name__)
+        return run
+
+    def get_sequence(self, h5_path, run_paths=None, no_write=False):
+        """Return a `lyse.Sequence` that saves its results in the routine's `group`.
+
+        Parameters
+        ----------
+        h5_path : str
+            The file the results are saved in; it is created if it does not exist.
+        run_paths : list of str, optional
+            The sequence's shot files; ``self.paths`` by default, or a ValueError if that is None.
+        no_write : bool, optional
+            True makes the Sequence read-only, as for `lyse.Sequence`.
+        """
+        if run_paths is None and self.paths is None:
+            raise ValueError(
+                'This analysis has no self.paths, as in a singleshot routine, so pass run_paths.')
+        sequence = lyse.Sequence(h5_path, self.paths if run_paths is None else run_paths, no_write)
+        sequence.set_group(self.group or type(self).__name__)
+        return sequence
+
+    def data(self, filepath=None, **kwargs):
+        """Return `lyse.data` for the analysis's shot, or for the file given.
+
+        With no ``self.path``, as in a multishot routine, that is lyse's dataframe.
+
+        Parameters
+        ----------
+        filepath : str, optional
+            The shot file to read.
+        **kwargs
+            Passed to `lyse.data`.
+        """
+        return lyse.data(self.path if filepath is None else filepath, **kwargs)
+
 
 def routine_class(namespace):
     """Return the one Routine subclass defined in the namespace of lyse_routine.py's module.
@@ -223,6 +272,7 @@ def construct(cls, controls, window, routine_path, output_port):
     routine.window = window
     routine.output_port = output_port
     routine.values = namedtuple('Values', [])()
+    routine.path = routine.paths = None
     if routine.icon is not None:
         window.setWindowIcon(QtGui.QIcon(str(routine._folder / routine.icon)))
     routine.__init__()

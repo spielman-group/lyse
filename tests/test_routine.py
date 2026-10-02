@@ -25,6 +25,7 @@ from unittest import mock
 import matplotlib.pyplot as plt
 from qtutils.qt import QT_ENV, QtCore, QtGui, QtWidgets
 
+import labscript_utils.h5_lock, h5py
 from labscript_utils.ls_zprocess import get_config
 from labscript_utils.qtwidgets.outputbox import OutputBox
 import lyse
@@ -224,6 +225,50 @@ class WindowTests(unittest.TestCase):
                     construct(cls, {}, window, routine_path, None)
                     pixel = window.windowIcon().pixmap(16, 16).toImage().pixelColor(8, 8)
                     self.assertEqual(pixel.name(), '#ff0000')
+
+
+class ResultsTests(unittest.TestCase):
+
+    def setUp(self):
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.first, self.second, self.summary = (
+            str(folder / f'{name}.h5') for name in ('first', 'second', 'summary'))
+        # The least a shot file holds for lyse.data to read it.
+        for shot in (self.first, self.second):
+            with h5py.File(shot, 'w') as f:
+                f.create_group('globals')
+                f.attrs['sequence_id'] = '20260923T101500_0'
+
+        class Analysis(lyse.Routine):
+            pass
+
+        self.routine = construct(Analysis, {}, RoutineWindow(), 'routine.lyse', None)
+
+    def test_results_go_in_the_class_name_unless_the_routine_sets_a_group(self):
+        self.routine.get_run(self.first).save_result('N', 1)
+        self.routine.get_sequence(self.summary, [self.first]).save_result('N', 2)
+        # The routine may set its group at any time.
+        self.routine.group = 'Counts'
+        self.routine.get_run(self.first).save_result('N', 3)
+        self.routine.get_sequence(self.summary, [self.first]).save_result('N', 4)
+        for path, expected in [(self.first, {'Analysis': {'N': 1}, 'Counts': {'N': 3}}),
+                               (self.summary, {'Analysis': {'N': 2}, 'Counts': {'N': 4}})]:
+            with h5py.File(path, 'r') as f:
+                saved = {name: dict(group.attrs) for name, group in f['results'].items()}
+            self.assertEqual(saved, expected)
+
+    def test_get_sequence_and_data_default_to_the_analysis_shots(self):
+        for shot in (self.first, self.second):
+            self.routine.get_run(shot).save_result_array('trace', [1, 2])
+
+        # As the worker sets them for a singleshot analysis, and then for a multishot one.
+        self.routine.path, self.routine.paths = self.second, None
+        self.assertEqual(self.routine.data()['filepath'], self.second)
+        self.assertEqual(self.routine.data(self.first)['filepath'], self.first)
+
+        self.routine.path, self.routine.paths = None, [self.first, self.second]
+        sequence = self.routine.get_sequence(self.summary)
+        self.assertEqual(list(sequence.get_result_array('Analysis', 'trace')), self.routine.paths)
 
 
 class SettingsTests(unittest.TestCase):

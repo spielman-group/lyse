@@ -104,14 +104,14 @@ class Analysis(lyse.Routine):
         self.box = QtWidgets.QSpinBox(objectName='threshold', value=3)
         self.saved_widgets(self.box)
 
-    def run(self, path, paths):
-        if path.endswith('bad.h5'):
+    def run(self):
+        if self.path.endswith('bad.h5'):
             raise RuntimeError('bad shot')
-        run = lyse.Run(path)
+        run = self.get_run()
         run.save_result('seen', self.values.threshold, save_to_h5=False)
         inmain(self.box.setValue, widen(self.values.threshold))
         run.save_result('kept', self.values.threshold, save_to_h5=False)
-        if path.endswith('slow.h5'):
+        if self.path.endswith('slow.h5'):
             ProcessTree.instance().event('running', role='post').post('slow')
             while 'threshold = 7' not in Path('<settings>').read_text():
                 time.sleep(0.01)
@@ -176,7 +176,7 @@ class GuiWorkerTests(unittest.TestCase):
         worker = self.start(ROUTINE)
         for seen in (3, 7):
             self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): {
-                ('routine', 'seen'): seen, ('routine', 'kept'): seen}}])
+                ('Analysis', 'seen'): seen, ('Analysis', 'kept'): seen}}])
             self.assertEqual(self.settings.load()[0], {'threshold': seen})
 
     def test_a_failed_run_replies_error_without_earlier_results(self):
@@ -194,7 +194,7 @@ class GuiWorkerTests(unittest.TestCase):
         worker.send('quit')
         # The run returns once the quit has saved the box, and its snapshot is not replaced.
         self.assertEqual(worker.reply(), ['done', {str(self.slow): {
-            ('routine', 'seen'): 3, ('routine', 'kept'): 3}}])
+            ('Analysis', 'seen'): 3, ('Analysis', 'kept'): 3}}])
         self.assertEqual(worker.process.wait(timeout=60), 0)
         self.assertEqual((self.routine / 'closed').read_text().split(), ['MainThread'])
 
@@ -216,7 +216,7 @@ class GuiWorkerTests(unittest.TestCase):
             'import lyse\nlyse.Run(lyse.path).save_result("seen", 7, save_to_h5=False)\n')
         classic_worker = Worker(classic)
         self.addCleanup(classic_worker.kill)
-        cases = [(self.start(ROUTINE), {('routine', 'seen'): 3, ('routine', 'kept'): 3}),
+        cases = [(self.start(ROUTINE), {('Analysis', 'seen'): 3, ('Analysis', 'kept'): 3}),
                  (classic_worker, {('classic', 'seen'): 7})]
         for worker, results in cases:
             worker.send('show')

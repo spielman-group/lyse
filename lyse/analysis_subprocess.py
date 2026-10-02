@@ -581,7 +581,6 @@ class GuiWorker(AnalysisWorker):
         # Not the base class's: it starts a ModuleWatcher, which reloads code, and the command
         # listener, which must wait until the routine has loaded.
         self.to_parent, self.from_parent, self.filepath = to_parent, from_parent, folder
-        lyse.utils.worker.routine_path = folder
         self.window = lyse.routine.RoutineWindow()
         self.window.setWindowTitle(os.path.basename(folder))
         box = OutputBox(self.window.verticalLayout_output)
@@ -633,7 +632,8 @@ class GuiWorker(AnalysisWorker):
                 try:
                     self.print_header(path)
                     self.routine.values = self.save_controls()
-                    self.routine.run(path, paths)
+                    self.routine.path, self.routine.paths = path, paths
+                    self.routine.run()
                     success = True
                 except Exception:
                     traceback.print_exc()
