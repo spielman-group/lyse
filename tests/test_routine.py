@@ -11,11 +11,15 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The mode a routine file declares, and the routine class it defines."""
+"""The mode a routine file declares, the routine class it defines, and its settings."""
+import contextlib
+import io
+import tempfile
 import unittest
+from pathlib import Path
 
 import lyse
-from lyse.routine import routine_class, routine_mode
+from lyse.routine import RoutineSettings, routine_class, routine_mode
 
 
 def namespace_of(source, **imports):
@@ -61,3 +65,41 @@ class DiscoveryTests(unittest.TestCase):
             routine_class(namespace_of('from lyse import Routine\n'
                                        'class Base(Routine): pass\n'
                                        'class Analysis(Base): pass\n'))
+
+
+class SettingsTests(unittest.TestCase):
+
+    def setUp(self):
+        self.folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def test_settings_are_kept_per_full_path_and_bad_entries_are_dropped(self):
+        first = RoutineSettings(self.folder / 'a' / 'fit.py', self.folder)
+        second = RoutineSettings(self.folder / 'b' / 'fit.py', self.folder)
+        first.save({'threshold': 3, 'on': True}, {'geometry': b'\x01\x02'})
+        second.save({'threshold': 5.5}, {})
+        self.assertEqual(first.load(), ({'threshold': 3, 'on': True}, {'geometry': b'\x01\x02'}))
+        self.assertEqual(second.load(), ({'threshold': 5.5}, {}))
+
+        first.path.write_text('[controls]\nthreshold = 4\nmode = [1, 2]\n'
+                              '[layout]\ngeometry = "AQI="\nstate = "!!!"\n')
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            self.assertEqual(first.load(), ({'threshold': 4}, {'geometry': b'\x01\x02'}))
+        self.assertIn('mode', report.getvalue())
+        self.assertIn('state', report.getvalue())
+
+    def test_an_unreadable_file_is_set_aside_and_saving_resumes(self):
+        settings = RoutineSettings(self.folder / 'fit.py', self.folder)
+        with contextlib.redirect_stderr(io.StringIO()):
+            for damaged in ('first = [', 'second = ['):
+                settings.path.write_text(damaged)
+                self.assertEqual(settings.load(), ({}, {}))
+        self.assertEqual({path.read_text() for path in self.folder.iterdir()},
+                         {'first = [', 'second = ['})
+        settings.save({'threshold': 3}, {})
+        self.assertEqual(settings.load(), ({'threshold': 3}, {}))
+
+        (self.folder / 'file').write_text('')
+        unwritable = RoutineSettings(self.folder / 'fit.py', self.folder / 'file')
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            unwritable.save({'threshold': 3}, {})
+        self.assertTrue(report.getvalue())

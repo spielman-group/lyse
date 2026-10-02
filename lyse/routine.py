@@ -11,9 +11,16 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The Routine base class of a GUI routine file, and the steps from the file to a
-routine: reading its mode, finding its class and constructing it."""
+"""The Routine base class of a GUI routine file, the steps from the file to a
+routine (reading its mode, finding its class, constructing it), and its settings."""
 import ast
+import base64
+import hashlib
+import sys
+from itertools import count
+from pathlib import Path
+
+from labscript_utils.labconfig import load_appconfig, save_appconfig
 
 
 class Routine:
@@ -85,3 +92,58 @@ def construct(cls):
     routine = cls.__new__(cls)
     routine.__init__()
     return routine
+
+
+class RoutineSettings:
+    """The settings file of one routine: its control values and window layout.
+
+    The file is named for the routine's full path, so routines with one file name
+    in different folders keep their own. Problems are reported on stderr, never raised."""
+
+    def __init__(self, routine_path, folder):
+        routine = Path(routine_path).resolve()
+        digest = hashlib.sha256(str(routine).encode()).hexdigest()[:12]
+        self.path = Path(folder) / f'lyse-routine-{routine.stem}-{digest}.toml'
+        # An unreadable file that could not be renamed aside must not be saved over.
+        self.writable = True
+
+    def _report(self, message):
+        print(f'{self.path}: {message}', file=sys.stderr)
+
+    def load(self):
+        """Return ``(controls, layout)``, the valid saved entries; layout values are bytes."""
+        try:
+            tables = load_appconfig(self.path)
+        except (OSError, ValueError) as error:
+            try:
+                backups = (self.path.with_name(f'{self.path.name}.bad{n}') for n in count(1))
+                backup = next(path for path in backups if not path.exists())
+                self.path.rename(backup)
+                outcome = f'it was renamed to {backup.name}'
+            except OSError as rename_error:
+                self.writable = False
+                outcome = f'renaming it failed ({rename_error}), so no settings will be saved'
+            self._report(f'cannot read the settings ({error}); {outcome}.')
+            return {}, {}
+        controls, layout = {}, {}
+        for name, value in tables.get('controls', {}).items():
+            if isinstance(value, (bool, int, float, str)):
+                controls[name] = value
+            else:
+                self._report(f'ignoring control {name!r}: it is not a number, string or boolean.')
+        for name, text in tables.get('layout', {}).items():
+            try:
+                layout[name] = base64.b64decode(text, validate=True)
+            except (TypeError, ValueError):
+                self._report(f'ignoring layout entry {name!r}: it is not base64 text.')
+        return controls, layout
+
+    def save(self, controls, layout):
+        """Write the controls and the layout, a dict whose values are bytes."""
+        if not self.writable:
+            return
+        try:
+            encoded = {name: base64.b64encode(data).decode() for name, data in layout.items()}
+            save_appconfig(self.path, {'controls': controls, 'layout': encoded})
+        except Exception as error:
+            self._report(f'cannot save the settings ({error}).')
