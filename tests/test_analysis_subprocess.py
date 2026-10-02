@@ -210,6 +210,18 @@ class GuiWorkerTests(unittest.TestCase):
             self.assertEqual(worker.quit(), 0)
             self.assertEqual(self.start(ROUTINE).analyse(self.good)[0], 'done')
 
+    def test_show_gets_no_reply_so_the_next_analysis_gets_its_own(self):
+        classic = self.folder / 'classic.py'
+        classic.write_text(
+            'import lyse\nlyse.Run(lyse.path).save_result("seen", 7, save_to_h5=False)\n')
+        classic_worker = Worker(classic)
+        self.addCleanup(classic_worker.kill)
+        cases = [(self.start(ROUTINE), {('routine', 'seen'): 3, ('routine', 'kept'): 3}),
+                 (classic_worker, {('classic', 'seen'): 7})]
+        for worker, results in cases:
+            worker.send('show')
+            self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): results}])
+
 
 if __name__ == '__main__':
     unittest.main()

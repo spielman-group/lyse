@@ -376,6 +376,8 @@ class AnalysisWorker(object):
                 self.quit()
             elif task == 'analyse':
                 self.analyse(*data)
+            elif task == 'show':
+                self.show_windows()
             else:
                 self.to_parent.put(['error','invalid task %s'%str(task)])
 
@@ -410,6 +412,18 @@ class AnalysisWorker(object):
             print('%s %s %s ' %(now, os.path.basename(self.filepath), os.path.basename(path)))
         else:
             print('%s %s' %(now, os.path.basename(self.filepath)))
+
+    def windows(self):
+        return [plot.ui for plot in self.plots.values()]
+
+    @inmain_decorator()
+    def show_windows(self):
+        for window in self.windows():
+            # Clears only the minimized state, so that a maximized window stays maximized.
+            window.setWindowState(window.windowState() & ~QtCore.Qt.WindowState.WindowMinimized)
+            window.show()
+            window.raise_()
+            window.activateWindow()
 
     @inmain_decorator()
     def close_plots(self):
@@ -596,6 +610,10 @@ class GuiWorker(AnalysisWorker):
             self.analysis_thread = threading.Thread(target=self.analysis_loop, daemon=True)
             self.analysis_thread.start()
         threading.Thread(target=self.mainloop, daemon=True).start()
+
+    def windows(self):
+        # A routine that failed to load has no window.
+        return [] if self.routine is None else [self.window]
 
     def analyse(self, path, paths):
         if self.routine is None:

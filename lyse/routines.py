@@ -106,6 +106,8 @@ class RoutineBox(object):
             QtGui.QIcon(':qtutils/fugue/ui-check-box-uncheck'), 'set selected routines inactive',  self.ui)
         self.action_restart_selected = QtWidgets.QAction(
             QtGui.QIcon(':qtutils/fugue/arrow-circle'), 'restart worker process for selected routines',  self.ui)
+        self.action_show_windows_selected = QtWidgets.QAction(
+            QtGui.QIcon(':qtutils/fugue/applications-blue'), 'show windows for selected routines',  self.ui)
         self.action_remove_selected = QtWidgets.QAction(
             QtGui.QIcon(':qtutils/fugue/minus'), 'Remove selected routines',  self.ui)
         self.last_opened_routine_folder = self.exp_config.get('paths', 'analysislib')
@@ -121,6 +123,7 @@ class RoutineBox(object):
         
     def connect_signals(self):
         self.ui.toolButton_add_routines.clicked.connect(self.on_add_routines_clicked)
+        self.ui.toolButton_add_routine_folder.clicked.connect(self.on_add_routine_folder_clicked)
         self.ui.toolButton_remove_routines.clicked.connect(self.on_remove_selection)
         self.model.itemChanged.connect(self.on_model_item_changed)
         self.ui.treeView.doubleLeftClicked.connect(self.on_treeview_double_left_clicked)
@@ -135,7 +138,10 @@ class RoutineBox(object):
             lambda: self.on_set_selected_triggered(QtCore.Qt.Checked))
         self.action_set_selected_inactive.triggered.connect(
             lambda: self.on_set_selected_triggered(QtCore.Qt.Unchecked))
-        self.action_restart_selected.triggered.connect(self.on_restart_selected_triggered)
+        self.action_restart_selected.triggered.connect(
+            lambda: self.on_selected_routines_triggered(AnalysisRoutine.restart))
+        self.action_show_windows_selected.triggered.connect(
+            lambda: self.on_selected_routines_triggered(AnalysisRoutine.show_windows))
         self.action_remove_selected.triggered.connect(self.on_remove_selection)
         self.ui.toolButton_move_to_top.clicked.connect(self.on_move_to_top_clicked)
         self.ui.toolButton_move_up.clicked.connect(self.on_move_up_clicked)
@@ -159,6 +165,20 @@ class RoutineBox(object):
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_routine_folder = os.path.dirname(routine_files[0])
         self.add_routines([(routine_file, QtCore.Qt.Checked) for routine_file in routine_files])
+
+    def on_add_routine_folder_clicked(self):
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self.ui, 'Select a GUI analysis routine folder', self.last_opened_routine_folder)
+        if not folder:
+            return
+        folder = os.path.abspath(folder)
+        self.last_opened_routine_folder = os.path.dirname(folder)
+        if os.path.splitext(folder)[1] != lyse.utils.GUI_ROUTINE_SUFFIX:
+            self.app.output_box.output(
+                f'Warning: Ignoring {folder}: a GUI routine folder is named <name>{lyse.utils.GUI_ROUTINE_SUFFIX}\n',
+                red=True)
+            return
+        self.add_routines([(folder, QtCore.Qt.CheckState.Checked)])
 
     def add_routines(self, routine_files, clear_existing=False):
         """Add routines to the routine box, where routine_files is a list of
@@ -204,6 +224,8 @@ class RoutineBox(object):
             return
         name_item = self.model.item(index.row(), self.COL_NAME)
         routine_filepath = name_item.data(self.ROLE_FULLPATH)
+        if os.path.splitext(routine_filepath)[1] == lyse.utils.GUI_ROUTINE_SUFFIX:
+            routine_filepath = os.path.join(routine_filepath, 'lyse_routine.py')
         # get path to text editor
         editor_path = self.exp_config.get('programs', 'text_editor')
         editor_args = self.exp_config.get('programs', 'text_editor_arguments')
@@ -260,6 +282,7 @@ class RoutineBox(object):
         menu.addAction(self.action_set_selected_active)
         menu.addAction(self.action_set_selected_inactive)
         menu.addAction(self.action_restart_selected)
+        menu.addAction(self.action_show_windows_selected)
         menu.addAction(self.action_remove_selected)
         menu.exec(QtGui.QCursor.pos())
         
@@ -339,14 +362,14 @@ class RoutineBox(object):
                 i_unselected += 1
         self.reorder(order)
         
-    def on_restart_selected_triggered(self):
+    def on_selected_routines_triggered(self, method):
         selected_indexes = self.ui.treeView.selectedIndexes()
         selected_rows = set(index.row() for index in selected_indexes)
         name_items = [self.model.item(row, self.COL_NAME) for row in selected_rows]
         filepaths = [item.data(self.ROLE_FULLPATH) for item in name_items]
         for routine in self.routines:
             if routine.filepath in filepaths:
-                routine.restart()
+                method(routine)
         self.update_select_all_checkstate()
        
     def analysis_loop(self):
@@ -559,6 +582,12 @@ class AnalysisRoutine(object):
         # TODO set status to 'restarting' or an icon or something, and gray out the item?
         self.end_child(restart=True)
         
+    @inmain_decorator()
+    def show_windows(self):
+        # On the GUI thread, where shutdowns start. A put to a worker that has exited waits forever.
+        if self.shutdown is None and self.worker.poll() is None:
+            self.to_worker.put(['show', None])
+
     def remove(self):
         """End the child process and remove from the treeview"""
         self.end_child()
