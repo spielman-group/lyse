@@ -11,16 +11,19 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The Routine base class of a GUI routine file, the steps from the file to a
-routine (reading its mode, finding its class, constructing it), and its settings."""
+"""The Routine base class of GUI routines, and the pieces the worker builds one from."""
 import ast
 import base64
 import hashlib
 import sys
+from collections import namedtuple
 from itertools import count
+from keyword import iskeyword
 from pathlib import Path
 
 from labscript_utils.labconfig import load_appconfig, save_appconfig
+
+CONTROL_VALUE_TYPES = (bool, int, float, str)
 
 
 class Routine:
@@ -33,6 +36,11 @@ class Routine:
     ``__init__()`` and `close` are optional. The worker constructs the object,
     so ``__init__()`` takes no arguments and need not call
     ``super().__init__()``.
+
+    Attributes
+    ----------
+    values : namedtuple
+        The saved controls' values by objectName; immutable, new for each analysis, empty at first.
     """
 
     def run(self, path, paths):
@@ -50,6 +58,37 @@ class Routine:
 
     def close(self):
         """Release the routine's resources, on the GUI thread, once the last `run` returns."""
+
+    def saved_widgets(self, *widgets):
+        """Register controls whose values lyse restores, saves and supplies to `run` as `values`.
+
+        A saved value is restored at once, so set a widget up, its range included, before
+        registering it, and connect signals that start work afterwards.
+
+        Parameters
+        ----------
+        *widgets : QWidget
+            Each has a unique objectName that is a Python name, not a keyword and not starting
+            with an underscore. Its value is its Qt user property, such as a spin box's value.
+
+        Raises
+        ------
+        ValueError
+            If a name is invalid or shared, or a value is not a number, string or boolean.
+        """
+        for widget in widgets:
+            name = widget.objectName()
+            if not name.isidentifier() or iskeyword(name) or name.startswith('_'):
+                raise ValueError(f'The objectName {name!r} cannot be an attribute of values.')
+            if self._saved_widgets.get(name, widget) is not widget:
+                raise ValueError(f'Two saved widgets are named {name!r}.')
+            user_property = widget.metaObject().userProperty()
+            if not isinstance(user_property.read(widget), CONTROL_VALUE_TYPES):
+                raise ValueError(f'The widget {name!r} does not hold a number, string or boolean.')
+            saved = self._saved_controls.get(name)
+            if saved is not None and not user_property.write(widget, saved):
+                print(f'Ignoring {saved!r} for {name!r}: the widget rejects it.', file=sys.stderr)
+            self._saved_widgets[name] = widget
 
 
 def routine_mode(source, filename):
@@ -86,12 +125,27 @@ def routine_class(namespace):
     return classes.pop()
 
 
-def construct(cls):
+def construct(cls, controls):
     # Allocated apart from __init__(), so that the worker can install state
     # on the instance first.
     routine = cls.__new__(cls)
+    routine._saved_controls = controls
+    routine._saved_widgets = {}
+    routine.values = namedtuple('Values', [])()
     routine.__init__()
     return routine
+
+
+def read_saved_widgets(routine):
+    """Return ``(snapshot, controls)``: the new `Routine.values` and the dict to save, read from
+    the saved widgets on the GUI thread. A deleted widget is left out and unregistered."""
+    controls = {}
+    for name, widget in list(routine._saved_widgets.items()):
+        try:
+            controls[name] = widget.metaObject().userProperty().read(widget)
+        except RuntimeError:
+            del routine._saved_widgets[name]
+    return namedtuple('Values', list(controls))(**controls), controls
 
 
 class RoutineSettings:
@@ -127,7 +181,7 @@ class RoutineSettings:
             return {}, {}
         controls, layout = {}, {}
         for name, value in tables.get('controls', {}).items():
-            if isinstance(value, (bool, int, float, str)):
+            if isinstance(value, CONTROL_VALUE_TYPES):
                 controls[name] = value
             else:
                 self._report(f'ignoring control {name!r}: it is not a number, string or boolean.')

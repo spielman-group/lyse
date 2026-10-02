@@ -11,15 +11,18 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The mode a routine file declares, the routine class it defines, and its settings."""
+"""Tests of lyse.Routine and the pieces the worker builds one from."""
 import contextlib
 import io
 import tempfile
 import unittest
 from pathlib import Path
 
+from qtutils.qt import QtCore, QtWidgets
+
 import lyse
-from lyse.routine import RoutineSettings, routine_class, routine_mode
+from lyse.routine import (
+    RoutineSettings, construct, read_saved_widgets, routine_class, routine_mode)
 
 
 def namespace_of(source, **imports):
@@ -65,6 +68,57 @@ class DiscoveryTests(unittest.TestCase):
             routine_class(namespace_of('from lyse import Routine\n'
                                        'class Base(Routine): pass\n'
                                        'class Analysis(Base): pass\n'))
+
+
+class SavedWidgetsTests(unittest.TestCase):
+
+    def setUp(self):
+        self.qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+
+    def test_a_saved_widget_takes_its_saved_value_and_reaches_the_snapshot(self):
+        class Analysis(lyse.Routine):
+            def __init__(self):
+                self.box = QtWidgets.QSpinBox(objectName='threshold', value=5)
+                self.saved_widgets(self.box)
+
+        # A saved 0 is falsy, and is still restored over the box's default of 5.
+        routine = construct(Analysis, {'threshold': 0})
+        self.assertEqual(routine.box.value(), 0)
+        self.assertEqual(len(routine.values), 0)
+
+        # A saved value the box rejects is reported and ignored.
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            rejected = construct(Analysis, {'threshold': 'text'})
+        self.assertEqual(rejected.box.value(), 5)
+        self.assertIn('threshold', report.getvalue())
+
+        routine.values, controls = read_saved_widgets(routine)
+        self.assertEqual(routine.values.threshold, 0)
+        self.assertEqual(controls, {'threshold': 0})
+        with self.assertRaises(AttributeError):
+            routine.values.threshold = 1
+        with self.assertRaises(AttributeError):
+            del routine.values.threshold
+
+        # A deleted widget is left out, and its name is free again.
+        routine.box.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+        self.assertEqual(read_saved_widgets(routine), ((), {}))
+        routine.saved_widgets(QtWidgets.QSpinBox(objectName='threshold'))
+
+    def test_bad_names_duplicate_names_and_unsupported_values_are_errors(self):
+        routine = construct(lyse.Routine, {})
+        box = QtWidgets.QSpinBox(objectName='threshold')
+        # Numbers, strings and booleans are saved, and the same widget twice is no duplicate.
+        routine.saved_widgets(box, box, QtWidgets.QDoubleSpinBox(objectName='scale'),
+                              QtWidgets.QLineEdit(objectName='label'),
+                              QtWidgets.QCheckBox(objectName='enabled'))
+        for kind, name in [(QtWidgets.QSpinBox, 'two words'), (QtWidgets.QSpinBox, ''),
+                           (QtWidgets.QSpinBox, 'class'), (QtWidgets.QSpinBox, '_hidden'),
+                           (QtWidgets.QLineEdit, 'threshold'), (QtWidgets.QDateEdit, 'day'),
+                           (QtWidgets.QWidget, 'frame')]:
+            with self.subTest(kind=kind.__name__, name=name), self.assertRaises(ValueError):
+                routine.saved_widgets(kind(objectName=name))
 
 
 class SettingsTests(unittest.TestCase):
