@@ -96,6 +96,7 @@ class LysePathsTests(unittest.TestCase):
         routine.to_worker = runs_on_put(worker.mainloop, worker, 'from_parent')
         routine.set_status = lambda status: setattr(routine, 'done', status == 'done')
         routine.do_analysis = types.MethodType(lyse.routines.AnalysisRoutine.do_analysis, routine)
+        routine.send_analysis = types.MethodType(lyse.routines.AnalysisRoutine.send_analysis, routine)
         box = types.SimpleNamespace(multishot=multishot, routines=[routine],
                                     to_filebox=queue.Queue(), logger=logging.getLogger('test'))
         box.todo = types.MethodType(lyse.routines.RoutineBox.todo, box)

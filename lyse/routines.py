@@ -28,7 +28,7 @@ from zprocess import Interruptor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
-from qtutils import inmain, inmain_decorator, UiLoader, DisconnectContextManager
+from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 
 import lyse.widgets
 import lyse.utils
@@ -484,15 +484,27 @@ class AnalysisRoutine(object):
         to_worker.put(self.filepath)
         return to_worker, from_worker, worker
         
+    @inmain_decorator()
+    def send_analysis(self, filepath, paths):
+        # On the GUI thread, where shutdowns start, so that none can start between the
+        # check and the send. Returns whether one is pending, and the reply's queue if sent.
+        if self.shutdown is not None:
+            return True, None
+        if self.worker.poll() is not None:
+            return False, None
+        self.to_worker.put(['analyse', (filepath, paths)])
+        return False, self.from_worker
+
     def do_analysis(self, filepath, paths):
         # Wait out a pending shutdown, rather than send the shot to a worker that is quitting.
-        while inmain(lambda: self.shutdown is not None):
+        pending, from_worker = self.send_analysis(filepath, paths)
+        while pending:
             time.sleep(0.05)
-        if self.worker.poll() is not None:
+            pending, from_worker = self.send_analysis(filepath, paths)
+        if from_worker is None:
             # Removed, or its worker died: nothing would answer.
             return False, {}
-        self.to_worker.put(['analyse', (filepath, paths)])
-        signal, data = self.from_worker.get()
+        signal, data = from_worker.get()
         if signal == 'error':
             return False, data
         elif signal == 'done':
