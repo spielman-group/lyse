@@ -78,6 +78,8 @@ class Routine:
 
     Attributes
     ----------
+    icon : str or Path or None
+        The window's icon file, absolute or relative to the routine folder; None keeps lyse's icon.
     output_port : int
         The port of the window's Output box; a child process started with it as its
         ``output_redirection_port`` shows its output there.
@@ -86,6 +88,8 @@ class Routine:
     window : QMainWindow
         The routine's window: the controls are its central widget, the figures and output are docks.
     """
+
+    icon = None
 
     def run(self, path, paths):
         """Analyse the shots of one analysis request; every routine defines it.
@@ -219,6 +223,8 @@ def construct(cls, controls, window, routine_path, output_port):
     routine.window = window
     routine.output_port = output_port
     routine.values = namedtuple('Values', [])()
+    if routine.icon is not None:
+        window.setWindowIcon(QtGui.QIcon(str(routine._folder / routine.icon)))
     routine.__init__()
     return routine
 
