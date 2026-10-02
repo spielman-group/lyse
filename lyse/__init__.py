@@ -82,6 +82,9 @@ def __getattr__(name):
     if name in ('path', 'paths'):
         from lyse.utils import worker
         return getattr(worker, name)
+    elif name == 'Routine':
+        from lyse.routine import Routine
+        return Routine
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
