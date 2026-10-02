@@ -28,9 +28,12 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.figure import Figure
 
 from labscript_utils.labconfig import load_appconfig, save_appconfig
+from labscript_utils.ls_zprocess import get_config
+from labscript_utils.qtwidgets.outputbox import OutputBox
 from lyse.utils import LYSE_DIR
 import lyse.utils.gui as gui
 import lyse.utils.worker as worker
+from zprocess.process_tree import OutputInterceptor
 
 CONTROL_VALUE_TYPES = (bool, int, float, str)
 
@@ -77,6 +80,9 @@ class Routine:
 
     Attributes
     ----------
+    output_port : int
+        The port of the window's Output box; a child process started with it as its
+        ``output_redirection_port`` shows its output there.
     values : namedtuple
         The saved controls' values by objectName; immutable, new for each analysis, empty at first.
     window : QMainWindow
@@ -211,7 +217,19 @@ def routine_class(namespace):
     return classes.pop()
 
 
-def construct(cls, controls, window, routine_path):
+def route_output(window):
+    """Send all of the process's output to a new box in the window's Output dock; return the box."""
+    box = OutputBox(window.verticalLayout_output)
+    config = get_config()
+    for name in ('stdout', 'stderr'):
+        if startup := OutputInterceptor.streams_connected[name]:
+            startup.disconnect()
+        OutputInterceptor('localhost', box.port, name, shared_secret=config['shared_secret'],
+                          allow_insecure=config['allow_insecure']).connect()
+    return box
+
+
+def construct(cls, controls, window, routine_path, output_port):
     # Allocated apart from __init__(), so that the worker can install state
     # on the instance first.
     routine = cls.__new__(cls)
@@ -220,6 +238,7 @@ def construct(cls, controls, window, routine_path):
     routine._figures = {}
     routine._folder = Path(routine_path).parent
     routine.window = window
+    routine.output_port = output_port
     routine.values = namedtuple('Values', [])()
     routine.__init__()
     return routine

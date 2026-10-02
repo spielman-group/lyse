@@ -15,6 +15,8 @@
 import contextlib
 import importlib
 import io
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,12 +25,19 @@ from unittest import mock
 import matplotlib.pyplot as plt
 from qtutils.qt import QT_ENV, QtCore, QtWidgets
 
+from labscript_utils.ls_zprocess import get_config
+from labscript_utils.qtwidgets.outputbox import OutputBox
 import lyse
 from lyse.routine import (
-    RoutineSettings, RoutineWindow, construct, read_saved_widgets, restore_layout, routine_class,
-    routine_mode, save_layout)
+    RoutineSettings, RoutineWindow, construct, read_saved_widgets, restore_layout, route_output,
+    routine_class, routine_mode, save_layout)
+from zprocess.process_tree import OutputInterceptor
 
 QtTest = importlib.import_module(f'{QT_ENV}.QtTest')
+
+# The tests' one application, held for the whole run: a destroyed application takes qtutils'
+# inmain with it, and an OutputBox shows its text through that.
+qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
 
 
 def namespace_of(source, **imports):
@@ -78,9 +87,6 @@ class DiscoveryTests(unittest.TestCase):
 
 class SavedWidgetsTests(unittest.TestCase):
 
-    def setUp(self):
-        self.qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
-
     def test_a_saved_widget_takes_its_saved_value_and_reaches_the_snapshot(self):
         class Analysis(lyse.Routine):
             def __init__(self):
@@ -88,13 +94,14 @@ class SavedWidgetsTests(unittest.TestCase):
                 self.saved_widgets(self.box)
 
         # A saved 0 is falsy, and is still restored over the box's default of 5.
-        routine = construct(Analysis, {'threshold': 0}, RoutineWindow(), 'routine.py')
+        routine = construct(Analysis, {'threshold': 0}, RoutineWindow(), 'routine.py', None)
         self.assertEqual(routine.box.value(), 0)
         self.assertEqual(len(routine.values), 0)
 
         # A saved value the box rejects is reported and ignored.
         with contextlib.redirect_stderr(io.StringIO()) as report:
-            rejected = construct(Analysis, {'threshold': 'text'}, RoutineWindow(), 'routine.py')
+            rejected = construct(
+                Analysis, {'threshold': 'text'}, RoutineWindow(), 'routine.py', None)
         self.assertEqual(rejected.box.value(), 5)
         self.assertIn('threshold', report.getvalue())
 
@@ -113,7 +120,7 @@ class SavedWidgetsTests(unittest.TestCase):
         routine.saved_widgets(QtWidgets.QSpinBox(objectName='threshold'))
 
     def test_bad_names_duplicate_names_and_unsupported_values_are_errors(self):
-        routine = construct(lyse.Routine, {}, RoutineWindow(), 'routine.py')
+        routine = construct(lyse.Routine, {}, RoutineWindow(), 'routine.py', None)
         box = QtWidgets.QSpinBox(objectName='threshold')
         # Numbers, strings and booleans are saved, and the same widget twice is no duplicate.
         routine.saved_widgets(box, box, QtWidgets.QDoubleSpinBox(objectName='scale'),
@@ -135,10 +142,9 @@ class OneFigure(lyse.Routine):
 class WindowTests(unittest.TestCase):
 
     def setUp(self):
-        self.qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
         self.pyplot_figures = plt.get_fignums()
         self.window = RoutineWindow()
-        self.routine = construct(OneFigure, {}, self.window, 'routine.py')
+        self.routine = construct(OneFigure, {}, self.window, 'routine.py', None)
         self.dock = self.window.findChild(QtWidgets.QDockWidget, 'Counts')
 
     def test_a_named_figure_is_made_once_and_kept_when_hidden(self):
@@ -164,24 +170,24 @@ class WindowTests(unittest.TestCase):
         button = QtWidgets.QPushButton(self.window)
         self.window.show()
         self.window.activateWindow()
-        self.qapplication.processEvents()
+        qapplication.processEvents()
         box.selectAll()
-        self.qapplication.clipboard().clear()
+        qapplication.clipboard().clear()
         with mock.patch('zprocess.start_daemon') as daemon:
             # A line edit keeps Ctrl+C for itself, so only a button tells a dock's shortcut
             # from a window's.
             for widget, copies in [(box, 0), (button, 0), (self.routine.figure.canvas, 1)]:
                 widget.setFocus()
-                self.assertIs(self.qapplication.focusWidget(), widget)
+                self.assertIs(qapplication.focusWidget(), widget)
                 QtTest.QTest.keyClick(widget, QtCore.Qt.Key.Key_C,
                                       QtCore.Qt.KeyboardModifier.ControlModifier)
                 self.assertEqual(daemon.call_count, copies)
-        self.assertEqual(self.qapplication.clipboard().text(), 'text')
+        self.assertEqual(qapplication.clipboard().text(), 'text')
         Path(daemon.call_args.args[0][-1]).unlink()
 
     def test_the_layout_comes_back_with_the_output_dock_shown(self):
         second = RoutineWindow()
-        construct(OneFigure, {}, second, 'routine.py')
+        construct(OneFigure, {}, second, 'routine.py', None)
         self.window.show()
         self.window.resize(500, 400)
         self.dock.close()
@@ -212,7 +218,7 @@ class WindowTests(unittest.TestCase):
                 self.ui = self.load_ui('controls.ui')
 
         with contextlib.chdir(folder / 'elsewhere'):
-            routine = construct(Analysis, {}, self.window, folder / 'routine.py')
+            routine = construct(Analysis, {}, self.window, folder / 'routine.py', None)
         self.assertIs(self.window.centralWidget(), routine.ui)
         self.assertIsInstance(routine.ui.label, QtWidgets.QLineEdit)
 
@@ -253,3 +259,52 @@ class SettingsTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()) as report:
             unwritable.save({'threshold': 3}, {})
         self.assertTrue(report.getvalue())
+
+
+class OutputTests(unittest.TestCase):
+
+    def setUp(self):
+        # A worker's sys.stdout and sys.stderr are descriptors 1 and 2, where native output goes,
+        # but pytest's capture puts them on files of its own.
+        self.enterContext(mock.patch('sys.stdout', sys.__stdout__))
+        self.enterContext(mock.patch('sys.stderr', sys.__stderr__))
+
+    def tearDown(self):
+        # One cleanup each, so that a disconnection that fails cannot strand the other stream.
+        for interceptor in OutputInterceptor.streams_connected.values():
+            if interceptor:
+                self.addCleanup(interceptor.disconnect)
+
+    def test_output_reaches_the_output_box_and_not_lyse(self):
+        config = get_config()
+        # Made before any output is connected, because Qt writes warnings of its own to stderr
+        # as it first sets up fonts.
+        container, window = QtWidgets.QWidget(), RoutineWindow()
+        lyse_box = OutputBox(QtWidgets.QVBoxLayout(container))
+        self.addCleanup(lyse_box.shutdown)
+
+        # As a worker starts, with its output going to lyse's box.
+        for name in ('stdout', 'stderr'):
+            OutputInterceptor(
+                'localhost', lyse_box.port, name, shared_secret=config['shared_secret'],
+                allow_insecure=config['allow_insecure']).connect()
+        startup = dict(OutputInterceptor.streams_connected)
+        box = route_output(window)
+        self.addCleanup(box.shutdown)
+        # Only one interceptor can be connected to a stream, so lyse's has been replaced.
+        for name, interceptor in startup.items():
+            self.assertNotIn(OutputInterceptor.streams_connected[name], (None, interceptor), name)
+        routine = construct(lyse.Routine, {}, window, 'routine.py', box.port)
+        self.assertEqual(routine.output_port, box.port)
+
+        print('python out')
+        print('python err', file=sys.stderr)
+        os.write(1, b'native out\n')
+        os.write(2, b'native err\n')
+        expected = {'python out', 'python err', 'native out', 'native err'}
+        for _ in range(500):
+            shown = set(box.output_textedit.toPlainText().splitlines())
+            if shown >= expected:
+                break
+            QtTest.QTest.qWait(10)
+        self.assertLessEqual(expected, shown)
