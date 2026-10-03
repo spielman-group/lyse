@@ -43,7 +43,7 @@
         <item>
          <widget class="QToolButton" name="toolButton_add_routines">
           <property name="toolTip">
-           <string>Add analysis routine(s)</string>
+           <string>Add analysis routine(s): classic scripts (.py) or GUI routine folders (.lyse)</string>
           </property>
           <property name="text">
            <string>...</string>
@@ -52,19 +52,8 @@
            <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
             <normaloff>:/qtutils/fugue/plus.png</normaloff>:/qtutils/fugue/plus.png</iconset>
           </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QToolButton" name="toolButton_add_routine_folder">
-          <property name="toolTip">
-           <string>Add a GUI analysis routine: a folder whose name ends in .lyse</string>
-          </property>
-          <property name="text">
-           <string>...</string>
-          </property>
-          <property name="icon">
-           <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
-            <normaloff>:/qtutils/fugue/folder--plus.png</normaloff>:/qtutils/fugue/folder--plus.png</iconset>
+          <property name="popupMode">
+           <enum>QToolButton::InstantPopup</enum>
           </property>
          </widget>
         </item>

@@ -110,6 +110,14 @@ class RoutineBox(object):
             QtGui.QIcon(':qtutils/fugue/applications-blue'), 'show windows for selected routines',  self.ui)
         self.action_remove_selected = QtWidgets.QAction(
             QtGui.QIcon(':qtutils/fugue/minus'), 'Remove selected routines',  self.ui)
+
+        self.action_add_routines = QtWidgets.QAction(
+            QtGui.QIcon(':/qtutils/fugue/script--plus'), 'Add classic scripts (.py)…', self.ui)
+        self.action_add_routine_folder = QtWidgets.QAction(
+            QtGui.QIcon(':/qtutils/fugue/folder--plus'), 'Add a GUI routine folder (.lyse)…', self.ui)
+        add_menu = QtWidgets.QMenu(self.ui.toolButton_add_routines)
+        add_menu.addActions([self.action_add_routines, self.action_add_routine_folder])
+        self.ui.toolButton_add_routines.setMenu(add_menu)
         self.last_opened_routine_folder = self.exp_config.get('paths', 'analysislib')
         
         self.routines = []
@@ -122,8 +130,8 @@ class RoutineBox(object):
         self.analysis.start()
         
     def connect_signals(self):
-        self.ui.toolButton_add_routines.clicked.connect(self.on_add_routines_clicked)
-        self.ui.toolButton_add_routine_folder.clicked.connect(self.on_add_routine_folder_clicked)
+        self.action_add_routines.triggered.connect(self.on_add_routines_clicked)
+        self.action_add_routine_folder.triggered.connect(self.on_add_routine_folder_clicked)
         self.ui.toolButton_remove_routines.clicked.connect(self.on_remove_selection)
         self.model.itemChanged.connect(self.on_model_item_changed)
         self.ui.treeView.doubleLeftClicked.connect(self.on_treeview_double_left_clicked)
