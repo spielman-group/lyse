@@ -6,7 +6,7 @@
 lyse |version|
 ==============
 
-**lyse** is a component of the labscript suite. It is a combination API and GUI interface that leverages the API to run user provided analysis scripts of experiment shots. This documentation provides a brief outline of the use of lyse.
+**lyse** is a component of the labscript suite. It is a combination API and GUI interface that leverages the API to run user provided analysis routines on experiment shots, either Python scripts or GUI routines with windows of their own. This documentation provides a brief outline of the use of lyse.
 
 .. toctree::
    :maxdepth: 2
@@ -14,6 +14,7 @@ lyse |version|
    :caption: DOCUMENTATION
 
    introduction
+   gui_routines
    examples
    api/index
 

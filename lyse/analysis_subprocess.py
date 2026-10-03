@@ -548,7 +548,7 @@ class AnalysisWorker(object):
             if cls is None: cls = Plot
             # if cls is not a subclass of Plot, then raise an Exception
             if not issubclass(cls, Plot): 
-                raise RuntimeError('The specified class must be a subclass of lyse.Plot')
+                raise RuntimeError('The specified class must be a subclass of lyse.utils.worker.Plot')
             # Instantiate the plot
             self.plots[fig] = cls(fig, identifier, self.filepath)
         except Exception:

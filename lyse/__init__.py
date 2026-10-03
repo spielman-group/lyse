@@ -11,6 +11,10 @@
 #                                                                   #
 #####################################################################
 """Lyse analysis API
+
+A classic script reaches its shots through ``path``, ``paths``, ``data``, ``Run`` and
+``Sequence``. A GUI routine subclasses :class:`lyse.Routine <lyse.routine.Routine>`,
+which supplies the same through attributes and methods of its own.
 """
 
 import pickle as pickle
@@ -67,7 +71,8 @@ if 'sphinx' in sys.modules:
     path = None
     """Links to :attr:`lyse.utils.worker.path` which contains hdf5 filepath to be analysed.
     
-    Automatically populated by the lyse GUI.
+    Automatically populated by the lyse GUI for a singleshot routine; None in a
+    multishot routine, which gets :attr:`lyse.paths` instead.
     Can be passed as a command line argument, but this behavior is deprecated.
     """
     paths = None
@@ -402,9 +407,13 @@ class Run(object):
     def group(self):
         """str: The group in the hdf5 file in which results are saved by default.
         
-        When a `Run` instance is created from within a lyse singleshot or
-        multishot routine, `group` will be set to the name of the running
-        routine. If created from outside a lyse script it will be set to `None`.
+        When a `Run` instance is created in a script, `group` will be set to
+        the name of the main script: in a lyse singleshot or multishot classic
+        script, that script. In a GUI routine the main script is lyse's own
+        worker, so the routine makes its `Run` with
+        :meth:`~lyse.routine.Routine.get_run`, which sets the routine's `group`.
+        A read-only `Run`, and one created where there is no main script, as in
+        an interactive session, has `group` set to `None`.
         To change the default group for saving results, use the `set_group()`
         method. Note that if `self.group` is `None` and no value is provided for
         the optional `group` argument used by the `save...()` methods, a
@@ -476,7 +485,9 @@ class Run(object):
             Exception: If the `group` does not exist.
 
         Returns:
-            dict: Dictionary of attributes.
+            dict: Dictionary of attributes. A `Run` that is not read-only returns
+            an empty dictionary, rather than raising, for `'/results'` and for
+            its default `group` in it, until they are first written to.
         """
         if group not in self.h5_file:
             # /results and this run's default group are created when first
@@ -653,7 +664,9 @@ class Run(object):
                 `True` because saving the result would edit the file.
             ValueError: A `ValueError` is raised if `self.group` is `None` and
                 no value is provided for `group` because the method then doesn't
-                know where to save the result.
+                know where to save the result. It is also raised if `save_to_h5`
+                is `False` and `group` is not in `'/results'`, because only
+                results there reach lyse's dataframe.
             PermissionError: A `PermissionError` is raised if an attribute with
                 name `name` already exists but `overwrite` is set to `False`.
         """

@@ -79,10 +79,6 @@ class Routine:
 
     Attributes
     ----------
-    group : str or None
-        The group that `get_run` and `get_sequence` save results in; None means the class's name.
-    icon : str or Path or None
-        The window's icon file, absolute or relative to the routine folder; None keeps lyse's icon.
     output_port : int
         The port of the window's Output box; a child process started with it as its
         ``output_redirection_port`` shows its output there.
@@ -97,10 +93,18 @@ class Routine:
     """
 
     group = None
+    """str or None: The group that `get_run` and `get_sequence` save results in; None means
+    the class's name."""
     icon = None
+    """str or Path or None: The window's icon file, absolute or relative to the routine folder;
+    None keeps lyse's icon."""
 
     def run(self):
-        """Analyse the shots in `path` and `paths`; every routine defines it."""
+        """Analyse the shots in `path` and `paths`; every routine defines it.
+
+        It runs on an analysis thread of its own, so it reaches widgets and figures only
+        through qtutils' ``inmain``, ``inmain_later`` or ``inmain_decorator``.
+        """
         raise NotImplementedError(f'{type(self).__name__} must define run().')
 
     def close(self):

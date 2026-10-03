@@ -24,7 +24,8 @@ m, c = linear_fit(detunings, load_rates)
 plt.plot(detunings, m*detunings + c, 'ro', label='linear fit')
 plt.legend()
 
-#To save this result to the output hdf5 file, we have to instantiate a
-#Sequence object:
-seq = lyse.Sequence(lyse.path, df)
+#To save this result to an output hdf5 file, we have to instantiate a
+#Sequence object, giving it the path of the file to save in and the shots
+#it describes:
+seq = lyse.Sequence('path/to/results.h5', df)
 seq.save_result('detuning_loadrate_slope',c)
