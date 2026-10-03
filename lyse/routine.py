@@ -100,7 +100,11 @@ class Routine:
     icon = None
 
     def run(self):
-        """Analyse the shots in `path` and `paths`; every routine defines it."""
+        """Analyse the shots in `path` and `paths`; every routine defines it.
+
+        It runs on an analysis thread of its own, so it reaches widgets and figures only
+        through qtutils' ``inmain``, ``inmain_later`` or ``inmain_decorator``.
+        """
         raise NotImplementedError(f'{type(self).__name__} must define run().')
 
     def close(self):

@@ -85,6 +85,19 @@ def figure_to_clipboard(figure=None, **kwargs):
 
 
 def register_plot_class(identifier, cls):
+    """Use a subclass of `Plot` for the window of a figure.
+
+    Once a classic script has run, lyse makes the window of the figure `identifier`
+    from `cls` instead of `Plot`, replacing an open window of another class. If `cls`
+    cannot be made, lyse reports the error and uses `Plot`. Outside the lyse GUI this
+    only writes a warning to stderr, and it has no effect in a GUI routine, whose
+    figures lyse does not manage.
+
+    Args:
+        identifier (int or str): The identifier of the figure, as passed to
+            `matplotlib.pyplot.figure`.
+        cls (type): A subclass of `lyse.utils.worker.Plot`.
+    """
     if not spinning_top:
         msg = """Warning: lyse.register_plot_class has no effect on scripts not run with
             the lyse GUI.
@@ -96,6 +109,14 @@ def get_plot_class(identifier):
     return _plot_classes.get(identifier, None)
 
 def delay_results_return():
+    """Delay returning the analysis's results to lyse until `delay_event` is set.
+
+    A routine that leaves work running when it returns, such as a thread that is still
+    saving results, calls this. lyse then waits for that work to set
+    `lyse.utils.worker.delay_event` before it takes the results saved by then and goes
+    on to the next routine. The delay applies to the current analysis only, and not to
+    one that fails. Outside the lyse GUI this only writes a warning to stderr.
+    """
     global _delay_flag
     if not spinning_top:
         msg = """Warning: lyse.delay_results_return has no effect on scripts not run 
