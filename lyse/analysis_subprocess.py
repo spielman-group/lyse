@@ -21,9 +21,12 @@ from labscript_utils.ls_zprocess import ProcessTree
 
 import sys
 import os
+import importlib
+import queue
 import threading
 import traceback
 import time
+from pathlib import Path
 from types import ModuleType
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
@@ -31,7 +34,7 @@ from qtutils.qt.QtCore import pyqtSignal as Signal
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
 
-from qtutils import inmain, inmain_decorator, UiLoader
+from qtutils import inmain, inmain_decorator
 import qtutils.icons
 
 import multiprocessing
@@ -40,6 +43,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 # Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
+from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils import dedent
 from labscript_utils.labconfig import (
     backup_legacy_config,
@@ -54,8 +58,10 @@ desktop_app.set_process_appid('lyse')
 
 # lyse imports
 import lyse.utils
+import lyse.utils.gui
 import lyse.utils.worker
 import lyse.figure_manager
+import lyse.routine
 
 # This process is not fork-safe. Spawn fresh processes on platforms that would fork:
 if (
@@ -68,17 +74,12 @@ if (
 autoload_config_file = lyse.utils.LABCONFIG.get('lyse', 'autoload_config_file')
 config_dir = os.path.dirname(autoload_config_file)
 
-# Constructing a UiLoader replaces sys.modules['qtutils.widgets'], which erases the
-# custom widgets a routine has registered on its own loader. Plot windows share this
-# loader, made before any routine runs, so that opening one erases nothing.
-loader = UiLoader()
-
 class PlotWindowCloseEvent(QtGui.QCloseEvent):
     def __init__(self, force, *args, **kwargs):
         QtGui.QCloseEvent.__init__(self, *args, **kwargs)
         self.force = force
 
-class PlotWindow(QtWidgets.QWidget):
+class PlotWindow(lyse.utils.gui.ThemedWindow, QtWidgets.QWidget):
     # A signal for when the window manager has created a new window for this widget:
     close_signal = Signal()
 
@@ -172,25 +173,13 @@ class PlotWindow(QtWidgets.QWidget):
         state[self._geometry_key()] = geometry
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
 
-    def changeEvent(self, event):
-        # A theme switch reaches changeEvent as PaletteChange: QWidget.event()
-        # never passes ApplicationPaletteChange on to it.
-        if (event.type() == QtCore.QEvent.Type.PaletteChange
-                or event.type() == QtCore.QEvent.Type.StyleChange):
-            for widget in self.findChildren(QtWidgets.QWidget):
-                # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
-                widget.setStyleSheet(widget.styleSheet())
-                widget.setPalette(widget.palette())
-
-        return super().changeEvent(event)
-
 
 class Plot(object):
     def __init__(self, figure, identifier, filepath):
         self.identifier = identifier
-        self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/plot_window.ui'),
-                              PlotWindow(self, analysis_filepath=filepath,
-                                         analysis_identifier=identifier))
+        self.ui = lyse.routine.loader.load(
+            os.path.join(lyse.utils.LYSE_DIR, 'user_interface/plot_window.ui'),
+            PlotWindow(self, analysis_filepath=filepath, analysis_identifier=identifier))
 
         self.set_window_title(identifier, filepath)
 
@@ -205,15 +194,9 @@ class Plot(object):
         self.lock_action.setCheckable(True)
         self.lock_action.setToolTip('Lock axes')
 
-        self.copy_to_clipboard_action = self.navigation_toolbar.addAction(
-            QtGui.QIcon(':qtutils/fugue/clipboard--arrow'),
-           'Copy to clipboard', self.on_copy_to_clipboard_triggered)
-        self.copy_to_clipboard_action.setToolTip('Copy to clipboard')
+        self.copy_to_clipboard_action = lyse.routine.fill_plot_form(
+            self.ui, self.navigation_toolbar, self.on_copy_to_clipboard_triggered)
         self.copy_to_clipboard_action.setShortcut(QtGui.QKeySequence.Copy)
-
-
-        self.ui.verticalLayout_canvas.addWidget(self.canvas)
-        self.ui.verticalLayout_navigation_toolbar.addWidget(self.navigation_toolbar)
 
         self.lock_axes = False
         self.axis_limits = None
@@ -389,21 +372,58 @@ class AnalysisWorker(object):
         h5py._errors.silence_errors()
         while True:
             task, data = self.from_parent.get()
-            with kill_lock:
-                if task == 'quit':
-                    self.close_plots()
-                    inmain(qapplication.quit)
-                elif task == 'analyse':
-                    path, paths = data
-                    success = self.do_analysis(path, paths)
-                    if success:
-                        if lyse.utils.worker._delay_flag:
-                            lyse.utils.worker.delay_event.wait()
-                        self.to_parent.put(['done', lyse.utils.worker._updated_data])
-                    else:
-                        self.to_parent.put(['error', lyse.utils.worker._updated_data])
-                else:
-                    self.to_parent.put(['error','invalid task %s'%str(task)])
+            if task == 'quit':
+                self.quit()
+            elif task == 'analyse':
+                self.analyse(*data)
+            elif task == 'show':
+                self.show_windows()
+            else:
+                self.to_parent.put(['error','invalid task %s'%str(task)])
+
+    def quit(self):
+        with kill_lock:
+            self.close_plots()
+            inmain(qapplication.quit)
+
+    def analyse(self, path, paths):
+        with kill_lock:
+            self.reply(self.do_analysis(path, paths))
+
+    def reply(self, success):
+        if success:
+            if lyse.utils.worker._delay_flag:
+                lyse.utils.worker.delay_event.wait()
+            self.to_parent.put(['done', lyse.utils.worker._updated_data])
+        else:
+            self.to_parent.put(['error', lyse.utils.worker._updated_data])
+
+    def reset_results(self, path, paths):
+        # global variables used to communicate between analysis processes and GUI functions
+        lyse.utils.worker.path = path
+        lyse.utils.worker.paths = paths
+        lyse.utils.worker._updated_data = {}
+        lyse.utils.worker._delay_flag = False
+        lyse.utils.worker.delay_event.clear()
+
+    def print_header(self, path):
+        now = time.strftime('[%x %X]')
+        if path is not None:
+            print('%s %s %s ' %(now, os.path.basename(self.filepath), os.path.basename(path)))
+        else:
+            print('%s %s' %(now, os.path.basename(self.filepath)))
+
+    def windows(self):
+        return [plot.ui for plot in self.plots.values()]
+
+    @inmain_decorator()
+    def show_windows(self):
+        for window in self.windows():
+            # Clears only the minimized state, so that a maximized window stays maximized.
+            window.setWindowState(window.windowState() & ~QtCore.Qt.WindowState.WindowMinimized)
+            window.show()
+            window.raise_()
+            window.activateWindow()
 
     @inmain_decorator()
     def close_plots(self):
@@ -414,11 +434,7 @@ class AnalysisWorker(object):
         
     @inmain_decorator()
     def do_analysis(self, path, paths):
-        now = time.strftime('[%x %X]')
-        if path is not None:
-            print('%s %s %s ' %(now, os.path.basename(self.filepath), os.path.basename(path)))
-        else:
-            print('%s %s' %(now, os.path.basename(self.filepath)))
+        self.print_header(path)
 
         self.pre_analysis_plot_actions()
 
@@ -426,14 +442,9 @@ class AnalysisWorker(object):
         self.routine_module.__dict__.clear()
         self.routine_module.__dict__.update(self.routine_module_clean_dict)
 
-        # global variables used to communicate between analysis processes and GUI functions
-        lyse.utils.worker.path = path
-        lyse.utils.worker.paths = paths
+        self.reset_results(path, paths)
         lyse.utils.worker.plots = self.plots
         lyse.utils.worker.Plot = Plot
-        lyse.utils.worker._updated_data = {}
-        lyse.utils.worker._delay_flag = False
-        lyse.utils.worker.delay_event.clear()
 
         # Save the current working directory before changing it to the
         # location of the user's script:
@@ -558,28 +569,126 @@ class AnalysisWorker(object):
 
     def reset_figs(self):
         pass
-        
-        
+
+
+class GuiWorker(AnalysisWorker):
+    """The worker of a GUI routine, a folder whose name ends in .lyse. The routine loads once as
+    the worker starts; if that fails, every analysis reports the error and fails until restart."""
+
+    routine = None
+
+    def __init__(self, folder, to_parent, from_parent):
+        # Not the base class's: it starts a ModuleWatcher, which reloads code, and the command
+        # listener, which must wait until the routine has loaded.
+        self.to_parent, self.from_parent, self.filepath = to_parent, from_parent, folder
+        self.window = lyse.routine.RoutineWindow()
+        self.window.setWindowTitle(os.path.basename(folder))
+        box = OutputBox(self.window.verticalLayout_output)
+        self.settings = lyse.routine.RoutineSettings(folder, config_dir)
+        controls, layout = self.settings.load()
+        # Output goes to lyse's box until the routine is built, so that a failure shows there.
+        try:
+            if not Path(folder, 'lyse_routine.py').is_file():
+                raise FileNotFoundError(f'The routine folder {folder} has no lyse_routine.py.')
+            os.chdir(folder)
+            # The folder is a package, so that its modules import one another relatively and
+            # nothing is added to sys.path.
+            package = sys.modules['lyse_routine'] = ModuleType('lyse_routine')
+            package.__path__ = [folder]
+            module = importlib.import_module('lyse_routine.lyse_routine')
+            cls = lyse.routine.routine_class(vars(module))
+            self.routine = lyse.routine.construct(cls, controls, self.window, folder, box.port)
+        except Exception:
+            self.error = traceback.format_exc()
+            print(self.error, file=sys.stderr)
+        else:
+            lyse.routine.route_output(box.port)
+            lyse.routine.restore_layout(self.window, layout)
+            self.window.show()
+            self.analyses = queue.Queue()
+            self.analysis_thread = threading.Thread(target=self.analysis_loop, daemon=True)
+            self.analysis_thread.start()
+        threading.Thread(target=self.mainloop, daemon=True).start()
+
+    def windows(self):
+        # A routine that failed to load has no window.
+        return [] if self.routine is None else [self.window]
+
+    def analyse(self, path, paths):
+        if self.routine is None:
+            self.print_header(path)
+            print(self.error, file=sys.stderr)
+            print('')
+            self.to_parent.put(['error', {}])
+        else:
+            self.analyses.put((path, paths))
+
+    def analysis_loop(self):
+        # Silenced per thread, as in mainloop().
+        h5py._errors.silence_errors()
+        for path, paths in iter(self.analyses.get, None):
+            with kill_lock:
+                self.reset_results(path, paths)
+                try:
+                    self.print_header(path)
+                    self.routine.values = self.save_controls()
+                    self.routine.path, self.routine.paths = path, paths
+                    self.routine.run()
+                    success = True
+                except Exception:
+                    traceback.print_exc()
+                    success = False
+                print('')
+                self.reply(success)
+
+    @inmain_decorator()
+    def save_controls(self):
+        """Save the controls and the layout, and return the controls' values."""
+        values, controls = lyse.routine.read_saved_widgets(self.routine)
+        self.settings.save(controls, lyse.routine.save_layout(self.window))
+        return values
+
+    def quit(self):
+        if self.routine is not None:
+            self.analyses.put(None)
+            try:
+                # The dock goes with the worker, so output from here on goes to lyse's box.
+                if port := process_tree.output_redirection_port:
+                    lyse.routine.route_output(port)
+                self.save_controls()
+            except Exception:
+                traceback.print_exc()
+            self.analysis_thread.join()
+        # Held only after the join, so that lyse can still terminate a run that hangs.
+        with kill_lock:
+            try:
+                if self.routine is not None:
+                    inmain(self.routine.close)
+            except Exception:
+                traceback.print_exc()
+            inmain(qapplication.quit)
+
+
 if __name__ == '__main__':
 
-    os.environ['MPLBACKEND'] = "qt5agg"
-
     lyse.utils.worker.spinning_top = True
-
-    lyse.figure_manager.install()
-
-    # Where are pylab features used?  Should this be here?
-    import pylab
 
     process_tree = ProcessTree.connect_to_parent()
     to_parent = process_tree.to_parent
     from_parent = process_tree.from_parent
     kill_lock = process_tree.kill_lock
     filepath = from_parent.get()
+    gui = Path(filepath).suffix == lyse.utils.GUI_ROUTINE_SUFFIX
+    if not gui:
+        # Only a classic worker captures pyplot's figures.
+        os.environ['MPLBACKEND'] = "qt5agg"
+        lyse.figure_manager.install()
+        # Where are pylab features used?  Should this be here?
+        import pylab
 
     # Rename this module to _analysis_subprocess and put it in sys.modules
-    # under that name. The user's analysis routine will become the __main__ module
-    # '_analysis_subprocess'.
+    # under that name. Only a classic script's routine will become the __main__ module;
+    # a GUI routine is imported as a package.
     __name__ = '_analysis_subprocess'
 
     sys.modules[__name__] = sys.modules['__main__']
@@ -596,6 +705,6 @@ if __name__ == '__main__':
     qapplication.setApplicationName('lyse')
     qapplication.setApplicationDisplayName('lyse')
     labscript_utils.splash.configure_qapplication(qapplication)
-    worker = AnalysisWorker(filepath, to_parent, from_parent)
+    worker = (GuiWorker if gui else AnalysisWorker)(filepath, to_parent, from_parent)
     qapplication.exec()
         

@@ -22,6 +22,9 @@ from labscript_utils.labconfig import LabConfig
 LYSE_DIR = Path(__file__).resolve().parent.parent
 """Variable that stores lyse installation directory"""
 
+GUI_ROUTINE_SUFFIX = '.lyse'
+"""A GUI routine is a folder whose name ends in this."""
+
 # Open up the lab config
 LABCONFIG = LabConfig()
 """:external+labscript-utils:class:`~labscript_utils.labconfig.LabConfig` instance"""
