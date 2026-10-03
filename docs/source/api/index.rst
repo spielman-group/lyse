@@ -13,7 +13,6 @@ API Reference
    lyse.dataframe_utilities
    lyse.figure_manager
    lyse.filebox
-   lyse.routine
    lyse.routines
    lyse.utils
    lyse.__main__
