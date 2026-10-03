@@ -30,16 +30,16 @@ m, c = linear_fit(t, mot_fluorecence)
 # We might wish to plot the fit on the trace to show whether the fit is any good:
 
 plt.plot(t,mot_fluorecence,label='data')
-plt.plot(t,m*t + x,label='linear fit')
+plt.plot(t,m*t + c,label='linear fit')
 plt.xlabel('time')
 plt.ylabel('MOT flourescence')
 plt.legend()
 
-# Don't call show() ! lyse will introspect what figures have been made
-# and display them once this script has finished running.  If you call
-# show() it won't find anything. lyse keeps track of figures so that new
-# figures replace old ones, rather than you getting new window popping
-# up every time your script runs.
+# There is no need to call show(): lyse will introspect what figures have
+# been made and display them once this script has finished running. lyse
+# ignores a call to show(), so the script can still call it to run outside
+# lyse. lyse keeps track of figures so that new figures replace old ones,
+# rather than you getting new window popping up every time your script runs.
 
 # We might wish to save this result so that we can compare it across
 # shots in a multishot analysis:
