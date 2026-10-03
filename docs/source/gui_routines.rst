@@ -102,7 +102,7 @@ The routine's window is a ``QMainWindow``. Its controls fill the central widget,
 
 lyse neither clears nor redraws a routine's figures, so their toolbars have no Lock axes action. The routine clears or updates its axes and requests the redraw with ``figure.canvas.draw_idle()``, on the GUI thread. In a GUI routine pyplot is ordinary Matplotlib: lyse captures no pyplot figures and intercepts no pyplot calls, so a pyplot window belongs to the routine, and the routine uses it on the GUI thread too.
 
-The ``icon`` class attribute, a path absolute or relative to the routine folder, is the window's icon. By default the window has lyse's icon.
+The ``icon`` class attribute, a path absolute or relative to the routine folder, is the icon of everything the routine shows: its windows, its Dock tile on macOS, and on Windows its own taskbar button, apart from lyse's. With ``None``, the default, the routine shows lyse's icon, and on Windows its windows group with lyse's.
 
 Threads
 ~~~~~~~

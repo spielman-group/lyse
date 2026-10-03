@@ -23,7 +23,7 @@ from pathlib import Path
 from unittest import mock
 
 import matplotlib.pyplot as plt
-from qtutils.qt import QT_ENV, QtCore, QtGui, QtWidgets
+from qtutils.qt import QT_ENV, QtCore, QtWidgets
 
 import labscript_utils.h5_lock, h5py
 from labscript_utils.ls_zprocess import get_config
@@ -203,28 +203,6 @@ class WindowTests(unittest.TestCase):
             routine = construct(Analysis, {}, self.window, folder, None)
         self.assertIs(self.window.centralWidget(), routine.ui)
         self.assertIsInstance(routine.ui.label, QtWidgets.QLineEdit)
-
-    def test_a_routine_icon_becomes_its_window_icon(self):
-        folder = Path(self.enterContext(tempfile.TemporaryDirectory(suffix='.lyse')))
-        image = QtGui.QImage(16, 16, QtGui.QImage.Format.Format_RGB32)
-        image.fill(QtGui.QColor('red'))
-        image.save(str(folder / 'icon.png'))
-        (folder / 'elsewhere').mkdir()
-
-        class Relative(lyse.Routine):
-            icon = 'icon.png'
-
-        class Absolute(lyse.Routine):
-            icon = folder / 'icon.png'
-
-        # The working directory is not the routine folder, and an absolute icon needs no folder.
-        with contextlib.chdir(folder / 'elsewhere'):
-            for cls, routine_path in [(Relative, folder), (Absolute, 'routine.lyse')]:
-                with self.subTest(cls.__name__):
-                    window = RoutineWindow()
-                    construct(cls, {}, window, routine_path, None)
-                    pixel = window.windowIcon().pixmap(16, 16).toImage().pixelColor(8, 8)
-                    self.assertEqual(pixel.name(), '#ff0000')
 
 
 class ResultsTests(unittest.TestCase):

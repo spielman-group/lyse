@@ -96,8 +96,9 @@ class Routine:
     """str or None: The group that `get_run` and `get_sequence` save results in; None means
     the class's name."""
     icon = None
-    """str or Path or None: The window's icon file, absolute or relative to the routine folder;
-    None keeps lyse's icon."""
+    """str or Path or None: The icon file, absolute or relative to the routine folder, of everything
+    the routine shows: its windows, its Dock tile on macOS and, on Windows, its own taskbar button.
+    None, the default, shows lyse's icon, and on Windows groups its windows with lyse's."""
 
     def run(self):
         """Analyse the shots in `path` and `paths`; every routine defines it.
@@ -277,8 +278,6 @@ def construct(cls, controls, window, routine_path, output_port):
     routine.output_port = output_port
     routine.values = namedtuple('Values', [])()
     routine.path = routine.paths = None
-    if routine.icon is not None:
-        window.setWindowIcon(QtGui.QIcon(str(routine._folder / routine.icon)))
     routine.__init__()
     return routine
 
@@ -315,8 +314,8 @@ class RoutineSettings:
 
     def __init__(self, routine_path, config_dir):
         routine = Path(routine_path).resolve()
-        digest = hashlib.sha256(str(routine).encode()).hexdigest()[:12]
-        self.path = Path(config_dir) / f'lyse-routine-{routine.stem}-{digest}.toml'
+        self.digest = hashlib.sha256(str(routine).encode()).hexdigest()[:12]
+        self.path = Path(config_dir) / f'lyse-routine-{routine.stem}-{self.digest}.toml'
         # An unreadable file that could not be renamed aside must not be saved over.
         self.writable = True
 
