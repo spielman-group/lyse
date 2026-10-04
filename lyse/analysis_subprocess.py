@@ -681,6 +681,7 @@ class GuiWorker(AnalysisWorker):
 
 class DockIcon(QtCore.QObject):
     """Gives a macOS process a Dock icon only while one of its windows is visible."""
+    policy = None
 
     def eventFilter(self, obj, event):
         # Decide once the events are over, so a window hidden and shown again keeps its icon.
@@ -693,11 +694,18 @@ class DockIcon(QtCore.QObject):
         # Policy 0, Regular, has a Dock icon. Policy 1, Accessory, has none but, unlike
         # Prohibited, lets a window shown later take focus.
         visible = any(window.isVisible() for window in QtWidgets.QApplication.topLevelWidgets())
+        policy = 0 if visible else 1
+        if policy == self.policy:
+            return
+        self.policy = policy
         appkit = ctypes.CDLL(ctypes.util.find_library('AppKit'))
         appkit.sel_registerName.restype = ctypes.c_void_p
         appkit.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
         appkit.objc_msgSend(ctypes.c_void_p.in_dll(appkit, 'NSApp'),
-                            appkit.sel_registerName(b'setActivationPolicy:'), 0 if visible else 1)
+                            appkit.sel_registerName(b'setActivationPolicy:'), policy)
+        if policy == 0:
+            # The Dock drops an icon sent while the process had no tile, so send it to the new one.
+            QtWidgets.QApplication.setWindowIcon(QtWidgets.QApplication.windowIcon())
 
 
 if __name__ == '__main__':
