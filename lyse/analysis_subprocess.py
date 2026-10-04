@@ -581,9 +581,6 @@ class GuiWorker(AnalysisWorker):
         # Not the base class's: it starts a ModuleWatcher, which reloads code, and the command
         # listener, which must wait until the routine has loaded.
         self.to_parent, self.from_parent, self.filepath = to_parent, from_parent, folder
-        self.window = lyse.routine.RoutineWindow()
-        self.window.setWindowTitle(os.path.basename(folder))
-        box = OutputBox(self.window.verticalLayout_output)
         self.settings = lyse.routine.RoutineSettings(folder, config_dir)
         controls, layout = self.settings.load()
         # Output goes to lyse's box until the routine is built, so that a failure shows there.
@@ -597,6 +594,16 @@ class GuiWorker(AnalysisWorker):
             package.__path__ = [folder]
             module = importlib.import_module('lyse_routine.lyse_routine')
             cls = lyse.routine.routine_class(vars(module))
+            # Windows stamps a window with the appid current as it creates it, so the routine's
+            # icon and appid come before its window.
+            icon = Path(folder, cls.icon) if cls.icon else lyse.utils.LYSE_DIR / 'lyse.svg'
+            qapplication.setWindowIcon(QtGui.QIcon(str(icon)))
+            if cls.icon and desktop_app.environment.WINDOWS:
+                desktop_app.windows.set_process_appusermodel_id(
+                    f'lyse.routine.{self.settings.digest}')
+            self.window = lyse.routine.RoutineWindow()
+            self.window.setWindowTitle(os.path.basename(folder))
+            box = OutputBox(self.window.verticalLayout_output)
             self.routine = lyse.routine.construct(cls, controls, self.window, folder, box.port)
         except Exception:
             self.error = traceback.format_exc()

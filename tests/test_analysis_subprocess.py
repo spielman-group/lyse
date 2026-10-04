@@ -123,6 +123,27 @@ class Analysis(lyse.Routine):
 '''
 HELPER = 'def widen(value):\n    return value + 4\n'
 
+# The lyse_routine.py of a routine that reports the colour at the centre of its window's icon and
+# of its process's icon, read on the GUI thread, which Qt's pixmaps need.
+ICON_ROUTINE = '''
+import lyse
+from qtutils import inmain
+from qtutils.qt import QtWidgets
+
+
+class Analysis(lyse.Routine):
+    icon = <icon>
+
+    def run(self):
+        def centres():
+            icons = self.window.windowIcon(), QtWidgets.QApplication.windowIcon()
+            return [icon.pixmap(16, 16).toImage().pixelColor(8, 8).name() for icon in icons]
+        window, process = inmain(centres)
+        run = self.get_run()
+        run.save_result('window', window, save_to_h5=False)
+        run.save_result('process', process, save_to_h5=False)
+'''
+
 
 class Worker:
     """A worker process, started and talked to as lyse does."""
@@ -221,6 +242,22 @@ class GuiWorkerTests(unittest.TestCase):
         for worker, results in cases:
             worker.send('show')
             self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): results}])
+
+    def test_a_routine_icon_is_its_window_and_process_icon(self):
+        qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
+        red = QtGui.QImage(16, 16, QtGui.QImage.Format.Format_RGB32)
+        red.fill(QtGui.QColor('red'))
+        red.save(str(self.routine / 'icon.png'))
+        # An absolute path, as a package's base class gives, may lie outside the routine folder.
+        red.save(str(self.folder / 'outside.png'))
+        lyse_icon = QtGui.QIcon(str(LYSE_DIR / 'lyse.svg')).pixmap(16, 16).toImage()
+        for icon, expected in [("'icon.png'", '#ff0000'),
+                               (repr(str(self.folder / 'outside.png')), '#ff0000'),
+                               ('None', lyse_icon.pixelColor(8, 8).name())]:
+            with self.subTest(icon=icon):
+                worker = self.start(ICON_ROUTINE.replace('<icon>', icon))
+                self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): {
+                    ('Analysis', 'window'): expected, ('Analysis', 'process'): expected}}])
 
 
 if __name__ == '__main__':

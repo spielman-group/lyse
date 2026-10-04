@@ -13,10 +13,6 @@
   <property name="windowTitle">
    <string>lyse routine</string>
   </property>
-  <property name="windowIcon">
-   <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
-    <normaloff>:/qtutils/custom/lyse.png</normaloff>:/qtutils/custom/lyse.png</iconset>
-  </property>
   <property name="dockOptions">
    <set>QMainWindow::AllowNestedDocks|QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks</set>
   </property>
