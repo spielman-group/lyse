@@ -102,7 +102,7 @@ The routine's window is a ``QMainWindow``. Its controls fill the central widget,
 
 lyse neither clears nor redraws a routine's figures, so their toolbars have no Lock axes action. The routine clears or updates its axes and requests the redraw with ``figure.canvas.draw_idle()``, on the GUI thread. In a GUI routine pyplot is ordinary Matplotlib: lyse captures no pyplot figures and intercepts no pyplot calls, so a pyplot window belongs to the routine, and the routine uses it on the GUI thread too.
 
-The ``icon`` class attribute, a path absolute or relative to the routine folder, is the icon of everything the routine shows: its windows, its Dock tile on macOS, and on Windows its own taskbar button, apart from lyse's. With ``None``, the default, the routine shows lyse's icon, and on Windows its windows group with lyse's.
+The ``icon`` class attribute, a path absolute or relative to the routine folder, is the icon of everything the routine shows: its windows, its Dock tile on macOS, and on Windows its own taskbar button, apart from lyse's. With ``None``, the default, the routine shows lyse's icon, and on Windows its windows group with lyse's. On macOS, where the Dock shows processes rather than windows, a routine's worker has a Dock tile only while one of its windows is visible, as a classic script's worker has one only while one of its plot windows is.
 
 Threads
 ~~~~~~~
@@ -131,7 +131,7 @@ Saved settings
 
 lyse keeps each routine's control values, window geometry and dock layout in a settings file of its own. The file is identified by the routine folder's full path, so folders with the same name in different places do not share settings. It is called ``lyse-routine-<name>-<hash>.toml``, where ``<name>`` is the folder's name without ``.lyse``, and lives in the folder of lyse's autoloaded configuration file.
 
-lyse restores the controls when the routine registers them, and the geometry and layout once the routine is built, and then shows the window with its Output dock shown, whatever the saved layout says. You may hide the dock for the session. lyse saves the controls, geometry and layout before each analysis, with the same values that ``self.values`` holds, and when the worker quits. It does not save at every change, so an edit made after the last save may be lost if the worker is killed. A worker whose routine failed to load saves nothing, so the settings it could not use are kept.
+lyse restores the controls when the routine registers them, and the geometry and layout once the routine is built. If the routine is active in its box, lyse then shows the window, with its Output dock shown whatever the saved layout says. You may hide the dock for the session. lyse saves the controls, geometry and layout before each analysis, with the same values that ``self.values`` holds, and when the worker quits. It does not save at every change, so an edit made after the last save may be lost if the worker is killed. A worker whose routine failed to load saves nothing, so the settings it could not use are kept.
 
 lyse checks the file as it reads it. An invalid entry is reported and ignored, and the next save replaces it with the current value, while the other entries are restored. An unreadable file is reported and renamed aside, never over an earlier backup, and saving starts again with a new file. If it cannot be renamed it is left untouched, and nothing is saved. A failed save is reported, and neither stops an analysis nor prevents shutdown.
 
@@ -142,7 +142,7 @@ Showing, restarting and quitting
 
 Right-clicking a routine in its box opens a menu of actions, which include:
 
-* **show windows for selected routines** shows the routine's window, restoring it if it is minimized, and raises it. Closing the window only hides it, and leaves analysis running. Analysis never shows, restores or raises it, so a window you closed or buried stays as it is until you ask. For a classic script the action does the same for each of its plot windows.
+* **show windows for selected routines** shows the routine's window, restoring it if it is minimized, and raises it. Closing the window only hides it, and leaves analysis running. Analysis never shows, restores or raises it, so a window you closed or buried stays as it is until you ask. A routine that is inactive when its worker starts keeps its window hidden until you show it, and checking or unchecking a routine never shows or hides its window. For a classic script the action does the same for each of its plot windows.
 * **restart worker process for selected routines** replaces the routine's worker. lyse loads a GUI routine's code once, when its worker starts, and does not watch files or reload modules, so restart the routine to apply an edit to ``lyse_routine.py`` or to any module in its folder. A classic script is read again for each analysis.
 
 A routine that cannot load reports the error in lyse's output box and shows no window. That includes a folder without ``lyse_routine.py``, code that does not parse, an exception in ``__init__()``, and a file that does not define exactly one subclass. The routine fails every later analysis, reporting the error again each time, until you fix it and restart it.

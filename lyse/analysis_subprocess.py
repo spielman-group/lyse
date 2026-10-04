@@ -21,6 +21,7 @@ from labscript_utils.ls_zprocess import ProcessTree
 
 import sys
 import os
+import ctypes.util
 import importlib
 import queue
 import threading
@@ -577,7 +578,7 @@ class GuiWorker(AnalysisWorker):
 
     routine = None
 
-    def __init__(self, folder, to_parent, from_parent):
+    def __init__(self, folder, to_parent, from_parent, active):
         # Not the base class's: it starts a ModuleWatcher, which reloads code, and the command
         # listener, which must wait until the routine has loaded.
         self.to_parent, self.from_parent, self.filepath = to_parent, from_parent, folder
@@ -611,7 +612,9 @@ class GuiWorker(AnalysisWorker):
         else:
             lyse.routine.route_output(box.port)
             lyse.routine.restore_layout(self.window, layout)
-            self.window.show()
+            # An inactive routine's window stays hidden until the user shows it.
+            if active:
+                self.window.show()
             self.analyses = queue.Queue()
             self.analysis_thread = threading.Thread(target=self.analysis_loop, daemon=True)
             self.analysis_thread.start()
@@ -676,6 +679,27 @@ class GuiWorker(AnalysisWorker):
             inmain(qapplication.quit)
 
 
+class DockIcon(QtCore.QObject):
+    """Gives a macOS process a Dock icon only while one of its windows is visible."""
+
+    def eventFilter(self, obj, event):
+        # Decide once the events are over, so a window hidden and shown again keeps its icon.
+        if (event.type() in (QtCore.QEvent.Type.Show, QtCore.QEvent.Type.Hide)
+                and obj.isWidgetType() and obj.isWindow()):
+            QtCore.QTimer.singleShot(0, self.set_policy)
+        return False
+
+    def set_policy(self):
+        # Policy 0, Regular, has a Dock icon. Policy 1, Accessory, has none but, unlike
+        # Prohibited, lets a window shown later take focus.
+        visible = any(window.isVisible() for window in QtWidgets.QApplication.topLevelWidgets())
+        appkit = ctypes.CDLL(ctypes.util.find_library('AppKit'))
+        appkit.sel_registerName.restype = ctypes.c_void_p
+        appkit.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        appkit.objc_msgSend(ctypes.c_void_p.in_dll(appkit, 'NSApp'),
+                            appkit.sel_registerName(b'setActivationPolicy:'), 0 if visible else 1)
+
+
 if __name__ == '__main__':
 
     lyse.utils.worker.spinning_top = True
@@ -684,7 +708,7 @@ if __name__ == '__main__':
     to_parent = process_tree.to_parent
     from_parent = process_tree.from_parent
     kill_lock = process_tree.kill_lock
-    filepath = from_parent.get()
+    filepath, active = from_parent.get()
     gui = Path(filepath).suffix == lyse.utils.GUI_ROUTINE_SUFFIX
     if not gui:
         # Only a classic worker captures pyplot's figures.
@@ -703,15 +727,25 @@ if __name__ == '__main__':
     # Set a meaningful client id for zlock
     process_tree.zlock_client.set_process_name('lyse-'+os.path.basename(filepath))
 
+    if sys.platform == 'darwin':
+        # Qt would make the process a Dock application as soon as its QApplication exists.
+        os.environ['QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM'] = '1'
     qapplication = QtWidgets.QApplication.instance()
     if qapplication is None:
         qapplication = QtWidgets.QApplication(sys.argv)
+    if sys.platform == 'darwin':
+        dock_icon = DockIcon(qapplication)
+        qapplication.installEventFilter(dock_icon)
+        dock_icon.set_policy()
     qapplication.setProperty(
         '_labscript_icon_path', os.path.join(lyse.utils.LYSE_DIR, 'lyse.svg')
     )
     qapplication.setApplicationName('lyse')
     qapplication.setApplicationDisplayName('lyse')
     labscript_utils.splash.configure_qapplication(qapplication)
-    worker = (GuiWorker if gui else AnalysisWorker)(filepath, to_parent, from_parent)
+    if gui:
+        worker = GuiWorker(filepath, to_parent, from_parent, active)
+    else:
+        worker = AnalysisWorker(filepath, to_parent, from_parent)
     qapplication.exec()
         

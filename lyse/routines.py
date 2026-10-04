@@ -485,7 +485,7 @@ class AnalysisRoutine(object):
         self.logger = logging.getLogger(f'lyse.AnalysisRoutine.{self.shortname}')
 
         self.logger.info('starting worker')
-        self.to_worker, self.from_worker, self.worker = self.start_worker()
+        self.to_worker, self.from_worker, self.worker = self.start_worker(checked == QtCore.Qt.Checked)
         self.logger.info('analysis_subprocess started')
         
         # Make a row to put into the model:
@@ -500,7 +500,7 @@ class AnalysisRoutine(object):
             
         self.shutdown = None
         
-    def start_worker(self):
+    def start_worker(self, active):
         # Start a worker process for this analysis routine:
         worker_path = os.path.join(lyse.utils.LYSE_DIR, 'analysis_subprocess.py')
 
@@ -511,8 +511,8 @@ class AnalysisRoutine(object):
         )
         
         to_worker, from_worker, worker = child_handles
-        # Tell the worker what script it with be executing:
-        to_worker.put(self.filepath)
+        # Tell the worker what script it will be executing, and whether the routine is active:
+        to_worker.put((self.filepath, active))
         return to_worker, from_worker, worker
         
     @inmain_decorator()
@@ -658,5 +658,5 @@ class AnalysisRoutine(object):
         self.shutdown = None
 
         if shutdown.restart:
-            self.to_worker, self.from_worker, self.worker = self.start_worker()
+            self.to_worker, self.from_worker, self.worker = self.start_worker(self.enabled())
             self.app.output_box.output('%s worker restarted\n'%self.shortname)
