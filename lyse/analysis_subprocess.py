@@ -577,7 +577,7 @@ class GuiWorker(AnalysisWorker):
 
     routine = None
 
-    def __init__(self, folder, to_parent, from_parent):
+    def __init__(self, folder, to_parent, from_parent, active):
         # Not the base class's: it starts a ModuleWatcher, which reloads code, and the command
         # listener, which must wait until the routine has loaded.
         self.to_parent, self.from_parent, self.filepath = to_parent, from_parent, folder
@@ -611,7 +611,9 @@ class GuiWorker(AnalysisWorker):
         else:
             lyse.routine.route_output(box.port)
             lyse.routine.restore_layout(self.window, layout)
-            self.window.show()
+            # An inactive routine's window stays hidden until the user shows it.
+            if active:
+                self.window.show()
             self.analyses = queue.Queue()
             self.analysis_thread = threading.Thread(target=self.analysis_loop, daemon=True)
             self.analysis_thread.start()
@@ -684,7 +686,7 @@ if __name__ == '__main__':
     to_parent = process_tree.to_parent
     from_parent = process_tree.from_parent
     kill_lock = process_tree.kill_lock
-    filepath = from_parent.get()
+    filepath, active = from_parent.get()
     gui = Path(filepath).suffix == lyse.utils.GUI_ROUTINE_SUFFIX
     if not gui:
         # Only a classic worker captures pyplot's figures.
@@ -712,6 +714,9 @@ if __name__ == '__main__':
     qapplication.setApplicationName('lyse')
     qapplication.setApplicationDisplayName('lyse')
     labscript_utils.splash.configure_qapplication(qapplication)
-    worker = (GuiWorker if gui else AnalysisWorker)(filepath, to_parent, from_parent)
+    if gui:
+        worker = GuiWorker(filepath, to_parent, from_parent, active)
+    else:
+        worker = AnalysisWorker(filepath, to_parent, from_parent)
     qapplication.exec()
         

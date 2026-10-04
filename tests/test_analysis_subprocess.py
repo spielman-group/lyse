@@ -144,14 +144,26 @@ class Analysis(lyse.Routine):
         run.save_result('process', process, save_to_h5=False)
 '''
 
+# The lyse_routine.py of a routine that reports whether its window is visible, read on the GUI
+# thread.
+VISIBLE_ROUTINE = '''
+import lyse
+from qtutils import inmain
+
+
+class Analysis(lyse.Routine):
+    def run(self):
+        self.get_run().save_result('visible', inmain(self.window.isVisible), save_to_h5=False)
+'''
+
 
 class Worker:
     """A worker process, started and talked to as lyse does."""
 
-    def __init__(self, routine):
+    def __init__(self, routine, active=True):
         self.to_worker, self.from_worker, self.process = ProcessTree.instance().subprocess(
             str(LYSE_DIR / 'analysis_subprocess.py'), startup_timeout=30)
-        self.to_worker.put(str(routine))
+        self.to_worker.put((str(routine), active))
 
     def send(self, task, data=None):
         self.to_worker.put([task, data])
@@ -187,9 +199,9 @@ class GuiWorkerTests(unittest.TestCase):
         self.settings = RoutineSettings(self.routine, lyse.analysis_subprocess.config_dir)
         self.addCleanup(self.settings.path.unlink, missing_ok=True)
 
-    def start(self, source):
+    def start(self, source, active=True):
         self.source.write_text(source.replace('<settings>', str(self.settings.path)))
-        worker = Worker(self.routine)
+        worker = Worker(self.routine, active)
         self.addCleanup(worker.kill)
         return worker
 
@@ -258,6 +270,13 @@ class GuiWorkerTests(unittest.TestCase):
                 worker = self.start(ICON_ROUTINE.replace('<icon>', icon))
                 self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): {
                     ('Analysis', 'window'): expected, ('Analysis', 'process'): expected}}])
+
+    def test_an_inactive_routine_starts_with_its_window_hidden(self):
+        for active in (True, False):
+            with self.subTest(active=active):
+                worker = self.start(VISIBLE_ROUTINE, active)
+                self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): {
+                    ('Analysis', 'visible'): active}}])
 
 
 if __name__ == '__main__':
