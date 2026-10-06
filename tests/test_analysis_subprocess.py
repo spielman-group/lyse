@@ -156,6 +156,20 @@ class Analysis(lyse.Routine):
         self.get_run().save_result('visible', inmain(self.window.isVisible), save_to_h5=False)
 '''
 
+# The lyse_routine.py of a routine that asks its application to quit, as Cmd-Q does on macOS, and
+# reports whether its window is still visible.
+QUIT_ROUTINE = '''
+import lyse
+from qtutils import inmain
+from qtutils.qt import QtWidgets
+
+
+class Analysis(lyse.Routine):
+    def run(self):
+        inmain(QtWidgets.QApplication.quit)
+        self.get_run().save_result('visible', inmain(self.window.isVisible), save_to_h5=False)
+'''
+
 
 class Worker:
     """A worker process, started and talked to as lyse does."""
@@ -277,6 +291,21 @@ class GuiWorkerTests(unittest.TestCase):
                 worker = self.start(VISIBLE_ROUTINE, active)
                 self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): {
                     ('Analysis', 'visible'): active}}])
+
+    def test_only_lyse_ends_a_worker(self):
+        # Any other request to quit closes the worker's windows and leaves it running.
+        script = self.folder / 'quit.py'
+        script.write_text('import lyse\nfrom qtutils import inmain\nfrom qtutils.qt import QtWidgets\n'
+                          'inmain(QtWidgets.QApplication.quit)\n'
+                          'lyse.Run(lyse.path).save_result("survived", True, save_to_h5=False)\n')
+        classic = Worker(script)
+        self.addCleanup(classic.kill)
+        cases = [(self.start(QUIT_ROUTINE), {('Analysis', 'visible'): False}),
+                 (classic, {('quit', 'survived'): True})]
+        for worker, results in cases:
+            for _ in range(2):
+                self.assertEqual(worker.analyse(self.good), ['done', {str(self.good): results}])
+            self.assertEqual(worker.quit(), 0)
 
 
 if __name__ == '__main__':

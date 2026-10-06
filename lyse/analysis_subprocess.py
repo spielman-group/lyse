@@ -385,7 +385,7 @@ class AnalysisWorker(object):
     def quit(self):
         with kill_lock:
             self.close_plots()
-            inmain(qapplication.quit)
+            inmain(qapplication.exit)
 
     def analyse(self, path, paths):
         with kill_lock:
@@ -676,7 +676,7 @@ class GuiWorker(AnalysisWorker):
                     inmain(self.routine.close)
             except Exception:
                 traceback.print_exc()
-            inmain(qapplication.quit)
+            inmain(qapplication.exit)
 
 
 class DockIcon(QtCore.QObject):
@@ -706,6 +706,19 @@ class DockIcon(QtCore.QObject):
         if policy == 0:
             # The Dock drops an icon sent while the process had no tile, so send it to the new one.
             QtWidgets.QApplication.setWindowIcon(QtWidgets.QApplication.windowIcon())
+
+
+class QuitFilter(QtCore.QObject):
+    """Closes a worker's windows, and refuses to quit, when anything but lyse asks it to quit."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Type.Quit:
+            for window in QtWidgets.QApplication.topLevelWidgets():
+                if window.isVisible():
+                    window.close()
+            event.ignore()
+            return True
+        return False
 
 
 if __name__ == '__main__':
@@ -741,6 +754,10 @@ if __name__ == '__main__':
     qapplication = QtWidgets.QApplication.instance()
     if qapplication is None:
         qapplication = QtWidgets.QApplication(sys.argv)
+    # lyse ends a worker with exit(), which sends no Quit event. One comes from Cmd-Q, the
+    # Dock's Quit or the last window closing, and only closes the windows.
+    quit_filter = QuitFilter(qapplication)
+    qapplication.installEventFilter(quit_filter)
     if sys.platform == 'darwin':
         dock_icon = DockIcon(qapplication)
         qapplication.installEventFilter(dock_icon)
