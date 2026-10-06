@@ -20,10 +20,10 @@ import time
 import types
 import logging
 import threading
-import subprocess
 
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
+from labscript_utils.text_editor import open_in_editor
 from zprocess import Interruptor
 
 # qt imports
@@ -234,24 +234,8 @@ class RoutineBox(object):
         routine_filepath = name_item.data(self.ROLE_FULLPATH)
         if os.path.splitext(routine_filepath)[1] == lyse.utils.GUI_ROUTINE_SUFFIX:
             routine_filepath = os.path.join(routine_filepath, 'lyse_routine.py')
-        # get path to text editor
-        editor_path = self.exp_config.get('programs', 'text_editor')
-        editor_args = self.exp_config.get('programs', 'text_editor_arguments')
-        # Get the current labscript file:
-        if not editor_path:
-            lyse.utils.gui.error_dialog(self.app, "No editor specified in the labconfig.")
-        if '{file}' in editor_args:
-            # Split the args on spaces into a list, replacing {file} with the labscript file
-            editor_args = [arg if arg != '{file}' else routine_filepath for arg in editor_args.split()]
-        else:
-            # Otherwise if {file} isn't already in there, append it to the other args:
-            editor_args = [routine_filepath] + editor_args.split()
-        try:
-            subprocess.Popen([editor_path] + editor_args)
-        except Exception as e:
-            lyse.utils.gui.error_dialog(self.app, "Unable to launch text editor specified in %s. Error was: %s" %
-                         (self.exp_config.config_path, str(e)))
-                         
+        open_in_editor(routine_filepath, parent=self.app.ui)
+
     def on_remove_selection(self):
         self.remove_selection()
 
