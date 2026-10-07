@@ -17,7 +17,6 @@ import os
 import sys
 import logging
 import threading
-import subprocess
 import time
 import traceback
 import queue
@@ -31,6 +30,7 @@ import pandas
 import zprocess
 from labscript_utils.labconfig import LabConfig
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
+from labscript_utils.text_editor import open_in_editor
 
 
 # qt imports
@@ -378,25 +378,8 @@ class DataFrameModel(QtCore.QObject):
     def on_double_click(self, index):
         filepath_item = self._model.item(index.row(), self.COL_FILEPATH)
         shot_filepath = filepath_item.text()
-        
-        # get path to text editor
-        viewer_path = self.exp_config.get('programs', 'hdf5_viewer')
-        viewer_args = self.exp_config.get('programs', 'hdf5_viewer_arguments')
-        # Get the current labscript file:
-        if not viewer_path:
-            lyse.utils.gui.error_dialog(self.app, "No hdf5 viewer specified in the labconfig.")
-        if '{file}' in viewer_args:
-            # Split the args on spaces into a list, replacing {file} with the labscript file
-            viewer_args = [arg if arg != '{file}' else shot_filepath for arg in viewer_args.split()]
-        else:
-            # Otherwise if {file} isn't already in there, append it to the other args:
-            viewer_args = [shot_filepath] + viewer_args.split()
-        try:
-            subprocess.Popen([viewer_path] + viewer_args)
-        except Exception as e:
-            lyse.utils.gui.error_dialog(self.app, "Unable to launch hdf5 viewer specified in %s. Error was: %s" %
-                         (self.exp_config.config_path, str(e)))
-        
+        open_in_editor(shot_filepath, parent=self.app.ui, program='hdf5_viewer')
+
     def set_columns_visible(self, columns_visible):
         self.columns_visible = columns_visible
         for column_index, visible in columns_visible.items():
