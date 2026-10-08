@@ -903,6 +903,8 @@ class FileBox(object):
                             logger.info('analysing: %s'%filepath)
                             self.do_singleshot_analysis(filepath)
                             at_least_one_shot_analysed = True
+                        # Multishot analysis runs once the queue drains, not once per shot, so a
+                        # multishot routine must process every unseen row, not only the last.
                         if filepath is None and at_least_one_shot_analysed:
                             self.multishot_required = True
                         if filepath is None:
