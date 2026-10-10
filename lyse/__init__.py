@@ -28,7 +28,9 @@ import labscript_utils.h5_lock, h5py
 import pandas
 import numpy as np
 
-from .__version__ import __version__
+from labscript_utils.versions import package_version
+
+__version__ = package_version(__package__)
 
 from labscript_utils import dedent
 from labscript_utils.dict_diff import dict_diff
