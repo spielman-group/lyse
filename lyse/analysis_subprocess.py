@@ -45,6 +45,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 # Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
 from labscript_utils.qtwidgets.outputbox import OutputBox
+from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils import dedent
 from labscript_utils.labconfig import (
     backup_legacy_config,
@@ -59,7 +60,6 @@ desktop_app.set_process_appid('lyse')
 
 # lyse imports
 import lyse.utils
-import lyse.utils.gui
 import lyse.utils.worker
 import lyse.figure_manager
 import lyse.routine
@@ -80,7 +80,7 @@ class PlotWindowCloseEvent(QtGui.QCloseEvent):
         QtGui.QCloseEvent.__init__(self, *args, **kwargs)
         self.force = force
 
-class PlotWindow(lyse.utils.gui.ThemedWindow, QtWidgets.QWidget):
+class PlotWindow(ThemedWindow, QtWidgets.QWidget):
     # A signal for when the window manager has created a new window for this widget:
     close_signal = Signal()
 

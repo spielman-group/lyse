@@ -30,6 +30,8 @@ import pandas
 import zprocess
 from labscript_utils.labconfig import LabConfig
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
+from labscript_utils.qtwidgets.leftclick import TableView
+import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
 
 
@@ -339,7 +341,8 @@ class DataFrameModel(QtCore.QObject):
         selected_name_items = [self._model.itemFromIndex(index) for index in selected_indexes]
         if not selected_name_items:
             return
-        if confirm and not lyse.utils.gui.question_dialog(self.app, "Remove %d shots?" % len(selected_name_items)):
+        if confirm and not self.app.question_dialog(
+                "Remove %d shots?" % len(selected_name_items)):
             return
         # Remove from DataFrame first:
         self.dataframe = self.dataframe.drop(index.row() for index in selected_indexes)
@@ -687,7 +690,7 @@ class FileBox(object):
         self.logger.info('starting')
 
         loader = UiLoader()
-        loader.registerCustomWidget(lyse.widgets.TableView)
+        loader.registerCustomWidget(TableView)
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/filebox.ui'))
         self.ui.progressBar_add_shots.hide()
         container.addWidget(self.ui)
@@ -745,18 +748,15 @@ class FileBox(object):
         self.edit_columns_dialog.update_columns(column_names, columns_visible)
 
     def on_add_shot_files_clicked(self):
-        shot_files = QtWidgets.QFileDialog.getOpenFileNames(self.ui,
-                                                        'Select shot files',
-                                                        self.last_opened_shots_folder,
-                                                        "HDF5 files (*.h5)")
-        if type(shot_files) is tuple:
-            shot_files, _ = shot_files
-
+        shot_files = file_dialogs.open_files(
+            self.ui,
+            'Select shot files',
+            self.last_opened_shots_folder,
+            "HDF5 files (*.h5)",
+        )
         if not shot_files:
             # User cancelled selection
             return
-        # Convert to standard platform specific path, otherwise Qt likes forward slashes:
-        shot_files = [os.path.abspath(shot_file) for shot_file in shot_files]
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_shots_folder = os.path.dirname(shot_files[0])

@@ -19,7 +19,7 @@ import tzlocal
 
 # Labscript imports
 import labscript_utils.shared_drive
-from labscript_utils.connections import _ensure_str
+from labscript_utils import ensure_str
 from labscript_utils.properties import get_attributes
 from labscript_utils.shot_utils import get_shot_globals
 from labscript_utils.labconfig import LabConfig
@@ -54,8 +54,6 @@ def rangeindex_to_multiindex(df, inplace):
     return df
 
 def asdatetime(timestr):
-    if isinstance(timestr, bytes):
-        timestr = timestr.decode('utf-8')
     tz = tzlocal.get_localzone()
     return pandas.Timestamp(timestr, tz=tz)
 
@@ -78,18 +76,18 @@ def get_nested_dict_from_shot(filepath):
                             for key, val in get_attributes(group[image]).items():
                                 if not isinstance(val, h5py.Reference):
                                     row[orientation][label][image][key] = val
-        row['filepath'] = _ensure_str(filepath)
+        row['filepath'] = ensure_str(filepath)
         row['agnostic_path'] = labscript_utils.shared_drive.path_to_agnostic(filepath)
-        seq_id = _ensure_str(h5_file.attrs['sequence_id'])
+        seq_id = ensure_str(h5_file.attrs['sequence_id'])
         row['sequence'] = asdatetime(seq_id.split('_')[0])
         try:
             row['sequence_index'] = h5_file.attrs['sequence_index']
         except KeyError:
             row['sequence_index'] = None
         if 'script' in h5_file: 
-            row['labscript'] = _ensure_str(h5_file['script'].attrs['name'])
+            row['labscript'] = ensure_str(h5_file['script'].attrs['name'])
         try:
-            row['run time'] = asdatetime(_ensure_str(h5_file.attrs['run time']))
+            row['run time'] = asdatetime(ensure_str(h5_file.attrs['run time']))
         except KeyError:
             row['run time'] = float('nan')
         try:    
@@ -105,7 +103,7 @@ def get_nested_dict_from_shot(filepath):
         except KeyError:
             row['n_runs'] = float('nan')
         try:
-            row['shot_id'] = _ensure_str(h5_file.attrs['shot_id'])
+            row['shot_id'] = ensure_str(h5_file.attrs['shot_id'])
         except KeyError:
             # Written by runmanager for a shot it queued, so that a result
             # coming back can be matched to the shot that was asked for. A

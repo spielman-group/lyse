@@ -28,9 +28,9 @@ from matplotlib.figure import Figure
 
 from labscript_utils.labconfig import load_appconfig, save_appconfig
 from labscript_utils.ls_zprocess import get_config
+from labscript_utils.qtwidgets.themed_window import ThemedWindow
 import lyse
 from lyse.utils import LYSE_DIR
-import lyse.utils.gui as gui
 import lyse.utils.worker as worker
 from zprocess.process_tree import OutputInterceptor
 
@@ -52,7 +52,7 @@ def fill_plot_form(form, toolbar, on_copy):
     return action
 
 
-class RoutineWindow(gui.ThemedWindow, QtWidgets.QMainWindow):
+class RoutineWindow(ThemedWindow, QtWidgets.QMainWindow):
     """A routine's window, with its Output dock. Closing it hides it."""
 
     def __init__(self):

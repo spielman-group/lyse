@@ -23,6 +23,8 @@ import threading
 
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
+from labscript_utils.qtwidgets.leftclick import TreeView
+import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
 from zprocess import Interruptor
 
@@ -32,7 +34,6 @@ from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 
 import lyse.widgets
 import lyse.utils
-import lyse.utils.gui
 
 class RoutineBox(object):
     
@@ -60,7 +61,7 @@ class RoutineBox(object):
         self.logger.info('starting')
         
         loader = UiLoader()
-        loader.registerCustomWidget(lyse.widgets.TreeView)
+        loader.registerCustomWidget(TreeView)
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/routinebox.ui'))
         container.addWidget(self.ui)
         self.logger.info('UI loaded')
@@ -157,29 +158,25 @@ class RoutineBox(object):
         self.ui.toolButton_move_to_bottom.clicked.connect(self.on_move_to_bottom_clicked)
 
     def on_add_routines_clicked(self):
-        routine_files = QtWidgets.QFileDialog.getOpenFileNames(self.ui,
-                                                           'Select analysis routines',
-                                                           self.last_opened_routine_folder,
-                                                           "Python scripts (*.py)")
-        if type(routine_files) is tuple:
-            routine_files, _ = routine_files
-
+        routine_files = file_dialogs.open_files(
+            self.ui,
+            'Select analysis routines',
+            self.last_opened_routine_folder,
+            "Python scripts (*.py)",
+        )
         if not routine_files:
             # User cancelled selection
             return
-        # Convert to standard platform specific path, otherwise Qt likes forward slashes:
-        routine_files = [os.path.abspath(routine_file) for routine_file in routine_files]
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_routine_folder = os.path.dirname(routine_files[0])
         self.add_routines([(routine_file, QtCore.Qt.Checked) for routine_file in routine_files])
 
     def on_add_routine_folder_clicked(self):
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
+        folder = file_dialogs.choose_folder(
             self.ui, 'Select a GUI analysis routine folder', self.last_opened_routine_folder)
         if not folder:
             return
-        folder = os.path.abspath(folder)
         self.last_opened_routine_folder = os.path.dirname(folder)
         if os.path.splitext(folder)[1] != lyse.utils.GUI_ROUTINE_SUFFIX:
             self.app.output_box.output(
@@ -244,7 +241,8 @@ class RoutineBox(object):
         selected_rows = set(index.row() for index in selected_indexes)
         if not selected_rows:
             return
-        if confirm and not lyse.utils.gui.question_dialog(self.app, "Remove %d routines?" % len(selected_rows)):
+        if confirm and not self.app.question_dialog(
+                "Remove %d routines?" % len(selected_rows)):
             return
         name_items = [self.model.item(row, self.COL_NAME) for row in selected_rows]
         filepaths = [item.data(self.ROLE_FULLPATH) for item in name_items]

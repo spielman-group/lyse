@@ -35,7 +35,6 @@ import time
 import sys
 import queue
 import warnings
-import signal
 
 # 3rd party imports:
 splash.update_text('importing numpy')
@@ -50,18 +49,21 @@ from labscript_utils.ls_zprocess import ProcessTree
 splash.update_text('importing labscript suite modules')
 from labscript_utils.labconfig import (
     LabConfig,
-    LabscriptApplication,
-    save_appconfig,
     load_appconfig,
 )
 from labscript_utils.setup_logging import setup_logging
+from labscript_utils.qtwidgets.application import (
+    LabscriptGuiApplication,
+    exec_qapplication,
+)
 from labscript_utils.qtwidgets.outputbox import OutputBox
+from labscript_utils.qtwidgets.themed_window import FirstPaintWindow, ThemedWindow
+import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils import dedent
 
 # qt imports
 splash.update_text('importing qt modules')
 from qtutils.qt import QtCore, QtWidgets, QT_ENV
-from qtutils.qt.QtCore import pyqtSignal as Signal
 from qtutils import UiLoader
 QT_VERSION_STR = QtCore.qVersion()
 PYQT_VERSION_STR = importlib.metadata.version(QT_ENV)
@@ -78,14 +80,10 @@ import lyse.routines
 import lyse.filebox
 import lyse.communication
 
-class LyseMainWindow(lyse.utils.gui.ThemedWindow, QtWidgets.QMainWindow):
-    # A signal to show that the window is shown and painted.
-    firstPaint = Signal()
-
+class LyseMainWindow(ThemedWindow, FirstPaintWindow, QtWidgets.QMainWindow):
     def __init__(self, app, *args, **kwargs):
         self.app = app
         QtWidgets.QMainWindow.__init__(self, *args, **kwargs)
-        self._previously_painted = False
         self.closing = False
 
     def closeEvent(self, event):
@@ -103,17 +101,12 @@ class LyseMainWindow(lyse.utils.gui.ThemedWindow, QtWidgets.QMainWindow):
         else:
             QtCore.QTimer.singleShot(0, self.close)
 
-    def paintEvent(self, event):
-        result = QtWidgets.QMainWindow.paintEvent(self, event)
-        if not self._previously_painted:
-            self._previously_painted = True
-            self.firstPaint.emit()
-        return result
 
-class Lyse(LabscriptApplication):
+class Lyse(LabscriptGuiApplication):
 
     app_name = 'lyse'
     default_config_filename = 'lyse.toml'
+    config_description = 'which scripts are loaded and other GUI state'
 
     def __init__(self, qapplication):
         # First: Start logging
@@ -252,47 +245,6 @@ class Lyse(LabscriptApplication):
         self.terminate_all_workers()
         return True
 
-    def on_save_configuration_triggered(self):
-        if self.last_save_config_file is None:
-            self.on_save_configuration_as_triggered()
-            self.ui.actionSave_configuration_as.setEnabled(True)
-            self.ui.actionRevert_configuration.setEnabled(True)
-        else:
-            self.save_configuration(self.last_save_config_file)
-
-    def on_revert_configuration_triggered(self):
-        save_data = self.get_save_data()
-        if self.last_save_data is not None and save_data != self.last_save_data:
-            message = 'Revert configuration to the last saved state in \'%s\'?' % self.last_save_config_file
-            reply = QtWidgets.QMessageBox.question(self.ui, 'Load configuration', message,
-                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel)
-            if reply == QtWidgets.QMessageBox.Cancel:
-                return
-            elif reply == QtWidgets.QMessageBox.Yes:
-                self.load_configuration(self.last_save_config_file)
-        else:
-            lyse.utils.gui.error_dialog(self.app, 'no changes to revert')
-
-    def on_save_configuration_as_triggered(self):
-        if self.last_save_config_file is not None:
-            default = self.last_save_config_file
-        else:
-            default = self.get_default_config_file(ensure_directory=True)
-        save_file = QtWidgets.QFileDialog.getSaveFileName(self.ui,
-                                                      'Select  file to save current lyse configuration',
-                                                      default,
-                                                      "Config files (*.toml)")
-        if type(save_file) is tuple:
-            save_file, _ = save_file
-
-        if not save_file:
-            # User cancelled
-            return
-        # Convert to standard platform specific path, otherwise Qt likes
-        # forward slashes:
-        save_file = os.path.abspath(save_file)
-        self.save_configuration(save_file)
-
     def only_window_geometry_is_different(self, current_data, old_data):
         ui_keys = ['window_size', 'window_pos', 'splitter', 'splitter_vertical', 'splitter_horizontal']
         compare = [current_data[key] == old_data[key] for key in current_data.keys() if key not in ui_keys]
@@ -326,46 +278,6 @@ class Lyse(LabscriptApplication):
         save_data['splitter_vertical'] = self.ui.splitter_vertical.sizes()
         save_data['splitter_horizontal'] = self.ui.splitter_horizontal.sizes()
         return save_data
-
-    def save_configuration(self, save_file):
-        save_data = self.get_save_data()
-        save_file = save_appconfig(save_file, {'lyse_state': save_data})
-        self.last_save_config_file = save_file
-        self.last_save_data = save_data
-        self.set_config_window_title(save_file)
-
-    def on_load_configuration_triggered(self):
-        save_data = self.get_save_data()
-        if self.last_save_data is not None and save_data != self.last_save_data:
-            message = ('Current configuration (which groups are active/open and other GUI state) '
-                       'has changed: save config file \'%s\'?' % self.last_save_config_file)
-            reply = QtWidgets.QMessageBox.question(self.ui, 'Load configuration', message,
-                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel)
-            if reply == QtWidgets.QMessageBox.Cancel:
-                return
-            if reply == QtWidgets.QMessageBox.Yes:
-                self.save_configuration(self.last_save_config_file)
-
-        if self.last_save_config_file is not None:
-            default = self.last_save_config_file
-        else:
-            default = self.get_default_config_file()
-
-        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-        file = QtWidgets.QFileDialog.getOpenFileName(self.ui,
-                                                 'Select lyse configuration file to load',
-                                                 default,
-                                                 "Config files (*.toml *.ini)")
-        if type(file) is tuple:
-            file, _ = file
-
-        if not file:
-            # User cancelled
-            return
-        # Convert to standard platform specific path, otherwise Qt likes
-        # forward slashes:
-        file = os.path.abspath(file)
-        self.load_configuration(file)
 
     def load_configuration(self, filename, restore_window_geometry=True):
         # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
@@ -446,9 +358,9 @@ class Lyse(LabscriptApplication):
         if len(df) > 0:
             default = self.exp_config.get('paths', 'experiment_shot_storage')
             if choose_folder:
-                save_path = QtWidgets.QFileDialog.getExistingDirectory(self.ui, 'Select a Folder for the Dataframes', default)
-                if type(save_path) is tuple:
-                    save_path, _ = save_path
+                save_path = file_dialogs.choose_folder(
+                    self.ui, 'Select a Folder for the Dataframes', default
+                )
                 if not save_path:
                     # User cancelled
                     return
@@ -471,22 +383,19 @@ class Lyse(LabscriptApplication):
                             pass
                 sequence_df.to_pickle(os.path.join(save_path, filename))
         else:
-            lyse.utils.gui.error_dialog(self.app, 'Dataframe is empty')
+            self.error_dialog('Dataframe is empty')
 
     def on_load_dataframe_triggered(self):
         default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'dataframe.pkl')
-        file = QtWidgets.QFileDialog.getOpenFileName(self.ui,
-                        'Select dataframe file to load',
-                        default,
-                        "dataframe files (*.pkl *.msg)")
-        if type(file) is tuple:
-            file, _ = file
+        file = file_dialogs.open_file(
+            self.ui,
+            'Select dataframe file to load',
+            default,
+            "dataframe files (*.pkl *.msg)",
+        )
         if not file:
             # User cancelled
             return
-        # Convert to standard platform specific path, otherwise Qt likes
-        # forward slashes:
-        file = os.path.abspath(file)
         if file.endswith('.msg'):
             # try to read msgpack in case using older pandas
             try:
@@ -555,15 +464,8 @@ if __name__ == "__main__":
 
     app = Lyse(qapplication)
 
-    # Let the interpreter run every 500ms so it sees Ctrl-C interrupts:
-    timer = QtCore.QTimer()
-    timer.start(500)
-    timer.timeout.connect(lambda: None)  # Let the interpreter run each 500 ms.
-    # Upon seeing a ctrl-c interrupt, quit the event loop
-    signal.signal(signal.SIGINT, lambda *args: qapplication.exit())
-    
     splash.hide()
-    qapplication.exec()
+    exec_qapplication(qapplication)
 
     # Shutdown the webserver.
     app.server.shutdown()
