@@ -14,11 +14,8 @@
 """The FileBox's dataframe, recording the results a routine hands back."""
 import types
 import unittest
-import warnings
 
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
-    import lyse.filebox
+import lyse.filebox
 
 
 class ResultsForARemovedShotTests(unittest.TestCase):

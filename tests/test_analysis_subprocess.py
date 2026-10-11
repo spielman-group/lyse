@@ -16,18 +16,15 @@ worker, which runs the routine folder as a real process."""
 import sys
 import tempfile
 import unittest
-import warnings
 from pathlib import Path
 from unittest import mock
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
 
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
-    import lyse.analysis_subprocess
-    from labscript_utils.ls_zprocess import ProcessTree
-    from lyse.routine import RoutineSettings
-    from lyse.utils import LYSE_DIR
+import lyse.analysis_subprocess
+from labscript_utils.ls_zprocess import ProcessTree
+from lyse.routine import RoutineSettings
+from lyse.utils import LYSE_DIR
 
 
 class Child(QtWidgets.QWidget):

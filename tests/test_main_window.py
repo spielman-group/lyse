@@ -18,7 +18,6 @@ import sys
 import tempfile
 import types
 import unittest
-import warnings
 
 import numpy
 import pandas
@@ -68,9 +67,7 @@ def import_main_without_splash():
     sys.modules['labscript_utils.splash'] = fake
     labscript_utils.splash = fake
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            import lyse.__main__ as main
+        import lyse.__main__ as main
     finally:
         if saved_module is None:
             del sys.modules['labscript_utils.splash']

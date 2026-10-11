@@ -20,15 +20,12 @@ import tempfile
 import threading
 import types
 import unittest
-import warnings
 
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
-    import lyse
-    import lyse.analysis_subprocess
-    import lyse.figure_manager
-    import lyse.filebox
-    import lyse.routines
+import lyse
+import lyse.analysis_subprocess
+import lyse.figure_manager
+import lyse.filebox
+import lyse.routines
 
 ROUTINE = """\
 import json, lyse, os
