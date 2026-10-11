@@ -44,6 +44,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 # Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
+from labscript_utils.qtwidgets.application import exec_qapplication
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils import dedent
@@ -772,5 +773,7 @@ if __name__ == '__main__':
         worker = GuiWorker(filepath, to_parent, from_parent, active)
     else:
         worker = AnalysisWorker(filepath, to_parent, from_parent)
-    qapplication.exec()
+    # Its timer lets Python run zprocess's SIGTERM handler, which ends a worker whose
+    # lyse has gone without asking it to quit.
+    exec_qapplication(qapplication)
         
