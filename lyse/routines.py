@@ -26,7 +26,6 @@ from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderVi
 from labscript_utils.qtwidgets.leftclick import TreeView
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
-from zprocess import Interruptor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
@@ -635,8 +634,7 @@ class AnalysisRoutine(object):
             self.app.output_box.output('%s worker exited cleanly\n'%self.shortname)
         
         # if analysis was running notify analysisloop that analysis has failed
-        # Its own Interruptor: on the queue's, put() waits forever while get() holds it.
-        shutdown.from_worker.put(('error', {}), interruptor=Interruptor())
+        shutdown.from_worker.put(('error', {}))
         self.shutdown = None
 
         if shutdown.restart:
