@@ -24,7 +24,6 @@ import threading
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 from labscript_utils.qtwidgets.leftclick import TreeView
-from labscript_utils.qtwidgets.row_order import moved_row_order
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
 
@@ -41,12 +40,6 @@ class RoutineBox(object):
     COL_STATUS = 1
     COL_NAME = 2
     ROLE_FULLPATH = QtCore.Qt.UserRole + 1
-    # This data (stored in the name item) does not necessarily match
-    # the position in the model. It will be set just
-    # prior to sort() being called with this role as the sort data.
-    # This is how we will reorder the model's rows instead of
-    # using remove/insert.
-    ROLE_SORTINDEX = QtCore.Qt.UserRole + 2
     
     def __init__(self, app, container, exp_config, filebox, from_filebox, to_filebox, output_box_port, multishot=False):
         self.app = app
@@ -93,7 +86,6 @@ class RoutineBox(object):
         self.model.setHorizontalHeaderItem(self.COL_ACTIVE, active_item)
         self.model.setHorizontalHeaderItem(self.COL_STATUS, status_item)
         self.model.setHorizontalHeaderItem(self.COL_NAME, name_item)
-        self.model.setSortRole(self.ROLE_SORTINDEX)
         
         self.ui.treeView.resizeColumnToContents(self.COL_ACTIVE)
         self.ui.treeView.resizeColumnToContents(self.COL_STATUS)
@@ -152,12 +144,14 @@ class RoutineBox(object):
         self.action_show_windows_selected.triggered.connect(
             lambda: self.on_selected_routines_triggered(AnalysisRoutine.show_windows))
         self.action_remove_selected.triggered.connect(self.on_remove_selection)
-        self.ui.toolButton_move_to_top.clicked.connect(lambda: self.on_move_clicked('top'))
-        self.ui.toolButton_move_up.clicked.connect(lambda: self.on_move_clicked('up'))
-        self.ui.toolButton_move_down.clicked.connect(lambda: self.on_move_clicked('down'))
+        tree = self.ui.treeView
+        self.ui.toolButton_move_to_top.clicked.connect(lambda: tree.move_selected_rows('top'))
+        self.ui.toolButton_move_up.clicked.connect(lambda: tree.move_selected_rows('up'))
+        self.ui.toolButton_move_down.clicked.connect(lambda: tree.move_selected_rows('down'))
         self.ui.toolButton_move_to_bottom.clicked.connect(
-            lambda: self.on_move_clicked('bottom')
+            lambda: tree.move_selected_rows('bottom')
         )
+        tree.rowsReordered.connect(self.on_rows_reordered)
 
     def on_add_routines_clicked(self):
         routine_files = file_dialogs.open_files(
@@ -221,7 +215,9 @@ class RoutineBox(object):
                                       QtCore.Qt.CheckState(checked))
             self.routines.append(routine)
         if clear_existing:
-            self.reorder([added.index(routine.filepath) for routine in self.routines])
+            self.ui.treeView.reorder_rows(
+                [added.index(routine.filepath) for routine in self.routines]
+            )
         self.update_select_all_checkstate()
         
     def on_treeview_double_left_clicked(self, index):
@@ -285,10 +281,6 @@ class RoutineBox(object):
             active_item = self.model.item(row, self.COL_ACTIVE)
             active_item.setCheckState(active)
         self.update_select_all_checkstate()
-
-    def on_move_clicked(self, direction):
-        selected_rows = set(index.row() for index in self.ui.treeView.selectedIndexes())
-        self.reorder(moved_row_order(self.model.rowCount(), selected_rows, direction))
 
     def on_selected_routines_triggered(self, method):
         selected_indexes = self.ui.treeView.selectedIndexes()
@@ -361,14 +353,7 @@ class RoutineBox(object):
             self.to_filebox.put(['done', 100.0, {}])
         self.logger.debug('completed analysis of %s'%filepath)
             
-    def reorder(self, order):
-        assert len(order) == len(set(order)), 'ordering contains non-unique elements'
-        # Apply the reordering to the liststore:
-        for old_index, new_index in enumerate(order):
-            name_item = self.model.item(old_index, self.COL_NAME)
-            name_item.setData(new_index, self.ROLE_SORTINDEX)
-        self.ui.treeView.sortByColumn(self.COL_NAME, QtCore.Qt.AscendingOrder)
-        # Apply new order to our list of routines too:
+    def on_rows_reordered(self, order):
         self.routines = [self.routines[order.index(i)] for i in range(len(order))]
 
     def update_select_all_checkstate(self):
