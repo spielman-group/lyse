@@ -24,6 +24,7 @@ import threading
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 from labscript_utils.qtwidgets.leftclick import TreeView
+from labscript_utils.qtwidgets.row_order import moved_row_order
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
 
@@ -151,10 +152,12 @@ class RoutineBox(object):
         self.action_show_windows_selected.triggered.connect(
             lambda: self.on_selected_routines_triggered(AnalysisRoutine.show_windows))
         self.action_remove_selected.triggered.connect(self.on_remove_selection)
-        self.ui.toolButton_move_to_top.clicked.connect(self.on_move_to_top_clicked)
-        self.ui.toolButton_move_up.clicked.connect(self.on_move_up_clicked)
-        self.ui.toolButton_move_down.clicked.connect(self.on_move_down_clicked)
-        self.ui.toolButton_move_to_bottom.clicked.connect(self.on_move_to_bottom_clicked)
+        self.ui.toolButton_move_to_top.clicked.connect(lambda: self.on_move_clicked('top'))
+        self.ui.toolButton_move_up.clicked.connect(lambda: self.on_move_clicked('up'))
+        self.ui.toolButton_move_down.clicked.connect(lambda: self.on_move_clicked('down'))
+        self.ui.toolButton_move_to_bottom.clicked.connect(
+            lambda: self.on_move_clicked('bottom')
+        )
 
     def on_add_routines_clicked(self):
         routine_files = file_dialogs.open_files(
@@ -283,74 +286,10 @@ class RoutineBox(object):
             active_item.setCheckState(active)
         self.update_select_all_checkstate()
 
-    def on_move_to_top_clicked(self):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        n = self.model.rowCount()
-        i_selected = 0
-        i_unselected = len(selected_rows)
-        order = []
-        for i in range(n):
-            if i in selected_rows:
-                order.append(i_selected)
-                i_selected += 1
-            else:
-                order.append(i_unselected)
-                i_unselected += 1
-        self.reorder(order)
-        
-    def on_move_up_clicked(self):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        n = self.model.rowCount()
-        order = []
-        last_unselected_index = None
-        for i in range(n):
-            if i in selected_rows:
-                if last_unselected_index is None:
-                    order.append(i)
-                else:
-                    order.append(i - 1)
-                    order[last_unselected_index] += 1
-            else:
-                last_unselected_index = i
-                order.append(i)
-        self.reorder(order)
-        
-    def on_move_down_clicked(self):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        n = self.model.rowCount()
-        order = []
-        last_unselected_index = None
-        for i in reversed(range(n)):
-            if i in selected_rows:
-                if last_unselected_index is None:
-                    order.insert(0, i)
-                else:
-                    order.insert(0, i + 1)
-                    order[last_unselected_index - n] -= 1
-            else:
-                last_unselected_index = i
-                order.insert(0, i)
-        self.reorder(order)
-        
-    def on_move_to_bottom_clicked(self):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        n = self.model.rowCount()
-        i_selected = n - len(selected_rows)
-        i_unselected = 0
-        order = []
-        for i in range(n):
-            if i in selected_rows:
-                order.append(i_selected)
-                i_selected += 1
-            else:
-                order.append(i_unselected)
-                i_unselected += 1
-        self.reorder(order)
-        
+    def on_move_clicked(self, direction):
+        selected_rows = set(index.row() for index in self.ui.treeView.selectedIndexes())
+        self.reorder(moved_row_order(self.model.rowCount(), selected_rows, direction))
+
     def on_selected_routines_triggered(self, method):
         selected_indexes = self.ui.treeView.selectedIndexes()
         selected_rows = set(index.row() for index in selected_indexes)
