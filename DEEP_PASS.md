@@ -1,0 +1,172 @@
+# lyse deep pass
+
+A planning document for the code-health campaign (`issues/code_health_campaign.md`
+in the meta repo). It lists candidates for Ian's review and is deleted when the
+pass is done. Nothing is changed until Ian has reviewed each entry.
+
+## Step 1: contract
+
+What each existing test protects. Marks: **keep**, **rename** (the name does
+not state the behaviour), **fix** (the behaviour is real but the test carries a
+stale or dead part), **cut** (protects nothing worth keeping).
+
+All 44 tests were written by the fork; upstream had none. Most were written
+with a mutation that made each fail, slice by slice. The two least direct, the
+status column's paint and the removed shot's results, were broken again on a
+scratch copy for this list.
+
+### Totals
+
+- Test files: 8, plus `conftest.py`. Tests: 44, with 17 subtests.
+- Marks: keep 42, rename 1, fix 1, cut 0.
+
+### tests/test_analysis_subprocess.py
+
+The analysis worker, run as a real process as lyse runs it.
+- `test_a_theme_change_repaints_the_window_without_error`: a plot window follows
+  a light/dark switch, repainting its children. **keep**.
+- `test_a_figure_named_by_a_string_gets_a_window_that_keeps_its_geometry`:
+  `plt.figure('name')` gets a plot window, and its size is restored. **keep**.
+- `test_shots_are_analysed_in_turn_with_the_controls_saved_first`: a GUI
+  routine runs each shot with the controls' values as saved before it. **keep**.
+- `test_a_failed_run_replies_error_without_earlier_results`: a run that raises
+  replies error, and the worker goes on. **keep**.
+- `test_quit_waits_for_run_and_calls_close_once`: quitting waits for a running
+  `run()`, then calls `close()` once on the GUI thread. **keep**.
+- `test_a_routine_that_cannot_load_fails_every_analysis_until_restart`: a
+  routine that does not load fails each analysis until restarted. **keep**.
+- `test_show_gets_no_reply_so_the_next_analysis_gets_its_own`: "Show windows"
+  sends no reply that the next analysis could take as its own. **keep**.
+- `test_a_routine_icon_is_its_window_and_process_icon`: a routine's `icon` is
+  its window's and its process's icon, lyse's by default. **keep**.
+- `test_an_inactive_routine_starts_with_its_window_hidden`: only an active
+  routine's window shows at startup. **keep**.
+- `test_only_lyse_ends_a_worker`: a request to quit, as Cmd-Q makes, closes a
+  worker's windows and leaves it running, for both kinds of worker. **keep**.
+
+### tests/test_communication.py
+
+`lyse.data` and `LyseClient` against a real `LyseServer`.
+- `test_the_most_recently_engaged_sequences_are_returned`: `n_sequences=N`
+  returns the N sequences engaged last, whatever the row order. **keep**.
+- `test_rows_are_chosen_by_a_list_of_filepaths`: `where={'filepath': [...]}`
+  with a list, array or set. **keep**.
+- `test_rows_are_chosen_by_equality_on_a_nested_column`: `where` on a column
+  such as `('fit', 'atoms')`. **keep**.
+- `test_a_column_not_in_the_dataframe_is_refused_by_name`: **keep**.
+- `test_rows_are_chosen_after_n_sequences`: `where` filters within the
+  `n_sequences` chosen. **keep**.
+- `test_a_submitted_shot_reaches_the_incoming_queue_as_a_local_path`: **keep**.
+
+### tests/test_filebox.py
+
+- `test_results_for_a_shot_with_no_row_are_reported_and_the_list_stays_live`:
+  results for a shot removed while its routine ran are reported, and the shot
+  list keeps updating. **keep**. Fails when the report is removed, and when the
+  model's signals are blocked before the missing row returns. The second half
+  is a real bug fix; the report is candidate B of step 2.1.
+
+### tests/test_main_window.py
+
+- `test_a_theme_change_repaints_the_window_without_error`: the main window
+  follows a light/dark switch. **keep**.
+- `test_a_dataframe_with_object_columns_is_saved_beside_its_shots`: saving a
+  real dataframe, whose columns include bytes and arrays. **keep**.
+- `test_labscripts_engaged_in_the_same_second_are_saved_apart`: two sequences
+  engaged in one second do not overwrite each other's file. **keep**.
+
+### tests/test_multishot_paths.py
+
+`lyse.paths`, through the routine box's real analysis loop.
+- `test_a_multishot_routine_sees_the_shots_analysed_since_its_last_pass`:
+  **keep**.
+- `test_after_a_failed_pass_its_shots_are_offered_again`: **keep**.
+- `test_a_singleshot_routine_sees_none`: **keep**.
+- `test_a_failed_pass_is_not_run_again_until_analysis_resumes`: **keep**.
+
+### tests/test_routine.py
+
+`lyse.Routine` and its window, built as a worker builds them.
+- `test_the_one_routine_class_is_found_whatever_its_names`: **keep**.
+- `test_no_class_or_two_classes_is_an_error`: **keep**.
+- `test_a_saved_widget_takes_its_saved_value_and_reaches_the_snapshot`:
+  **keep**.
+- `test_bad_names_duplicate_names_and_unsupported_values_are_errors`: **keep**.
+- `test_a_named_figure_is_made_once_and_kept_when_hidden`: **keep**.
+- `test_ctrl_c_copies_the_figure_only_from_within_its_dock`: **keep**.
+- `test_load_ui_finds_a_relative_file_in_the_routine_folder`: **keep**.
+- `test_the_layout_comes_back_with_the_output_dock_shown`: **keep**.
+- `test_get_sequence_and_data_default_to_the_analysis_shots`: **keep**.
+- `test_results_go_in_the_class_name_unless_the_routine_sets_a_group`:
+  **keep**.
+- `test_settings_are_kept_per_full_path_and_bad_entries_are_dropped`: **keep**.
+- `test_an_unreadable_file_is_set_aside_and_saving_resumes`: **keep**.
+- `test_output_reaches_the_output_box_and_not_lyse`: **keep**.
+
+### tests/test_run.py
+
+`lyse.Run` writing results to the shot file and the shot's row.
+- `test_a_run_saving_only_to_the_dataframe_never_opens_the_file`: **keep**.
+- `test_a_first_write_creates_the_group_and_writes_in_one_open`: **keep**.
+- `test_a_result_not_yet_saved_is_reported_as_before`: reading a result from a
+  group that was never written raises that the group does not exist. **rename**
+  to `test_reading_a_result_never_saved_raises_that_its_group_does_not_exist`:
+  "as before" narrates history.
+- `test_the_results_groups_are_empty_before_the_first_write`: `get_attrs` on
+  `results` and on the routine's group gives `{}` before any write, as
+  upstream's did; any other missing group raises. **fix**: its docstring, "As
+  they were when construction created them", narrates history.
+- `test_a_result_outside_the_results_group_cannot_skip_the_file`: candidate A
+  of step 2.1. **keep** while A stands.
+- `test_a_shot_file_that_is_not_there_is_refused_at_construction`: **keep**.
+
+### tests/test_widgets.py
+
+- `test_a_shot_being_analysed_paints_without_error`: the status column paints
+  a shot's progress bar under Qt6. **keep**. Fails when the bar takes its font
+  metrics from `QApplication.fontMetrics()`, which Qt6 removed.
+
+## Step 2.1: behaviour no one asked for
+
+The source is `git diff master CodeHealth`: 112 commits, lyse's core
++1678 −834 lines. Almost every behaviour the fork added traces to a request or
+a suite-wide decision.
+
+| Behaviour | Commits | Where it was asked for |
+| --- | --- | --- |
+| TOML config files; legacy INI read and converted | 82b58f2, e7bb157, bc02be8 | `toml` and `RunmanagerTOML` in `CODEX.md`. The INI path is for step 2.4 |
+| Config path in the window title | c4182ca | `UpdatedTitleBars` in `CODEX.md` |
+| macOS icons and display name | 6906087, 611ceef, 48f0a2d | `MacOS` in `CODEX.md` |
+| PyQt6, and Qt6's removed APIs | b872641, 2fd7d37, 2bd3060 | The suite's move to PyQt6; `Qt6Fixes` in `CODEX.md` |
+| Theme changes reach the plot and main windows | 7e826c6, b556337, 317decb, 6a9c60f | Fixes to upstream's theme handling, which listened for events Qt does not send |
+| Current pandas | 8a70a37, 747cc21, 738df15, 67db467 | pandas removed the APIs lyse called |
+| `shot_id` column, `n_sequences` by engage time, `lyse.paths`, `save_to_h5=False`, `where=`, result groups made on first write | 9a4ad0f, 084acf7, 88dd2ac, 4e5b71c, 99d3adb, 09acd22, 6286645, 0964797, 41c22cf, 959c1ed | `RunmanagerControl` in `CODEX.md`, lyse's part |
+| A figure named by a string | 0ce84f1, 7c11b4f | Bug: `plt.figure('name')` raised, and the routine's plots never showed |
+| Sequences engaged in the same second saved apart | bc3dd41 | Bug: one overwrote the other's dataframe file |
+| `LyseServer` and `LyseClient` | acb7992 | `issues/server_interfaces_2026_09_25.md` |
+| Restart, remove and quit never freeze lyse or start two workers; a non-zero exit is reported; a configuration load restarts the routines it shares; one `UiLoader` per worker | 8d02bfd, 91de899, 4f90e31, 4b06ce6, baa5775, edd1a82, 1f90378 | Ian's 2026-10-01 lyse bug list, worked on a `BugFixes` branch. Several are guards for step 2.3 |
+| GUI routines, with their window, docks, settings, output, icon, startup visibility and Dock tile; only lyse ends a worker; the add menu; examples and docs | 8296f6d..f644cc7, 2ad56fb, 3a1260f, a016959, e4296a8, a11296a, 23b7b98, bb4f296, 9e089ca, 6f14dd8, 4ee46dd | `issues/class_routines_2026_09_30.md`, agreed with Ian, and his bug reports during it |
+| The plot-class error names the real base class | f396a83 | Ian |
+| A worker ends with lyse, through `exec_qapplication` | 83cfd6c | Ian |
+| Shared code, version scheme, docs and the earlier campaign rounds | bc89825, ce2b7f9, 0bc790d, 7e96ae4, 010cd03, 2aa9328, f4c8e8e, 3a0dff4, b0a872e, 8f4eb9a, aafd7e5, 03c8825 | `EditFile`, `ReviewFixes` and the campaign's approved rounds |
+| Test environment and test rules | 3d32196, 195d8c8, 376a4b9, a17040e, 6b95381, 3b3bdcb, 733eeec, b75bf67 | The workspace's test rules and Ian's rule 13 |
+
+`Run.get_attrs` giving `{}` for the results groups before the first write keeps
+upstream's behaviour, since upstream made the groups at construction. It is
+protected, not a candidate.
+
+### Candidates
+
+Both came from a code review of the `RunmanagerControl` work, not from a
+request. Each prevents a result being lost without a word.
+
+| | Behaviour | Cost | Recommendation |
+| --- | --- | --- | --- |
+| A | `Run.save_result(..., save_to_h5=False)` with a group outside `results` raises `ValueError`, since such a result would be saved nowhere (959c1ed) | 3 lines and one test | keep |
+| B | Results for a shot removed while its routine ran are reported in lyse's output as not recorded (8dd7674). The same commit's unblocking of the model's signals on that path is a bug fix, not a candidate | 3 lines, tested with the bug fix | keep |
+
+Searched: `CODEX.md`, the meta repo's `issues/` and their history, shared
+memory, and each commit's message and branch. Users reached: the operator
+through lyse's window, analysis routines through `lyse.Run`, `lyse.data`,
+`lyse.paths` and `lyse.Routine`, labscript-optimization as a GUI routine, and
+runmanager through `LyseClient`.
