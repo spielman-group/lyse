@@ -203,3 +203,37 @@ moving into shared code.
   `figure_to_clipboard` and `tempfile2clipboard`: no copy in another repo.
 - `AnalysisWorker` and `GuiWorker`: one `mainloop`; `GuiWorker` overrides
   `quit`, `analyse` and `windows` by design.
+
+Ian approved C, and D across lyse, runmanager and runviewer, with runmanager
+gaining window geometry. labscript-utils 6c9fdc3; lyse cea6a15. Quitting now
+treats `screen_geometry` as geometry too, so a change of screens alone is saved
+without asking.
+
+## Step 2.3: root causes
+
+Each guard the fork added, from `git diff master CodeHealth`, traced to its
+cause.
+
+### Candidates
+
+| | Guard | Cause | Fix at the cause |
+| --- | --- | --- | --- |
+| E | `routines.py`: `send_analysis` and `end_child` check `worker.poll()` before each put, since a put to a worker that has exited waits forever (open item 2 of the meta repo's `lyse_issues_2026_10_01.md`) | zprocess: `WriteQueue.put()` without a timeout waits until the queue can send, which it never can once the process at the other end has gone | zprocess's owner makes a put to an exited process raise, then lyse drops its `poll()` checks. The shutdown check beside one of them stays: it keeps a shot from a worker that is quitting. Not visible to a user |
+| F | `routine.py:63`: `RoutineWindow.closeEvent` refuses the close and hides the window, so that Qt does not quit the worker on its last window closing | The worker quitting on any request to quit, which `QuitFilter` now refuses at its cause (6f14dd8) | Delete the four lines: Qt's own close hides the window. `test_a_named_figure_is_made_once_and_kept_when_hidden` loses its `assertFalse(self.window.close())`, which pins the refusal, and keeps checking that the closed window is hidden with its figure kept. Not visible to a user |
+
+### Not candidates
+
+- One `UiLoader` per worker (`routine.py:41`), because qtutils' loader erases
+  the widgets registered on earlier loaders (open item 3). The cause is in
+  qtutils, outside the suite, and one shared loader is the simpler design
+  anyway.
+- The Dock tile's icon sent again on each switch to Regular
+  (`analysis_subprocess.py`, `DockIcon`): the Dock drops an icon sent to a
+  process without a tile, a macOS cause.
+- The shutdown check and the send made in one step on the GUI thread
+  (`routines.py`, edd1a82), and a restart only after the old worker has exited
+  (91de899): lyse's own ordering, fixed where the race was.
+- `pandas.to_numeric` in a `try` (`__main__.py`, saving the dataframe): the
+  same behaviour as pandas' removed `errors='ignore'`.
+- A deleted saved widget left out of the controls (`routine.py`,
+  `read_saved_widgets`): designed behaviour, not a guard.
