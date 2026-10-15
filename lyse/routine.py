@@ -60,11 +60,6 @@ class RoutineWindow(ThemedWindow, QtWidgets.QMainWindow):
         loader.load(str(LYSE_DIR / 'user_interface' / 'routine_window.ui'), self)
         self.menu_view.addAction(self.dock_output.toggleViewAction())
 
-    def closeEvent(self, event):
-        # Refused, so that Qt does not count the last window closed and quit the application.
-        event.ignore()
-        self.hide()
-
 
 class Routine:
     """The base class of a lyse GUI routine.

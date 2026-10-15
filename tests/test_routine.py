@@ -142,8 +142,7 @@ class WindowTests(unittest.TestCase):
         next(a for a in view.actions() if a.text() == 'Counts').trigger()
         self.assertTrue(self.dock.isVisible())
 
-        # Refused and then hidden, so that Qt does not count the last window closed and quit.
-        self.assertFalse(self.window.close())
+        self.window.close()
         self.assertFalse(self.window.isVisible())
         self.assertIs(self.routine.add_figure('Counts'), figure)
 
