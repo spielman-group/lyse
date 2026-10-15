@@ -15,6 +15,7 @@
 analysis GUI code
 """
 
+import contextlib
 import os
 import time
 import types
@@ -26,6 +27,7 @@ from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderVi
 from labscript_utils.qtwidgets.leftclick import TreeView
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
+from zprocess import ProcessExited
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
@@ -426,9 +428,14 @@ class AnalysisRoutine(object):
         # check and the send. Returns whether one is pending, and the reply's queue if sent.
         if self.shutdown is not None:
             return True, None
+        # A shot put to a worker that has just exited can still be taken by its socket and
+        # lost, and the reply then never comes.
         if self.worker.poll() is not None:
             return False, None
-        self.to_worker.put(['analyse', (filepath, paths)])
+        try:
+            self.to_worker.put(['analyse', (filepath, paths)])
+        except ProcessExited:
+            return False, None
         return False, self.from_worker
 
     def do_analysis(self, filepath, paths):
@@ -497,9 +504,10 @@ class AnalysisRoutine(object):
         
     @inmain_decorator()
     def show_windows(self):
-        # On the GUI thread, where shutdowns start. A put to a worker that has exited waits forever.
-        if self.shutdown is None and self.worker.poll() is None:
-            self.to_worker.put(['show', None])
+        # On the GUI thread, where shutdowns start.
+        if self.shutdown is None:
+            with contextlib.suppress(ProcessExited):
+                self.to_worker.put(['show', None])
 
     def remove(self):
         """End the child process and remove from the treeview"""
@@ -517,8 +525,8 @@ class AnalysisRoutine(object):
             if not restart:
                 self.shutdown.restart = False
             return
-        # A worker that has exited never takes the quit, and the put would wait forever.
-        if self.worker.poll() is None:
+        # A worker that has exited never takes the quit.
+        with contextlib.suppress(ProcessExited):
             self.to_worker.put(['quit', None])
         timeout_time = time.time() + 2
         self.shutdown = types.SimpleNamespace(
