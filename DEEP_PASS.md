@@ -286,3 +286,6 @@ Every branch other than the tiers and `CodeHealth`. lyse has no
 | N | `spielman_merged/SaveDataframeAndNamedFigures` | Every commit is in `Development` and `Production` | delete |
 | O | `spielman_retired/ClassRoutinesThrowAway` | The first draft of GUI routines, which ClassRoutines replaced, with its spec | delete |
 | P | `spielman_retired/share` (local and origin) | 8 commits moving lyse onto shared helpers, which the campaign's step 2 has done | delete |
+
+Ian approved G to P. G to J: aa40bda; a real worker ran a pyplot script on
+`qtagg`. K to P deleted, locally and on `origin`; their tips are in `CODEX.md`.
