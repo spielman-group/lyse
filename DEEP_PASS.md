@@ -289,3 +289,21 @@ Every branch other than the tiers and `CodeHealth`. lyse has no
 
 Ian approved G to P. G to J: aa40bda; a real worker ran a pyplot script on
 `qtagg`. K to P deleted, locally and on `origin`; their tips are in `CODEX.md`.
+
+## Step 2.5: documents, TODO, FIXME, XXX
+
+Searched: `git grep` for TODO, FIXME and XXX, and for comment lines that read as
+code, in `lyse/`, `tests/` and `docs/`; `README.md`, `docs/source/*.rst` and
+`AGENTS.md` for spent text.
+
+| | What | Decision |
+| --- | --- | --- |
+| T1 | `docs/source/conf.py`: `# TODO`, `desktop-app`, `spinapi/pynivision/etc` under `intersphinx_mapping` | Delete, as in every repo |
+| T2 | `routines.py`, `restart`: upstream's `# TODO set status to 'restarting' ... and gray out the item?` | Not worthwhile: a restart takes a moment and no one has asked in years. Delete |
+| C1 | `__init__.py`: a commented-out `Run.iterable_globals`, in Python 2 | Delete |
+| C2 | `analysis_subprocess.py`: upstream's commented-out `figure.tight_layout()` | Delete |
+
+The "LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED." markers stay:
+Ian means to drop the conversion, and they mark the code for when it goes
+(labscript-utils' entry 14). Nothing in the README, the docs or `AGENTS.md` is
+spent; `docs/lyse.tex` and its PDFs and listings are upstream's paper.

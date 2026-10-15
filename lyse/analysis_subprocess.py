@@ -185,7 +185,6 @@ class Plot(object):
 
         self.set_window_title(identifier, filepath)
 
-        # figure.tight_layout()
         self.figure = figure
         self.canvas = figure.canvas
         self.navigation_toolbar = NavigationToolbar(self.canvas, self.ui)

@@ -1019,29 +1019,6 @@ class Run(object):
             globals_dict = dict(self.h5_file['globals'][group].attrs)
         return globals_dict
         
-    # def iterable_globals(self, group=None):
-        # raw_globals = self.get_globals_raw(group)
-        # print raw_globals.items()
-        # iterable_globals = {}
-        # for global_name, expression in raw_globals.items():
-            # print expression
-            # # try:
-                # # sandbox = {}
-                # # exec('from pylab import *',sandbox,sandbox)
-                # # exec('from runmanager.functions import *',sandbox,sandbox)
-                # # value = eval(expression,sandbox)
-            # # except Exception as e:
-                # # raise Exception('Error parsing global \'%s\': '%global_name + str(e))
-            # # if isinstance(value,types.GeneratorType):
-               # # print global_name + ' is iterable.'
-               # # iterable_globals[global_name] = [tuple(value)]
-            # # elif isinstance(value, ndarray) or  isinstance(value, list):
-               # # print global_name + ' is iterable.'            
-               # # iterable_globals[global_name] = value
-            # # else:
-                # # print global_name + ' is not iterable.'
-            # return raw_globals
-
     @open_file('r')            
     def get_globals_expansion(self):
         """Get the expansion type of each global.

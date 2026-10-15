@@ -499,7 +499,6 @@ class AnalysisRoutine(object):
                 return row
 
     def restart(self):
-        # TODO set status to 'restarting' or an icon or something, and gray out the item?
         self.end_child(restart=True)
         
     @inmain_decorator()
