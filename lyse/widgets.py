@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /widgets.py                                                      #
+# /widgets.py                                                       #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -20,8 +20,6 @@ from qtutils.qt.QtCore import pyqtSignal as Signal
 class UneditableModel(QtGui.QStandardItemModel):
 
     def flags(self, index):
-        """Return flags as normal except that the ItemIsEditable
-        flag is always False"""
         result = QtGui.QStandardItemModel.flags(self, index)
         return result & ~QtCore.Qt.ItemIsEditable
 
@@ -67,27 +65,20 @@ class ItemDelegate(QtWidgets.QStyledItemDelegate):
                 # Qt's 'network-torrent' example:
                 # http://qt-project.org/doc/qt-4.8/network-torrent-torrentclient-cpp.html
 
-                # Set up a QStyleOptionProgressBar to precisely mimic the
-                # environment of a progress bar.
                 progress_bar_option = QtWidgets.QStyleOptionProgressBar()
                 progress_bar_option.state = QtWidgets.QStyle.State_Enabled
                 progress_bar_option.direction = self.app.qapplication.layoutDirection()
                 progress_bar_option.rect = option.rect
-                # option.fontMetrics, not the application's: Qt6 removed
-                # QApplication.fontMetrics(), and the metrics Qt already
-                # computed for this item are the ones sizeHint above sizes the
-                # row with.
+                # option.fontMetrics, as Qt6 has no QApplication.fontMetrics().
                 progress_bar_option.fontMetrics = option.fontMetrics
                 progress_bar_option.minimum = 0
                 progress_bar_option.maximum = 100
                 progress_bar_option.textAlignment = QtCore.Qt.AlignCenter
                 progress_bar_option.textVisible = True
 
-                # Set the progress and text values of the style option.
                 progress_bar_option.progress = int(status_percent)
-                progress_bar_option.text = '%d%%' % status_percent
+                progress_bar_option.text = f'{int(status_percent)}%'
 
-                # Draw the progress bar onto the view.
                 self.app.qapplication.style().drawControl(QtWidgets.QStyle.CE_ProgressBar, progress_bar_option, painter)
         else:
             return QtWidgets.QStyledItemDelegate.paint(self, painter, option, index)

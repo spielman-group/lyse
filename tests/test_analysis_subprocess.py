@@ -11,8 +11,8 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The analysis worker: a plot window's theme change and named figure, and a GUI routine's
-worker, which runs the routine folder as a real process."""
+"""The analysis worker: a plot window's theme change and named figure, and a
+GUI routine's worker, which runs the routine folder as a real process."""
 import sys
 import tempfile
 import unittest
@@ -120,8 +120,7 @@ class Analysis(lyse.Routine):
 '''
 HELPER = 'def widen(value):\n    return value + 4\n'
 
-# The lyse_routine.py of a routine that reports the colour at the centre of its window's icon and
-# of its process's icon, read on the GUI thread, which Qt's pixmaps need.
+# The icons are read on the GUI thread, which Qt's pixmaps need.
 ICON_ROUTINE = '''
 import lyse
 from qtutils import inmain
@@ -141,8 +140,6 @@ class Analysis(lyse.Routine):
         run.save_result('process', process, save_to_h5=False)
 '''
 
-# The lyse_routine.py of a routine that reports whether its window is visible, read on the GUI
-# thread.
 VISIBLE_ROUTINE = '''
 import lyse
 from qtutils import inmain
@@ -153,8 +150,7 @@ class Analysis(lyse.Routine):
         self.get_run().save_result('visible', inmain(self.window.isVisible), save_to_h5=False)
 '''
 
-# The lyse_routine.py of a routine that asks its application to quit, as Cmd-Q does on macOS, and
-# reports whether its window is still visible.
+# The routine quits its application, as Cmd-Q does on macOS.
 QUIT_ROUTINE = '''
 import lyse
 from qtutils import inmain

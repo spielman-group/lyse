@@ -36,7 +36,6 @@ class LyseServer(ZMQServer):
         self.app.filebox.incoming_queue.put(shared_drive.path_to_local(filepath))
 
     def handle_get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None):
-        # Return only a subset of the dataframe if instructed to do so.
         if n_sequences is None:
             # where chooses the rows before the dataframe is copied, so
             # that a request for a few rows copies only those:
@@ -72,40 +71,23 @@ class LyseServer(ZMQServer):
         return df
 
     def _extract_n_sequences_from_df(self, df, n_sequences):
-        # If the dataframe is empty, just return it, otherwise accessing columns
-        # below will raise a KeyError.
+        # An empty dataframe has no columns to read below, which would raise a KeyError.
         if df.empty:
             return df
 
-        # Get a list of all unique sequences, each corresponding to one call to
-        # engage in runmanager. Each sequence may contain multiple runs. The
-        # below creates tuples to identify sequences. To be from the same
-        # sequence, two shots have to have the same value for 'sequence' (which
-        # makes sure that the time when engage was called are the same to within
-        # 1 second), 'labscript' (must have been generated from the same
-        # labscript), and 'sequence_index' (a counter which keeps track of how
-        # many times engage has been called for that labscript and resets to 0
-        # at the start of each day). Typically just the value for sequence, is
-        # enough. However it only records time down to the second, so if
-        # engage() is called twice quickly then two different sequences can end
-        # up with the same value there.
-        #
-        # Sorting the tuples orders sequences by 'sequence', then within one
-        # second by 'sequence_index' as an integer, then by 'labscript' to
-        # break ties; the order of the rows plays no part.
+        # One engage in runmanager makes one sequence, identified by its 'sequence' time,
+        # 'sequence_index' (apart calls within one second) and 'labscript'. Sorting the
+        # identities orders sequences oldest first, whatever the order of the rows.
         identities = [
             (sequence, -1 if pandas.isna(index) else int(index), str(labscript))
             for sequence, index, labscript
             in zip(df['sequence'], df['sequence_index'], df['labscript'])
         ]
 
-        # Find the distinct sequences, oldest first.
         unique_identities = sorted(set(identities))
 
-        # Slice the DataFrame so that only the last n_sequences sequences
-        # remain. Note that slicing unique_identities just returns all of its
-        # entries if n_sequences is greater than its length; it doesn't raise an
-        # error.
+        # Keep the last n_sequences sequences. A slice longer than unique_identities
+        # returns all of it, but [-0:] does too, so 0 needs its own branch.
         if n_sequences == 0:
             identities_included = set()
         else:

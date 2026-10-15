@@ -101,9 +101,8 @@ class MainWindowTests(unittest.TestCase):
         cls.main = import_main_without_splash()
 
     def test_a_theme_change_repaints_the_window_without_error(self):
-        """The window repaints its widgets when the application palette
-        changes, as it does on an OS light/dark switch. The handler is a Qt
-        virtual method, so a failure in it reaches sys.excepthook."""
+        """The window repaints its widgets when the palette changes, as on an OS
+        light/dark switch. A failure in the Qt handler reaches sys.excepthook."""
         window = self.main.LyseMainWindow(None)
         child = Child(window)
         seen = []

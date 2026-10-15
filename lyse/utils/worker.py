@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /utils.worker.py                                                  #
+# /utils/worker.py                                                  #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -51,7 +51,7 @@ _delay_flag = False
 utils_dir = os.path.dirname(os.path.realpath(__file__))
 
 def figure_to_clipboard(figure=None, **kwargs):
-    """Copy a matplotlib figure to the clipboard as a png. 
+    """Copy a matplotlib figure to the clipboard as a png.
 
     If figure is None,
     the current figure will be copied. Copying the figure is implemented by
@@ -60,18 +60,18 @@ def figure_to_clipboard(figure=None, **kwargs):
     bbox_inches='tight' will be used.
 
     Args:
-        figure (:obj:`matplotlib:matplotlib.figure`, optional): 
+        figure (:obj:`matplotlib:matplotlib.figure`, optional):
             Figure to copy to the clipboard. If `None`, copies the current figure.
         **kwargs: Passed to `figure.savefig()` as kwargs.
     """
-    
+
     import matplotlib.pyplot as plt
     from zprocess import start_daemon
     import tempfile
 
     if 'bbox_inches' not in kwargs:
         kwargs['bbox_inches'] = 'tight'
-               
+
     if figure is None:
         figure = plt.gcf()
 
@@ -119,7 +119,7 @@ def delay_results_return():
     """
     global _delay_flag
     if not spinning_top:
-        msg = """Warning: lyse.delay_results_return has no effect on scripts not run 
+        msg = """Warning: lyse.delay_results_return has no effect on scripts not run
             with the lyse GUI.
             """
         sys.stderr.write(dedent(msg))

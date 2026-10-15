@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /filebpx.py                                                      #
+# /filebox.py                                                       #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -49,7 +49,7 @@ import lyse.utils.gui
 import lyse.widgets
 
 
-class EditColumns(object):
+class EditColumns:
     ROLE_SORT_DATA = QtCore.Qt.UserRole + 1
     COL_VISIBLE = 0
     COL_NAME = 1
@@ -79,7 +79,6 @@ class EditColumns(object):
         self.ui.setWindowModality(QtCore.Qt.ApplicationModal)
 
         self.ui.treeView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        # Make the actions for the context menu:
         self.action_set_selected_visible = QtWidgets.QAction(
             QtGui.QIcon(':qtutils/fugue/ui-check-box'), 'Show selected columns',  self.ui)
         self.action_set_selected_hidden = QtWidgets.QAction(
@@ -94,7 +93,6 @@ class EditColumns(object):
         self.ui.pushButton_make_it_so.clicked.connect(self.make_it_so)
         self.ui.pushButton_cancel.clicked.connect(self.cancel)
         self.model.itemChanged.connect(self.on_model_item_changed)
-        # A context manager with which we can temporarily disconnect the above connection.
         self.model_item_changed_disconnected = DisconnectContextManager(
             self.model.itemChanged, self.on_model_item_changed)
         self.select_all_checkbox.stateChanged.connect(self.on_select_all_state_changed)
@@ -117,7 +115,6 @@ class EditColumns(object):
         # Remove our special columns from the dict of column names by keeping only tuples:
         column_names = {i: name for i, name in column_names.items() if isinstance(name, tuple)}
 
-        # Sort the column names as comma separated values, converting to lower case:
         sortkey = lambda item: ', '.join(item[1]).lower().strip(', ')
 
         for column_index, name in sorted(column_names.items(), key=sortkey):
@@ -168,7 +165,7 @@ class EditColumns(object):
             visible_item = self.model.item(row, self.COL_VISIBLE)
             self.update_visible_state(visible_item, state)
         self.do_sort()
-        
+
         self.filebox.set_columns_visible(self.columns_visible)
 
     def update_visible_state(self, item, state):
@@ -221,7 +218,6 @@ class EditColumns(object):
         self.columns_visible = columns_visible.copy()
         self.column_names = column_names.copy()
 
-        # Update the by-index mapping of which columns were visible before editing:
         self.old_columns_visible = {}
         for index, name in self.column_names.items():
             try:
@@ -248,7 +244,7 @@ class EditColumns(object):
     def make_it_so(self):
         self.ui.hide()
 
-        
+
 class DataFrameModel(QtCore.QObject):
 
     COL_STATUS = 0
@@ -256,11 +252,11 @@ class DataFrameModel(QtCore.QObject):
 
     ROLE_STATUS_PERCENT = QtCore.Qt.UserRole + 1
     ROLE_DELETED_OFF_DISK = QtCore.Qt.UserRole + 2
-    
+
     columns_changed = Signal()
 
     def __init__(self, app, view, exp_config):
-        QtCore.QObject.__init__(self)
+        super().__init__()
         self.app = app
         self._view = view
         self.exp_config = exp_config
@@ -289,7 +285,6 @@ class DataFrameModel(QtCore.QObject):
         self._view.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
         self._view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 
-        # Check if integer indexing is to be used
         try:
             self.integer_indexing = self.exp_config.getboolean('lyse', 'integer_indexing')
         except (LabConfig.NoOptionError, LabConfig.NoSectionError):
@@ -299,7 +294,6 @@ class DataFrameModel(QtCore.QObject):
         # from the shot files that are currently open:
         index = pandas.MultiIndex.from_tuples([('filepath', '')])
         self.dataframe = pandas.DataFrame({'filepath': []}, columns=index)
-        # How many levels the dataframe's multiindex has:
         self.nlevels = self.dataframe.columns.nlevels
 
         status_item = QtGui.QStandardItem()
@@ -321,8 +315,7 @@ class DataFrameModel(QtCore.QObject):
 
         # Whether or not a deleted column was visible at the time it was deleted (by name):
         self.deleted_columns_visible = {}
-        
-        # Make the actions for the context menu:
+
         self.action_remove_selected = QtWidgets.QAction(
             QtGui.QIcon(':qtutils/fugue/minus'), 'Remove selected shots',  self._view)
 
@@ -342,12 +335,11 @@ class DataFrameModel(QtCore.QObject):
         if not selected_name_items:
             return
         if confirm and not self.app.question_dialog(
-                "Remove %d shots?" % len(selected_name_items)):
+                f"Remove {len(selected_name_items)} shots?"):
             return
         # Remove from DataFrame first:
         self.dataframe = self.dataframe.drop(index.row() for index in selected_indexes)
         self.dataframe.index = pandas.Index(range(len(self.dataframe)))
-        # Delete one at a time from Qt model:
         for name_item in selected_name_items:
             row = name_item.row()
             self._model.removeRow(row)
@@ -359,20 +351,17 @@ class DataFrameModel(QtCore.QObject):
         for row in selected_rows:
             status_item = self._model.item(row, self.COL_STATUS)
             if status_item.data(self.ROLE_DELETED_OFF_DISK):
-                # If the shot was previously not readable on disk, check to
-                # see if it's readable now. It may have been undeleted or
-                # perhaps it being unreadable before was due to a network
-                # glitch or similar.
+                # A shot that was unreadable on disk may be readable now: it may
+                # have been undeleted, or the failure may have been a network glitch.
                 filepath = self._model.item(row, self.COL_FILEPATH).text()
                 if not os.path.exists(filepath):
                     continue
-                # Shot file is accesible again:
                 status_item.setData(False, self.ROLE_DELETED_OFF_DISK)
                 status_item.setIcon(QtGui.QIcon(':qtutils/fugue/tick'))
                 status_item.setToolTip(None)
 
             status_item.setData(0, self.ROLE_STATUS_PERCENT)
-        
+
     def on_view_context_menu_requested(self, point):
         menu = QtWidgets.QMenu(self._view)
         menu.addAction(self.action_remove_selected)
@@ -389,10 +378,8 @@ class DataFrameModel(QtCore.QObject):
             self._view.setColumnHidden(column_index, not visible)
 
     def update_column_levels(self):
-        """Pads the keys and values of our lists of column names so that
-        they still match those in the dataframe after the number of
-        levels in its multiindex has increased (the number of levels never
-        decreases, given the current implementation of concat_with_padding())"""
+        """Pad the column names with empty strings to match the dataframe after its
+        multiindex gains levels, which concat_with_padding() never removes."""
         extra_levels = self.dataframe.columns.nlevels - self.nlevels
         if extra_levels > 0:
             self.nlevels = self.dataframe.columns.nlevels
@@ -415,7 +402,6 @@ class DataFrameModel(QtCore.QObject):
         # Confirm the shot hasn't been removed from lyse (we are in the main
         # thread so there is no race condition in checking first)
         if not filepath in self.dataframe['filepath'].values:
-            # Shot has been removed from FileBox, nothing to do here:
             return
 
         row_number = self.row_number_by_filepath[filepath]
@@ -434,8 +420,8 @@ class DataFrameModel(QtCore.QObject):
 
     @inmain_decorator()
     def update_row(self, filepath, dataframe_already_updated=False, updated_row_data=None):
-        """"Updates a row in the dataframe and Qt model to the data in the HDF5 file for
-        that shot."""
+        """Update filepath's row in the Qt model, and in the dataframe unless
+        dataframe_already_updated. updated_row_data is a dict of {(group, name): value}."""
         if updated_row_data is None and not dataframe_already_updated:
             raise ValueError('updated_row_data must be provided unless dataframe_already_updated')
 
@@ -475,12 +461,10 @@ class DataFrameModel(QtCore.QObject):
 
             dataframe_already_updated = True
 
-        # Check and create necessary new columns in the Qt model:
         new_column_names = set(self.dataframe.columns) - set(self.column_names.values())
         new_columns_start = self._model.columnCount()
         self._model.insertColumns(new_columns_start, len(new_column_names))
         for i, column_name in enumerate(sorted(new_column_names)):
-            # Set the header label of the new column:
             column_number = new_columns_start + i
             self.column_names[column_number] = column_name
             self.column_indices[column_name] = column_number
@@ -498,7 +482,6 @@ class DataFrameModel(QtCore.QObject):
             header_item.setToolTip(column_name_as_string)
             self._model.setHorizontalHeaderItem(column_number, header_item)
 
-        # Check and remove any no-longer-needed columns in the Qt model:
         defunct_column_names = (set(self.column_names.values()) - set(self.dataframe.columns)
                                 - {self.column_names[self.COL_STATUS], self.column_names[self.COL_FILEPATH]})
         defunct_column_indices = [self.column_indices[column_name] for column_name in defunct_column_names]
@@ -517,10 +500,8 @@ class DataFrameModel(QtCore.QObject):
             # Renumber the keys of self.columns_visible and self.column_names to reflect deletions:
             self.column_names = {newindex: name for newindex, (oldindex, name) in enumerate(sorted(self.column_names.items()))}
             self.columns_visible = {newindex: visible for newindex, (oldindex, visible) in enumerate(sorted(self.columns_visible.items()))}
-            # Update the inverse mapping of self.column_names:
             self.column_indices = {name: index for index, name in self.column_names.items()}
 
-        # Update the data in the Qt model:
         dataframe_row = self.dataframe.iloc[row_number].to_dict()
         for column_number, column_name in self.column_names.items():
             if not isinstance(column_name, tuple):
@@ -552,14 +533,12 @@ class DataFrameModel(QtCore.QObject):
             item.setToolTip(repr(value))
 
         for i, column_name in enumerate(sorted(new_column_names)):
-            # Resize any new columns to fit contents:
             column_number = new_columns_start + i
             self._view.resizeColumnToContents(column_number)
 
         if new_column_names or defunct_column_names:
             self.columns_changed.emit()
 
-        # unblock signals to the model and tell it to update
         self._model.blockSignals(False)
         self._model.layoutChanged.emit()
 
@@ -603,7 +582,7 @@ class DataFrameModel(QtCore.QObject):
         for row_number in range(add_from, self._model.rowCount()):
             vertical_header_item = self._model.verticalHeaderItem(row_number)
             row_number_str = str(row_number).rjust(n_digits)
-            vert_header_text = '{}. '.format(row_number_str)
+            vert_header_text = f'{row_number_str}. '
             filepath_item = self._model.item(row_number, self.COL_FILEPATH)
             filepath = filepath_item.text()
             self.row_number_by_filepath[filepath] = row_number
@@ -613,7 +592,7 @@ class DataFrameModel(QtCore.QObject):
                 for col in header_cols:
                     val = self.dataframe[col].values[row_number]
                     if pandas.notna(val):
-                        header_strings.append('{:04d}'.format(val))
+                        header_strings.append(f'{val:04d}')
                     else:
                         header_strings.append('----')
                 vert_header_text += ' | '.join(header_strings)
@@ -621,18 +600,17 @@ class DataFrameModel(QtCore.QObject):
                 basename = os.path.splitext(os.path.basename(filepath))[0]
                 vert_header_text += basename
             vertical_header_item.setText(vert_header_text)
-    
+
     @inmain_decorator()
     def add_files(self, filepaths, new_row_data, done=False):
-        """Add files to the dataframe model. New_row_data should be a
-        dataframe containing the new rows."""
+        """Add files to the dataframe model. new_row_data is a dataframe
+        containing the new rows."""
 
         to_add = []
 
-        # Check for duplicates:
         for filepath in filepaths:
             if filepath in self.row_number_by_filepath or filepath in to_add:
-                self.app.output_box.output('Warning: Ignoring duplicate shot %s\n' % filepath, red=True)
+                self.app.output_box.output(f'Warning: Ignoring duplicate shot {filepath}\n', red=True)
                 if new_row_data is not None:
                     df_row_index = np.where(new_row_data['filepath'].values == filepath)
                     new_row_data = new_row_data.drop(df_row_index[0])
@@ -643,14 +621,12 @@ class DataFrameModel(QtCore.QObject):
         assert len(new_row_data) == len(to_add)
 
         if to_add:
-            # Update the dataframe:
             self.dataframe = concat_with_padding(self.dataframe, new_row_data)
             self.update_column_levels()
 
         self.app.filebox.set_add_shots_progress(None, None, "updating filebox")
 
         for filepath in to_add:
-            # Add the new rows to the Qt model:
             self._model.appendRow(self.new_row(filepath, done=done))
             vert_header_item = QtGui.QStandardItem('...loading...')
             self._model.setVerticalHeaderItem(self._model.rowCount() - 1, vert_header_item)
@@ -658,12 +634,11 @@ class DataFrameModel(QtCore.QObject):
 
         self.renumber_rows(add_from=self._model.rowCount()-len(to_add))
 
-        # Update the Qt model:
         for filepath in to_add:
             self.update_row(filepath, dataframe_already_updated=True)
 
-        self.app.filebox.set_add_shots_progress(None, None, None)        
-            
+        self.app.filebox.set_add_shots_progress(None, None, None)
+
 
     @inmain_decorator()
     def get_first_incomplete(self):
@@ -675,7 +650,7 @@ class DataFrameModel(QtCore.QObject):
                 filepath_item = self._model.item(row, self.COL_FILEPATH)
                 return filepath_item.text()
 
-class FileBox(object):
+class FileBox:
 
     def __init__(self, app, container, exp_config, to_singleshot, from_singleshot, to_multishot, from_multishot):
         self.app = app
@@ -706,13 +681,10 @@ class FileBox(object):
         self.multishot_required = False
         # Shot files analysed since the last multishot pass:
         self.analysed_since_multishot = []
-        
+
         # An Event to let the analysis thread know to check for shots that
         # need analysing, rather than using a time.sleep:
         self.analysis_pending = threading.Event()
-
-        # The folder that the 'add shots' dialog will open to:
-        self.current_folder = self.exp_config.get('paths', 'experiment_shot_storage')
 
         # A queue for storing incoming files from the ZMQ server so
         # the server can keep receiving files even if analysis is slow
@@ -738,7 +710,7 @@ class FileBox(object):
         self.ui.pushButton_analysis_running.toggled.connect(self.on_analysis_running_toggled)
         self.ui.pushButton_mark_as_not_done.clicked.connect(self.on_mark_selection_not_done_clicked)
         self.ui.pushButton_run_multishot_analysis.clicked.connect(self.on_run_multishot_analysis_clicked)
-        
+
     def on_edit_columns_clicked(self):
         self.edit_columns_dialog.show()
 
@@ -760,7 +732,6 @@ class FileBox(object):
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_shots_folder = os.path.dirname(shot_files[0])
-        # Queue the files to be opened:
         for filepath in shot_files:
             self.incoming_queue.put(filepath)
 
@@ -774,22 +745,22 @@ class FileBox(object):
             self.ui.pushButton_analysis_running.setIcon(QtGui.QIcon(':qtutils/fugue/control'))
             self.ui.pushButton_analysis_running.setText('Analysis running')
             self.analysis_pending.set()
-     
+
     def on_mark_selection_not_done_clicked(self):
         self.shots_model.mark_selection_not_done()
         # Let the analysis loop know to look for these shots:
         self.analysis_pending.set()
-        
+
     def on_run_multishot_analysis_clicked(self):
         self.multishot_required = True
         self.analysis_pending.set()
-        
+
     def set_columns_visible(self, columns_visible):
         self.shots_model.set_columns_visible(columns_visible)
 
     @inmain_decorator()
     def set_add_shots_progress(self, completed, total, message):
-        self.ui.progressBar_add_shots.setFormat("Adding shots: [{}] %v/%m (%p%)".format(message))
+        self.ui.progressBar_add_shots.setFormat(f"Adding shots: [{message}] %v/%m (%p%)")
         if completed == total and message is None:
             self.ui.progressBar_add_shots.hide()
         else:
@@ -804,17 +775,15 @@ class FileBox(object):
             self.ui.progressBar_add_shots.repaint()
 
     def incoming_buffer_loop(self):
-        """We use a queue as a buffer for incoming shots. We don't want to hang and not
-        respond to a client submitting shots, so we just let shots pile up here until we can get to them.
-        The downside to this is that we can't return errors to the client if the shot cannot be added,
-        but the suggested workflow is to handle errors here anyway. A client running shots shouldn't stop
-        the experiment on account of errors from the analyis stage, so what's the point of passing errors to it?
-        We'll just raise errors here and the user can decide what to do with them."""
+        """Add the shots in the incoming queue to the dataframe, in batches.
+
+        Shots pile up in the queue until this loop reads them, so a client
+        submitting them never waits. Errors cannot be returned to it, and an
+        experiment should not stop on analysis errors anyway, so they are raised
+        here for the user."""
         logger = logging.getLogger('lyse.FileBox.incoming')
-        # HDF5 prints lots of errors by default, for things that aren't
-        # actually errors. These are silenced on a per thread basis,
-        # and automatically silenced in the main thread when h5py is
-        # imported. So we'll silence them in this thread too:
+        # HDF5 prints errors for things that aren't errors. They are silenced per
+        # thread, and in the main thread on importing h5py, so silence them here too.
         h5py._errors.silence_errors()
         n_shots_added = 0
         while True:
@@ -826,7 +795,7 @@ class FileBox(object):
                     # Wait momentarily in case more arrive so we can batch process them:
                     time.sleep(0.1)
                 # Batch process to decrease number of dataframe concatenations:
-                batch_size = len(self.shots_model.dataframe) // 3 + 1 
+                batch_size = len(self.shots_model.dataframe) // 3 + 1
                 while True:
                     try:
                         filepath = self.incoming_queue.get(False)
@@ -836,7 +805,7 @@ class FileBox(object):
                         filepaths.append(filepath)
                         if len(filepaths) >= batch_size:
                             break
-                logger.info('adding:\n%s' % '\n'.join(filepaths))
+                logger.info('adding:\n%s', '\n'.join(filepaths))
                 if n_shots_added == 0:
                     total_shots = self.incoming_queue.qsize() + len(filepaths)
                     self.set_add_shots_progress(1, total_shots, "reading shot files")
@@ -852,7 +821,7 @@ class FileBox(object):
                         dataframe = get_dataframe_from_shot(filepath)
                         dataframes.append(dataframe)
                     except IOError:
-                        self.app.output_box.output('Warning: Ignoring shot file not found or not readable %s\n' % filepath, red=True)
+                        self.app.output_box.output(f'Warning: Ignoring shot file not found or not readable {filepath}\n', red=True)
                         indices_of_files_not_found.append(i)
                     n_shots_added += 1
                     shots_remaining = self.incoming_queue.qsize()
@@ -875,8 +844,8 @@ class FileBox(object):
                     self.analysis_pending.set()
                 if shots_remaining == 0:
                     self.set_add_shots_progress(n_shots_added, total_shots, None)
-                    n_shots_added = 0 # reset our counter for the next batch
-                
+                    n_shots_added = 0
+
             except Exception:
                 # Keep this incoming loop running at all costs, but make the
                 # otherwise uncaught exception visible to the user:
@@ -884,10 +853,8 @@ class FileBox(object):
 
     def analysis_loop(self):
         logger = logging.getLogger('lyse.FileBox.analysis_loop')
-        # HDF5 prints lots of errors by default, for things that aren't
-        # actually errors. These are silenced on a per thread basis,
-        # and automatically silenced in the main thread when h5py is
-        # imported. So we'll silence them in this thread too:
+        # HDF5 prints errors for things that aren't errors. They are silenced per
+        # thread, and in the main thread on importing h5py, so silence them here too.
         h5py._errors.silence_errors()
         while True:
             try:
@@ -897,10 +864,9 @@ class FileBox(object):
                 multishot_failed = False
                 while True:
                     if not self.analysis_paused:
-                        # Find the first shot that has not finished being analysed:
                         filepath = self.shots_model.get_first_incomplete()
                         if filepath is not None:
-                            logger.info('analysing: %s'%filepath)
+                            logger.info(f'analysing: {filepath}')
                             self.do_singleshot_analysis(filepath)
                             at_least_one_shot_analysed = True
                         # Multishot analysis runs once the queue drains, not once per shot, so a
@@ -931,21 +897,17 @@ class FileBox(object):
                 # Raise the exception in a thread so we can keep running
                 zprocess.raise_exception_in_thread((RuntimeError, RuntimeError(message), tb))
                 self.pause_analysis()
-            
-   
+
+
     @inmain_decorator()
     def pause_analysis(self):
         # This automatically triggers the slot that sets self.analysis_paused
         self.ui.pushButton_analysis_running.setChecked(True)
-        
+
     def do_singleshot_analysis(self, filepath):
-        # Check the shot file exists before sending it to the singleshot
-        # routinebox. This does not guarantee it won't have been deleted by
-        # the time the routinebox starts running analysis on it, but by
-        # detecting it now we can most of the time avoid the user code
-        # coughing exceptions due to the file not existing. Which would also
-        # not be a problem, but this way we avoid polluting the outputbox with
-        # more errors than necessary.
+        # A shot file deleted before analysis would make user code raise and fill the
+        # output box with errors, so check first. It can still be deleted after this
+        # check, which the 'error' branch below handles.
         if not os.path.exists(filepath):
             self.shots_model.mark_as_deleted_off_disk(filepath)
             return
@@ -953,10 +915,8 @@ class FileBox(object):
         while True:
             signal, status_percent, updated_data = self.from_singleshot.get()
             for file in updated_data:
-                # Update the data for all the rows with new data:
                 self.shots_model.update_row(file, updated_row_data=updated_data[file])
-            # Update the status percent for the the row on which analysis is actually
-            # running:
+            # updated_data may name other rows; the status percent is of the one being analysed:
             if status_percent is not None:
                 self.shots_model.set_status_percent(filepath, status_percent)
             if signal == 'done':
@@ -972,8 +932,8 @@ class FileBox(object):
                 return
             if signal == 'progress':
                 continue
-            raise ValueError('invalid signal %s' % str(signal))
-                        
+            raise ValueError(f'invalid signal {signal}')
+
     def do_multishot_analysis(self):
         paths, self.analysed_since_multishot = self.analysed_since_multishot, []
         self.to_multishot.put(paths)
@@ -989,4 +949,3 @@ class FileBox(object):
                 self.analysed_since_multishot[:0] = paths
                 self.pause_analysis()
                 return False
-            

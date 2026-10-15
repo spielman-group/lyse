@@ -307,3 +307,26 @@ The "LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED." markers stay:
 Ian means to drop the conversion, and they mark the code for when it goes
 (labscript-utils' entry 14). Nothing in the README, the docs or `AGENTS.md` is
 spent; `docs/lyse.tex` and its PDFs and listings are upstream's paper.
+
+Ian approved T1-T3, C1 and C2. T3's comment now says only what the import does:
+the ModuleWatcher never unloads installed packages, so the reason first given
+for it was wrong.
+
+## Step 2.6: style
+
+Done on `routines.py` first (9961808), then on the rest of lyse and its tests:
+f-strings, plain classes, `super()`, comments cut to why, long internal
+docstrings trimmed, unused imports dropped, banner paths and `u''` prefixes
+fixed. Docstrings that were wrong against the code were corrected: `trace_names`,
+`get_wait`, `get_globals_expansion`, `save_result`'s `'/results'`, `update_row`,
+and `data()`'s `n_sequences` message, which said "greater than 0" for a check that
+takes 0. Dead lines found on the way went: `FileBox.current_folder`, never read,
+and `PlotWindow.close_signal`, never emitted (upstream's too).
+
+Checked: pyflakes (only the side-effect imports and `import pylab`), the suite,
+one review (no change in behaviour; its comment and docstring findings fixed),
+and a real start offscreen with the autoload routines, which analysed two shots
+to 100% with no error and left no worker behind.
+
+Left as they are: `os.path`, Qt enums qualified but not scoped, and the INI
+markers (step 2.5).

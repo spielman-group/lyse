@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /tempfile2clipboard.py                                            #
+# /utils/tempfile2clipboard.py                                      #
 #                                                                   #
 # Copyright 2017, Monash University                                 #
 #                                                                   #
@@ -10,26 +10,16 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""
-This is a stand-alone script which copies an image to the clipboard and then
-optionally deletes the image file.
+"""Copy an image to the clipboard, and keep running until the clipboard changes.
 
 usage:
 
     python tempfile2clipboard.py [--delete] image_filepath
 
-
-After copying the image data to the clipboard, this script optionally deletes
-the image file, if the --delete argument is provided, and then continues
-running until the clipboard data changes.
-
-This is due to the way in which some clipboards work - data is not requested
-from the application until it is pasted somewhere, and so the application
-doing the copying must still be running. It is also useful to have this
-functionality be a stand-alone script since it requires a Qt mainloop, and
-this way we avoid corner-cases of how this may interfere with any use of Qt in
-the calling program.
-
+With --delete, the image file is deleted once it has been read. The script keeps
+running because some clipboards request the data from the application only when
+it is pasted. It is a stand-alone script because it needs a Qt mainloop, which
+would otherwise interfere with any use of Qt in the calling program.
 """
 
 import sys
@@ -57,7 +47,7 @@ def main():
         os.unlink(image_file)
 
     if image.isNull():
-        sys.stderr.write("Invalid image file: {}.\n".format(image_file) + USAGE)
+        sys.stderr.write(f"Invalid image file: {image_file}.\n" + USAGE)
         sys.exit(1)
 
     app = QApplication([])

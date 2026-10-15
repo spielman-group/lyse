@@ -23,7 +23,6 @@ LYSE_DIR = os.path.dirname(__file__)
 import desktop_app
 desktop_app.set_process_appid(APPLICATION_NAME)
 
-# Splash screen
 import labscript_utils.splash
 splash = labscript_utils.splash.Splash(
     os.path.join(LYSE_DIR, 'lyse.svg'), application_name=APPLICATION_NAME
@@ -32,16 +31,13 @@ splash.show()
 
 splash.update_text('importing standard library modules')
 import time
-import sys
 import queue
 
-# 3rd party imports:
 splash.update_text('importing numpy')
 import numpy as np
 splash.update_text('importing pandas')
 import pandas
 
-# Labscript imports
 splash.update_text('importing zprocess (zlog and zlock must be running)')
 from labscript_utils.ls_zprocess import ProcessTree
 
@@ -59,18 +55,16 @@ from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import FirstPaintWindow, ThemedWindow
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 
-# qt imports
 splash.update_text('importing qt modules')
 from qtutils.qt import QtCore, QtWidgets, QT_ENV
 from qtutils import UiLoader
 QT_VERSION_STR = QtCore.qVersion()
 PYQT_VERSION_STR = importlib.metadata.version(QT_ENV)
 
-# needs to be present so that qtutils icons referenced in .ui files can be resolved.  Since this is 
-# magical is should not be implemented in this way.
-import qtutils.icons 
+# Imported for its side effect: the qtutils icons that .ui files refer to resolve only once
+# it is loaded.
+import qtutils.icons
 
-# Lyse imports
 splash.update_text('importing core Lyse modules')
 import lyse.utils
 import lyse.routines
@@ -107,7 +101,6 @@ class Lyse(LabscriptGuiApplication):
     splitters = ('splitter', 'splitter_vertical', 'splitter_horizontal')
 
     def __init__(self, qapplication):
-        # First: Start logging
         self.logger = setup_logging(APPLICATION_NAME)
         labscript_utils.excepthook.set_logger(self.logger)
         self.logger.info('\n\n===============starting===============\n')
@@ -115,19 +108,15 @@ class Lyse(LabscriptGuiApplication):
         self.logger.info(f'PySide/PyQt version: {PYQT_VERSION_STR}')
         self.logger.info(f'Qt version: {QT_VERSION_STR}')
 
-        # Second: read lyse config
         self.setup_config()
 
-        # Third: connect to zprocess and set a meaningful name for zlock client id:
         self.process_tree = ProcessTree.instance()
         self.process_tree.zlock_client.set_process_name(APPLICATION_NAME)
 
-        # Forth: start remote communication server
         self.port = int(self.exp_config.get('ports', 'lyse'))
         self.server = lyse.communication.LyseServer(self, self.port)
         self.logger.info(f'Started lyse server on port {self.port}')
 
-        # Last: UI setup
         self.qapplication = qapplication
         loader = UiLoader()
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui'), LyseMainWindow(self))
@@ -136,11 +125,10 @@ class Lyse(LabscriptGuiApplication):
 
         self.connect_signals()
 
-        # The singleshot routinebox will be connected to the filebox by queues:
+        # Queues connect each routinebox to the filebox.
         to_singleshot = queue.Queue()
         from_singleshot = queue.Queue()
 
-        # So will the multishot routinebox:
         to_multishot = queue.Queue()
         from_multishot = queue.Queue()
 
@@ -167,7 +155,6 @@ class Lyse(LabscriptGuiApplication):
 
         self.ui.resize(1600, 900)
 
-        # Set the splitters to appropriate fractions of their maximum size:
         self.ui.splitter_horizontal.setSizes([1000, 600])
         self.ui.splitter_vertical.setSizes([300, 600])
 
@@ -180,15 +167,15 @@ class Lyse(LabscriptGuiApplication):
         else:
             active_config_file = autoload_config_file
             self.ui.setEnabled(False)
-            self.output_box.output('Loading default config file %s...' % autoload_config_file)
+            self.output_box.output(f'Loading default config file {autoload_config_file}...')
 
             def load_the_config_file():
                 try:
                     self.load_configuration(autoload_config_file, restore_window_geometry)
                     self.output_box.output('done.\n')
                 except Exception as e:
-                    self.output_box.output('\nCould not load config file: %s: %s\n\n' %
-                                           (e.__class__.__name__, str(e)), red=True)
+                    self.output_box.output(
+                        f'\nCould not load config file: {e.__class__.__name__}: {e}\n\n', red=True)
                 else:
                     self.output_box.output('Ready.\n\n')
                 finally:
@@ -267,9 +254,7 @@ class Lyse(LabscriptGuiApplication):
         self.configuration_loaded(save_target)
 
     def load_window_geometry_configuration(self, filename):
-        """Load only the window geometry from the config file. It's useful to have this
-        separate from the rest of load_configuration so that it can be called before the
-        window is shown."""
+        """Load only the window geometry, so it can be applied before the window is shown."""
         # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         self.restore_geometry(load_appconfig(filename).get('lyse_state', {}))
 
@@ -283,7 +268,6 @@ class Lyse(LabscriptGuiApplication):
         self.exp_config = LabConfig(required_params=required_config_params)
 
     def connect_signals(self):
-        # Keyboard shortcuts:
         QtWidgets.QShortcut('Del', self.ui, lambda: self.delete_items(True))
         QtWidgets.QShortcut('Shift+Del', self.ui, lambda: self.delete_items(False))
 
@@ -303,7 +287,7 @@ class Lyse(LabscriptGuiApplication):
             for sequence, labscript in dict.fromkeys(zip(df['sequence'], df['labscript'])):
                 rows = (df['sequence'] == sequence) & (df['labscript'] == labscript)
                 sequence_df = pandas.DataFrame(df[rows], columns=df.columns).dropna(axis=1, how='all')
-                filename = "dataframe_{}_{}.pkl".format(sequence.to_pydatetime().strftime("%Y%m%dT%H%M%S"),labscript[:-3])
+                filename = f'dataframe_{sequence.to_pydatetime().strftime("%Y%m%dT%H%M%S")}_{labscript[:-3]}.pkl'
                 if not choose_folder:
                     save_path = os.path.dirname(sequence_df['filepath'].iloc[0])
                 for col in sequence_df.columns :
@@ -331,7 +315,7 @@ class Lyse(LabscriptGuiApplication):
             # User cancelled
             return
         df = pandas.read_pickle(file).sort_values("run time").reset_index()
-                
+
         # Check for changes in the shot files since the dataframe was exported
         def changed_since(filepath, time):
             if os.path.isfile(filepath):
@@ -344,17 +328,16 @@ class Lyse(LabscriptGuiApplication):
         need_updating = np.where(list(map(lambda x: changed_since(x, changetime_cache), filepaths)))[0]
         need_updating = np.sort(need_updating)[::-1]  # sort in descending order to not remove the wrong items with pop
 
-        # Reload the files where changes where made since exporting
+        # Reload the files that changed since exporting
         for index in need_updating:
             filepath = filepaths.pop(index)
             self.filebox.incoming_queue.put(filepath)
         df = df.drop(need_updating)
-        
+
         self.filebox.shots_model.add_files(filepaths, df, done=True)
 
     def delete_items(self, confirm):
-        """Delete items from whichever box has focus, with optional confirmation
-        dialog"""
+        """Delete items from whichever box has focus, optionally confirming first."""
         if self.filebox.ui.tableView.hasFocus():
             self.filebox.shots_model.remove_selection(confirm)
         if self.singleshot_routinebox.ui.treeView.hasFocus():
@@ -386,5 +369,4 @@ if __name__ == "__main__":
     splash.hide()
     exec_qapplication(qapplication)
 
-    # Shutdown the webserver.
     app.server.shutdown()

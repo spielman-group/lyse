@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /utils.gui.py                                                     #
+# /utils/gui.py                                                     #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -17,41 +17,43 @@ import numpy as np
 
 
 def scientific_notation(x, sigfigs=4, mode='eng'):
-    """Returns a unicode string of the float f in scientific notation"""
+    """Return the float x as a unicode string in scientific notation.
 
-    times = u'\u00d7'
-    thinspace = u'\u2009'
-    hairspace = u'\u200a'
-    sups = {u'-': u'\u207b',
-            u'0': u'\u2070',
-            u'1': u'\xb9',
-            u'2': u'\xb2',
-            u'3': u'\xb3',
-            u'4': u'\u2074',
-            u'5': u'\u2075',
-            u'6': u'\u2076',
-            u'7': u'\u2077',
-            u'8': u'\u2078',
-            u'9': u'\u2079'}
+    mode is 'eng', which uses an SI prefix where there is one, or 'exponential'."""
+
+    times = '\u00d7'
+    thinspace = '\u2009'
+    hairspace = '\u200a'
+    sups = {'-': '\u207b',
+            '0': '\u2070',
+            '1': '\xb9',
+            '2': '\xb2',
+            '3': '\xb3',
+            '4': '\u2074',
+            '5': '\u2075',
+            '6': '\u2076',
+            '7': '\u2077',
+            '8': '\u2078',
+            '9': '\u2079'}
 
     prefixes = {
-        -24: u"y",
-        -21: u"z",
-        -18: u"a",
-        -15: u"f",
-        -12: u"p",
-        -9: u"n",
-        -6: u"\u03bc",
-        -3: u"m",
-        0: u"",
-        3: u"k",
-        6: u"M",
-        9: u"G",
-        12: u"T",
-        15: u"P",
-        18: u"E",
-        21: u"Z",
-        24: u"Y"
+        -24: "y",
+        -21: "z",
+        -18: "a",
+        -15: "f",
+        -12: "p",
+        -9: "n",
+        -6: "\u03bc",
+        -3: "m",
+        0: "",
+        3: "k",
+        6: "M",
+        9: "G",
+        12: "T",
+        15: "P",
+        18: "E",
+        21: "Z",
+        24: "Y"
     }
 
     if not isinstance(x, float):

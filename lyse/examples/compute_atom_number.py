@@ -50,16 +50,12 @@ with np.errstate(divide="ignore", invalid="ignore"):
 # Replace +/- infinity with NaN so np.nansum excludes them.
 od[~np.isfinite(od)] = np.nan
 
-# Summed optical density is in pixels; an atom number is not. Each pixel's
-# optical density stands for the column density over that pixel's area, and a
-# column density becomes a number of atoms through the cross section.
-#
-# A pixel the cloud absorbed entirely has no optical density to read -- the
-# logarithm of zero is not finite, and nansum counts it as nothing rather than
-# as the large value it stands for. So this undercounts a cloud dense enough to
-# extinguish the probe, and the undercount grows with density: past that point
-# a larger cloud can measure smaller.
+# A pixel the cloud absorbed entirely has an infinite optical density, made NaN
+# above, which nansum counts as nothing. So a cloud dense enough to extinguish
+# the probe is undercounted, and past that a larger cloud can measure smaller.
 integrated_od = np.nansum(od)
+# Each pixel's optical density is a column density over its area, and the cross
+# section turns that into atoms; the summed optical density alone is in pixels.
 atom_number = integrated_od * PIXEL_AREA / CROSS_SECTION
 
 run.save_result("integrated_od", integrated_od)

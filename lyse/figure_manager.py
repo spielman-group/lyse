@@ -20,7 +20,7 @@ from labscript_utils import dedent
 
 import lyse.utils.worker
 
-class FigureManager(object):
+class FigureManager:
 
     def __init__(self):
         self.figs = OrderedDict()
@@ -32,43 +32,39 @@ class FigureManager(object):
     def get_first_empty_figure(self, identifier, *args, **kwargs):
         i = 1
         while True:
-            # skip over protected figures that have been allocated to a specific identifier
             if i in self.__allocated_figures:
                 i += 1
                 continue
             fig = self._figure(i,*args,**kwargs)
             if not fig.axes:
-                # only protect the figure if it has an explicit identifier
-                # (this stops "figure();figure();"" from generating multiple)
-                # empty figures
+                # Only protect the figure if it has an explicit identifier, so that
+                # "figure();figure();" does not generate multiple empty figures.
                 if identifier is not None:
                     self.__allocated_figures.append(i)
                 return i, fig
             i += 1
-            
+
     def set_first_figure_current(self):
-        # only do this if we have any figures at all
-        # If we don't, we don't want to create one as that sets the size of the
-        # window and then figures sizes are ignored by subsequent runs of the script
+        # Only with figures already: creating one sets the window size, and figure
+        # sizes are then ignored by subsequent runs of the script.
         if len(matplotlib.pyplot.get_fignums()) == 0:
-            return 
-            
+            return
+
         identifier = 1
         fig = self._figure(identifier)
         if fig not in self.figs.values():
             self.figs[identifier] = fig
         elif identifier not in self.__allocated_figures:
-            # handle case where we are swapping from all identified figures
-            # to the first not being explicitly identified through a call to figure()
-            # AND we already had a figure with the identifier of "1" which is what we use
-            # for the default figure
+            # Swapping from all figures identified to the first not identified through
+            # a call to figure(), when a figure already has identifier 1, which is what
+            # the default figure uses.
             if identifier in self.figs and self.figs[identifier] != fig:
                 j = identifier
                 while j in self.figs:
                     j += 1
                 self.figs[j] = self.figs[identifier]
                 msg = """Warning: detected collision of matplotlib figure identifiers.
-                    Plot output may not be as expected. 
+                    Plot output may not be as expected.
                     Re-run the analysis script to (hopefully) resolve the collision.
                     To permanently fix this, please ensure you call figure() prior
                     to other matplotlib plotting functions.
@@ -77,7 +73,7 @@ class FigureManager(object):
             self.figs[identifier] = fig
             self.__allocated_figures.append(identifier)
             self._remove_dead_references(identifier, fig)
-                
+
     def __call__(self,identifier=None, *args, **kwargs):
         if identifier is None:
             number, fig =  self.get_first_empty_figure(identifier, *args,**kwargs)
@@ -114,10 +110,11 @@ class FigureManager(object):
             fig = self.figs[identifier]
             self._close(fig)
             del self.figs[identifier]
-            
+
     def show(self):
+        # Inside lyse, the plot windows show the figures once the analysis is done.
         if lyse.utils.worker.spinning_top:
-            pass # supress show()
+            pass
         else:
             self._show()
 

@@ -12,7 +12,7 @@
 #####################################################################
 """Analysis subprocess definitions and routines
 """
- 
+
 import labscript_utils.excepthook # I do magic stuff, so import must be in place
 import labscript_utils.h5_lock, h5py
 import labscript_utils.splash
@@ -31,7 +31,6 @@ from pathlib import Path
 from types import ModuleType
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
-from qtutils.qt.QtCore import pyqtSignal as Signal
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
 
@@ -42,7 +41,6 @@ import multiprocessing
 
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
-# Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
 from labscript_utils.qtwidgets.application import exec_qapplication
 from labscript_utils.qtwidgets.outputbox import OutputBox
@@ -55,11 +53,9 @@ from labscript_utils.labconfig import (
 )
 
 
-# Associate app windows with OS menu shortcuts:
 import desktop_app
 desktop_app.set_process_appid('lyse')
 
-# lyse imports
 import lyse.utils
 import lyse.utils.worker
 import lyse.figure_manager
@@ -82,16 +78,12 @@ class PlotWindowCloseEvent(QtGui.QCloseEvent):
         self.force = force
 
 class PlotWindow(ThemedWindow, QtWidgets.QWidget):
-    # A signal for when the window manager has created a new window for this widget:
-    close_signal = Signal()
-
     def __init__(self, plot, *args, **kwargs):
         self.__plot = plot
         filepath = kwargs.pop('analysis_filepath')
         self.identifier = kwargs.pop('analysis_identifier')
         QtWidgets.QWidget.__init__(self, *args, **kwargs)
 
-        # configure plot window persistence
         filename = os.path.basename(os.path.splitext(filepath)[0])
         self.settings_path = os.path.join(config_dir, 'lyse-' + filename)
 
@@ -155,10 +147,7 @@ class PlotWindow(ThemedWindow, QtWidgets.QWidget):
             event.ignore()
 
     def restore_geometry(self):
-        """Restores window geometry from local plot-window config.
-        
-        Will do nothing if config not present.
-        """
+        """Restore window geometry from the plot-window config, if there is one."""
         state = self._load_state()
         geometry = self._decode_geometry(state.get(self._geometry_key()))
         if geometry is None:
@@ -176,7 +165,7 @@ class PlotWindow(ThemedWindow, QtWidgets.QWidget):
         save_appconfig(self.settings_path, {'lyse_plot_window_state': state})
 
 
-class Plot(object):
+class Plot:
     def __init__(self, figure, identifier, filepath):
         self.identifier = identifier
         self.ui = lyse.routine.loader.load(
@@ -221,7 +210,6 @@ class Plot(object):
     def save_axis_limits(self):
         axis_limits = {}
         for i, ax in enumerate(self.figure.axes):
-            # Save the limits of the axes to restore them afterward:
             axis_limits[i] = ax.get_xlim(), ax.get_ylim()
 
         self.axis_limits = axis_limits
@@ -263,25 +251,17 @@ class Plot(object):
         return self.ui.isVisible()
 
     def analysis_complete(self, figure_in_use):
-        """To be overriden by subclasses. 
-        Called as part of the post analysis plot actions"""
+        """To be overridden by subclasses; called as part of the post analysis plot actions."""
         pass
 
     def get_window_state(self):
-        """Called when the Plot window is about to be closed due to a change in 
-        registered Plot window class
+        """Called when the Plot window is about to be closed due to a change in
+        registered Plot window class. Returns a dictionary of the window state.
 
-        Can be overridden by subclasses if custom information should be saved
-        (although bear in mind that you will passing the information from the previous 
-        Plot subclass which might not be what you want unless the old and new classes
-        have a common ancestor, or the change in Plot class is triggered by a reload
-        of the module containing your Plot subclass). 
-
-        Returns a dictionary of information on the window state.
-
-        If you have overridden this method, please call the base method first and
-        then update the returned dictionary with your additional information before 
-        returning it from your method.
+        Override to save custom information: call the base method first, then update
+        the dictionary it returns with yours and return it. The state is passed from the previous Plot
+        subclass, which suits the new one only if the old and new classes have a common
+        ancestor, or the change comes from a reload of the module containing your subclass.
         """
         return {
             'window_geometry': self.ui.saveGeometry(),
@@ -291,18 +271,10 @@ class Plot(object):
 
     def restore_window_state(self, state):
         """Called when the Plot window is recreated due to a change in registered
-        Plot window class.
+        Plot window class, with the dictionary that get_window_state() returned.
 
-        Can be overridden by subclasses if custom information should be restored
-        (although bear in mind that you will get the information from the previous 
-        Plot subclass which might not be what you want unless the old and new classes
-        have a common ancestor, or the change in Plot class is triggered by a reload
-        of the module containing your Plot subclass). 
-
-        If overriding, please call the parent method in addition to your new code
-
-        Arguments:
-            state: A dictionary of information to restore
+        Override to restore custom information; call the parent method as well. See
+        get_window_state() for the caveat on state from the previous Plot subclass.
         """
         geometry = state.get('window_geometry', None)
         if geometry is not None:
@@ -320,30 +292,25 @@ class Plot(object):
                     self.restore_axis_limits()
 
     def on_close(self):
-        """Called when the window is closed.
-
-        Note that this only happens if the Plot window class has changed. 
-        Clicking the "X" button in the window title bar has been overridden to hide
-        the window instead of closing it."""
-        # release selected toolbar action as selecting an action acquires a lock
-        # that is associated with the figure canvas (which is reused in the new
-        # plot window) and this must be released before closing the window or else
-        # it is held forever
+        """Called when the window is closed, which only happens if the Plot window class
+        has changed: the "X" button in the title bar hides the window instead."""
+        # Release the selected toolbar action: selecting one acquires a lock tied to the
+        # figure canvas, which the new plot window reuses, and the lock is held forever
+        # unless released before the window closes.
         self.navigation_toolbar.pan()
         self.navigation_toolbar.zoom()
         self.navigation_toolbar.pan()
         self.navigation_toolbar.pan()
 
 
-class AnalysisWorker(object):
+class AnalysisWorker:
     def __init__(self, filepath, to_parent, from_parent):
         self.to_parent = to_parent
         self.from_parent = from_parent
         self.filepath = filepath
 
-        # Add user script directory to the pythonpath:
         sys.path.insert(0, os.path.dirname(self.filepath))
-        
+
         # Create a module for the user's routine, and insert it into sys.modules as the
         # __main__ module:
         self.routine_module = ModuleType('__main__')
@@ -358,18 +325,17 @@ class AnalysisWorker(object):
         # An object with a method to unload user modules if any have
         # changed on disk:
         self.modulewatcher = ModuleWatcher()
-        
+
         # Start the thread that listens for instructions from the
         # parent process:
         self.mainloop_thread = threading.Thread(target=self.mainloop)
         self.mainloop_thread.daemon = True
         self.mainloop_thread.start()
-        
+
     def mainloop(self):
-        # HDF5 prints lots of errors by default, for things that aren't
-        # actually errors. These are silenced on a per thread basis,
-        # and automatically silenced in the main thread when h5py is
-        # imported. So we'll silence them in this thread too:
+        # HDF5 prints errors by default for things that are not errors. They are
+        # silenced per thread, and in the main thread when h5py is imported, so
+        # silence them in this thread too.
         h5py._errors.silence_errors()
         while True:
             task, data = self.from_parent.get()
@@ -380,7 +346,7 @@ class AnalysisWorker(object):
             elif task == 'show':
                 self.show_windows()
             else:
-                self.to_parent.put(['error','invalid task %s'%str(task)])
+                self.to_parent.put(['error', f'invalid task {task}'])
 
     def quit(self):
         with kill_lock:
@@ -410,9 +376,9 @@ class AnalysisWorker(object):
     def print_header(self, path):
         now = time.strftime('[%x %X]')
         if path is not None:
-            print('%s %s %s ' %(now, os.path.basename(self.filepath), os.path.basename(path)))
+            print(f'{now} {os.path.basename(self.filepath)} {os.path.basename(path)} ')
         else:
-            print('%s %s' %(now, os.path.basename(self.filepath)))
+            print(f'{now} {os.path.basename(self.filepath)}')
 
     def windows(self):
         return [plot.ui for plot in self.plots.values()]
@@ -432,14 +398,13 @@ class AnalysisWorker(object):
         for plot in self.plots.values():
             event = PlotWindowCloseEvent(True)
             QtCore.QCoreApplication.instance().postEvent(plot.ui, event)
-        
+
     @inmain_decorator()
     def do_analysis(self, path, paths):
         self.print_header(path)
 
         self.pre_analysis_plot_actions()
 
-        # Reset the routine module's namespace:
         self.routine_module.__dict__.clear()
         self.routine_module.__dict__.update(self.routine_module_clean_dict)
 
@@ -447,15 +412,12 @@ class AnalysisWorker(object):
         lyse.utils.worker.plots = self.plots
         lyse.utils.worker.Plot = Plot
 
-        # Save the current working directory before changing it to the
-        # location of the user's script:
         cwd = os.getcwd()
         os.chdir(os.path.dirname(self.filepath))
 
-        # Do not let the modulewatcher unload any modules whilst we're working:
         try:
+            # Do not let the modulewatcher unload any modules whilst we're working.
             with self.modulewatcher.lock:
-                # Actually run the user's analysis!
                 with open(self.filepath) as f:
                     code = compile(
                         f.read(),
@@ -474,7 +436,7 @@ class AnalysisWorker(object):
             os.chdir(cwd)
             print('')
             self.post_analysis_plot_actions()
-        
+
     def pre_analysis_plot_actions(self):
         lyse.figure_manager.figuremanager.reset()
         for plot in self.plots.values():
@@ -482,9 +444,7 @@ class AnalysisWorker(object):
             plot.clear()
 
     def post_analysis_plot_actions(self):
-        # reset the current figure to figure 1:
         lyse.figure_manager.figuremanager.set_first_figure_current()
-        # Introspect the figures that were produced:
         for identifier, fig in lyse.figure_manager.figuremanager.figs.items():
             window_state = None
             if not fig.axes:
@@ -496,30 +456,24 @@ class AnalysisWorker(object):
                     plot.analysis_complete(figure_in_use=False)
                 except KeyError:
                     pass
-                # Skip the rest of the loop regardless of whether we managed to clear
-                # the unused figure or not!
+                # Skip the rest of the loop whether or not the unused figure was cleared.
                 continue
             try:
                 plot = self.plots[fig]
 
-                # Get the Plot subclass registered for this plot identifier if it exists
                 cls = lyse.utils.worker.get_plot_class(identifier)
-                # If no plot was registered, use the base class
                 if cls is None: cls = Plot
-                
-                # if plot instance does not match the expected identifier,  
-                # or the identifier in use with this plot has changes,
-                #  we need to close and reopen it!
+
+                # If the plot's class does not match the registered one, or its identifier
+                # has changed, close and reopen it.
                 if type(plot) != cls or plot.identifier != identifier:
                     window_state = plot.get_window_state()
 
-                    # Create a custom CloseEvent to force close the plot window
                     event = PlotWindowCloseEvent(True)
                     QtCore.QCoreApplication.instance().postEvent(plot.ui, event)
-                    # Delete the plot
                     del self.plots[fig]
 
-                    # force raise the keyerror exception to recreate the window
+                    # Raise the KeyError to recreate the window.
                     self.plots[fig]
 
             except KeyError:
@@ -527,7 +481,6 @@ class AnalysisWorker(object):
                 # to put it in:
                 plot = self.new_figure(fig, identifier)
 
-                # restore window state/geometry if it was saved
                 if window_state is not None:
                     plot.restore_window_state(window_state)
             else:
@@ -543,27 +496,23 @@ class AnalysisWorker(object):
 
     def new_figure(self, fig, identifier):
         try:
-            # Get custom class for this plot if it is registered
             cls = lyse.utils.worker.get_plot_class(identifier)
-            # If no plot was registered, use the base class
             if cls is None: cls = Plot
-            # if cls is not a subclass of Plot, then raise an Exception
-            if not issubclass(cls, Plot): 
+            if not issubclass(cls, Plot):
                 raise RuntimeError('The specified class must be a subclass of lyse.utils.worker.Plot')
-            # Instantiate the plot
             self.plots[fig] = cls(fig, identifier, self.filepath)
         except Exception:
             traceback_lines = traceback.format_exception(*sys.exc_info())
-            message = """Failed to instantiate custom class for plot "{identifier}".
+            message = f"""Failed to instantiate custom class for plot "{identifier}".
                 Perhaps lyse.register_plot_class() was called incorrectly from your
                 script? The exception raised was:
-                """.format(identifier=identifier)
+                """
             message = dedent(message) + '\n'.join(traceback_lines[1:])
             message += '\n'
             message += 'Due to this error, we used the default lyse.Plot class instead.\n'
             sys.stderr.write(message)
 
-            # instantiate plot using original Base class so that we always get a plot
+            # Instantiate with the base class so that we always get a plot.
             self.plots[fig] = Plot(fig, identifier, self.filepath)
 
         return self.plots[fig]
@@ -732,7 +681,7 @@ if __name__ == '__main__':
         # Only a classic worker captures pyplot's figures.
         os.environ['MPLBACKEND'] = "qtagg"
         lyse.figure_manager.install()
-        # Where are pylab features used?  Should this be here?
+        # Loads pylab at start-up, ahead of the scripts that import it.
         import pylab
 
     # Rename this module to _analysis_subprocess and put it in sys.modules
@@ -742,7 +691,6 @@ if __name__ == '__main__':
 
     sys.modules[__name__] = sys.modules['__main__']
 
-    # Set a meaningful client id for zlock
     process_tree.zlock_client.set_process_name('lyse-'+os.path.basename(filepath))
 
     if sys.platform == 'darwin':
@@ -772,4 +720,3 @@ if __name__ == '__main__':
     # Its timer lets Python run zprocess's SIGTERM handler, which ends a worker whose
     # lyse has gone without asking it to quit.
     exec_qapplication(qapplication)
-        

@@ -17,7 +17,6 @@ A classic script reaches its shots through ``path``, ``paths``, ``data``, ``Run`
 which supplies the same through attributes and methods of its own.
 """
 
-import pickle as pickle
 from pathlib import Path
 import sys
 import functools
@@ -36,7 +35,6 @@ from labscript_utils.dict_diff import dict_diff
 
 from labscript_utils.properties import get_attributes, get_attribute, set_attributes
 
-# lyse imports
 import lyse.dataframe_utilities
 import lyse.utils
 from lyse.client import LyseClient
@@ -65,7 +63,7 @@ if 'sphinx' in sys.modules:
     # building docs, define path with docstring here so docs knows it's present
     path = None
     """Links to :attr:`lyse.utils.worker.path` which contains hdf5 filepath to be analysed.
-    
+
     Automatically populated by the lyse GUI for a singleshot routine; None in a
     multishot routine, which gets :attr:`lyse.paths` instead.
     """
@@ -88,14 +86,8 @@ def __getattr__(name):
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
-class _RoutineStorage(object):
-    """An empty object that analysis routines can store data in. It will
-    persist from one run of an analysis routine to the next when the routine
-    is being run from within lyse. No attempt is made to store data to disk,
-    so if the routine is run multiple times from the command line instead of
-    from lyse, or the lyse analysis subprocess is restarted, data will not be
-    retained. An alternate method should be used to store data if desired in
-    these cases."""
+class _RoutineStorage:
+    """An empty object that analysis routines can store data in."""
 
 routine_storage = _RoutineStorage()
 """An empty object that analysis routines can store data in.
@@ -113,13 +105,13 @@ _client = functools.cache(LyseClient)
 
 def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None, where=None):
     """Get data from the lyse dataframe or a file.
-    
+
     This function allows for either extracting information from a run's hdf5
     file, or retrieving data from lyse's dataframe. If `filepath` is provided
     then data will be read from that file and returned as a pandas series. If
     `filepath` is not provided then the dataframe in lyse, or a portion of it,
     will be returned.
-    
+
     Often only part of the lyse dataframe is needed, so the `n_sequences` and
     `filter_kwargs` arguments provide ways to restrict what parts of the lyse
     dataframe are returned. The dataframe can be quite large, so only requesting
@@ -166,10 +158,10 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             column is named by a string if it is top-level, e.g. `'filepath'`,
             or by a tuple if nested, e.g. `('routine', 'result')`. A
             list-like value -- a list, tuple, set, array and so on -- matches
-            any of its members; any other value must be equal. A row is returned only if every column
-            matches. Applied after `n_sequences` and before `filter_kwargs`.
-            A column not in the dataframe raises a `ValueError`. Defaults to
-            `None`.
+            any of its members; any other value must be equal. A row is
+            returned only if every column matches. Applied after `n_sequences`
+            and before `filter_kwargs`. A column not in the dataframe raises a
+            `ValueError`. Defaults to `None`.
 
     Raises:
         ValueError: If `n_sequences` isn't `None` or a nonnegative integer, then
@@ -183,18 +175,18 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
         `filepath` is provided, then a pandas series with the data read from
         that file is returned. If `filepath` is omitted or set to `None` then
         the lyse dataframe, or a subset of it, is returned.
-    """    
+    """
     if filepath is not None:
         return lyse.dataframe_utilities.get_series_from_shot(filepath)
     else:
         if n_sequences is not None:
             if not (type(n_sequences) is int and n_sequences >= 0):
-                msg = f"""n_sequences must be None or an integer greater than 0 but 
+                msg = f"""n_sequences must be None or a nonnegative integer but
                     was {n_sequences}."""
                 raise ValueError(dedent(msg))
         if filter_kwargs is not None:
             if type(filter_kwargs) is not dict:
-                msg = f"""filter must be None or a dictionary but was 
+                msg = f"""filter must be None or a dictionary but was
                     {filter_kwargs}."""
                 raise ValueError(dedent(msg))
         if where is not None:
@@ -222,10 +214,10 @@ def globals_diff(run1, run2, group=None):
         `key:['-',val2]`.
     """
     return dict_diff(run1.get_globals(group), run2.get_globals(group))
- 
+
 def open_file(mode):
     """Decorator for lyse functions to allow using previously opened file with context manager.
-    
+
     If multiple read/write operations happen on a Run in a single shot,
     opening the h5file once via the context manager `open`
     can speed up the analysis execution time by limiting the number of times
@@ -266,11 +258,11 @@ def open_file(mode):
                     raise PermissionError(msg)
                 else:
                     return func(self, *args, **kwargs)
-            
+
         return wrapper
     return decorator_open_file
 
-class Run(object):
+class Run:
     """A class for saving/retrieving data to/from a shot's hdf5 file.
 
     This class implements methods that allow the user to retrieve data from a
@@ -296,11 +288,8 @@ class Run(object):
         # never writes never opens the file:
         self.__result_groups_ensured = False
 
-        # The group where this run's results will be stored in the h5 file will be the
-        # name of the python script which is instantiating this Run object. If the user
-        # is running interactively or in an unusual environment such that the __main__
-        # module isn't in sys.modules or doesn't have a non-None __file__ attribute,
-        # then self.group will not be set.
+        # Results go in a group named after the main script. With no main script
+        # (interactive, or __main__ lacking __file__) self.group is left unset.
         main_module_path = getattr(sys.modules.get('__main__'), '__file__', None)
         if not self.no_write and main_module_path is not None:
             self.set_group(Path(main_module_path).stem)
@@ -314,12 +303,12 @@ class Run(object):
     def no_write(self):
         """bool: The value provided for `no_write` during instantiation."""
         return self.__no_write
-    
+
     @property
     def h5_file(self):
         """h5py.File: opened h5py file handle for the shot"""
         return self.__h5_file
-    
+
     @contextlib.contextmanager
     def open(self, mode):
         """Context manager to open the Run's h5 file for successive reads/writes.
@@ -339,7 +328,7 @@ class Run(object):
             PermissionError: If the Run is set as read-only but a write mode is requested
 
         Examples:
-            
+
             Trivial example that selectively opens the file during analysis.
             For better performance, it would be better to combine
             these two openings into one.
@@ -374,20 +363,17 @@ class Run(object):
 
         """
 
-        # ensure no_write is respected
         if self.no_write and mode != 'r':
             msg = 'Cannot open file with a write mode; this run is read-only'
             raise PermissionError(msg)
-            
-        # check if file is already open, do nothing if modes compatible
+
         if self.__h5_file is not None:
-            # ensure no-write is respected
             if (self.__h5_file.mode == 'r') and (mode != 'r'):
                 msg = 'Cannot open file with a write mode; this run is read-only'
                 raise PermissionError(msg)
             yield self
             return
-        
+
         with h5py.File(self.h5_path, mode) as f:
             self.__h5_file = f
             try:
@@ -400,7 +386,7 @@ class Run(object):
     @property
     def group(self):
         """str: The group in the hdf5 file in which results are saved by default.
-        
+
         When a `Run` instance is created in a script, `group` will be set to
         the name of the main script: in a lyse singleshot or multishot classic
         script, that script. In a GUI routine the main script is lyse's own
@@ -412,7 +398,7 @@ class Run(object):
         method. Note that if `self.group` is `None` and no value is provided for
         the optional `group` argument used by the `save...()` methods, a
         `ValueError` will be raised.
-        
+
         Attempting to directly set `self.group`'s value will automatically call
         `self.set_group()`.
         """
@@ -457,18 +443,16 @@ class Run(object):
     def trace_names(self):
         """Return a list of all saved data traces in Run.
 
-        Raises:
-            KeyError: If the group `'/data/traces/'` does not yet exist.
-
         Returns:
-            list: List of keys in the h5 file's `'/data/traces/'` group.
+            list: List of keys in the h5 file's `'/data/traces/'` group, or an
+            empty list if the group does not yet exist.
         """
         try:
             return list(self.h5_file['data']['traces'].keys())
         except KeyError:
             return []
 
-    @open_file('r')                
+    @open_file('r')
     def get_attrs(self, group):
         """Returns all attributes of the specified group as a dictionary.
 
@@ -494,10 +478,10 @@ class Run(object):
     @open_file('r')
     def get_trace(self, name, raw_data=False):
         """Return the saved data trace `name`.
-        
+
         Args:
             name (str): Name of saved data trace to get.
-            raw_data (bool, optional): option to return the h5_data directly 
+            raw_data (bool, optional): option to return the h5_data directly
                 without interpreting it as a 2-D time trace.
 
         Raises:
@@ -508,14 +492,14 @@ class Run(object):
             and values `'values'`.
         """
         if name not in self.h5_file['data']['traces']:
-            raise Exception('The trace \'%s\' does not exist'%name)
+            raise Exception(f"The trace '{name}' does not exist")
         trace = self.h5_file['data']['traces'][name]
-        
+
         if raw_data:
             data = trace[()]
         else:
-            data = np.array(trace['t'],dtype=float), np.array(trace['values'],dtype=float)  
-        
+            data = np.array(trace['t'],dtype=float), np.array(trace['values'],dtype=float)
+
         return data
 
     @open_file('r')
@@ -526,16 +510,17 @@ class Run(object):
             name (str): Name of the wait to get.
 
         Raises:
-            KeyError if `name` wait does not exist.
+            Exception: If the shot has no data group, or `name` wait does not
+                exist.
 
         Returns:
             tuple: Tuple of the wait parameters.
         """
-        if not 'data' in self.h5_file:
+        if 'data' not in self.h5_file:
             raise Exception('The shot has no data group')
         name=name.encode()
         if name not in self.h5_file['data']['waits']['label']:
-            raise Exception('The wait \'%s\' does not exist'%name.decode())
+            raise Exception(f"The wait '{name.decode()}' does not exist")
         name_index, = np.where(self.h5_file['data']['waits']['label']==name)[0]
         return self.h5_file['data']['waits'][name_index]
 
@@ -555,7 +540,7 @@ class Run(object):
             raise Exception('The shot has no waits')
         return self.h5_file['data']['waits'][()]
 
-    @open_file('r')        
+    @open_file('r')
     def get_result_array(self, group, name):
         """Returns saved results data.
 
@@ -571,12 +556,12 @@ class Run(object):
             :obj:`numpy:numpy.ndarray`: Numpy array of the saved data.
         """
         if 'results' not in self.h5_file or group not in self.h5_file['results']:
-            raise Exception('The result group \'%s\' does not exist'%group)
+            raise Exception(f"The result group '{group}' does not exist")
         if name not in self.h5_file['results'][group]:
-            raise Exception('The result array \'%s\' does not exist'%name)
+            raise Exception(f"The result array '{name}' does not exist")
         return np.array(self.h5_file['results'][group][name])
 
-    @open_file('r')            
+    @open_file('r')
     def get_result(self, group, name):
         """Retrieve result from prior calculation.
 
@@ -589,21 +574,21 @@ class Run(object):
             Exception: If `group` or `name` do not already exist.
 
         Returns:
-            : Result with appropriate type, as determined by 
+            : Result with appropriate type, as determined by
             :obj:`labscript-utils:labscript_utils.properties.get_attribute`.
         """
         if 'results' not in self.h5_file or group not in self.h5_file['results']:
-            raise Exception('The result group \'%s\' does not exist'%group)
+            raise Exception(f"The result group '{group}' does not exist")
         if name not in self.h5_file['results'][group].attrs.keys():
-            raise Exception('The result \'%s\' does not exist'%name)
+            raise Exception(f"The result '{name}' does not exist")
         return get_attribute(self.h5_file['results'][group], name)
 
-    @open_file('r')            
+    @open_file('r')
     def get_results(self, group, *names):
         """Return multiple results from the same group.
 
         Iteratively calls get_result(group,name) for each name provided.
-        
+
         Args:
             group (str): Group to look in for the results. Typically the name of
                             the analysis script that created it.
@@ -638,7 +623,7 @@ class Run(object):
                 result will be saved as an attribute. If set to `None`, then the
                 result will be saved to `self.group` in `'/results'`. Note that
                 if a value is passed for `group` here then it will NOT have
-                `'/result'` prepended to it which allows the caller to save
+                `'/results'` prepended to it which allows the caller to save
                 results anywhere in the hdf5 file. This is in contrast to using
                 the default group set with `self.set_group()`; when the default
                 group is set with that method it WILL have `'/results'`
@@ -675,11 +660,9 @@ class Run(object):
                         argument, or set a default value using the set_group()
                         method."""
                     raise ValueError(dedent(msg))
-                # Save to analysis results group by default
                 group = 'results/' + self.group
             elif save_to_h5 and group not in self.h5_file:
-                # Create the group if it doesn't exist
-                self.h5_file.create_group(group) 
+                self.h5_file.create_group(group)
             if not save_to_h5 and not group.startswith('results'):
                 msg = f"""Cannot save result to group '{group}' with
                     save_to_h5=False; only results in the 'results' group reach
@@ -692,7 +675,7 @@ class Run(object):
                         overwrite=True to overwrite the existing value."""
                     raise PermissionError(dedent(msg))
                 set_attributes(self.h5_file[group], {name: value})
-        
+
         if spinning_top:
             if self.h5_path not in _updated_data:
                 _updated_data[self.h5_path] = {}
@@ -701,7 +684,7 @@ class Run(object):
                 _updated_data[self.h5_path][toplevel, name] = value
 
     @open_file('r+')
-    def save_result_array(self, name, data, group=None, 
+    def save_result_array(self, name, data, group=None,
                           overwrite=True, keep_attrs=False, **kwargs):
         """Save an array of data to the hdf5 h5 file.
 
@@ -718,11 +701,11 @@ class Run(object):
                 result will be saved as a dataset. If set to `None`, then the
                 result will be saved in `self.group` in `'/results'`. Note that
                 if a value is passed for `group` here then it will NOT have
-                `'/result'` prepended to it which allows the caller to save
+                `'/results'` prepended to it which allows the caller to save
                 results anywhere in the hdf5 file. This is in contrast to using
                 the default group set with `self.set_group()`; when the default
                 group is set with that method it WILL have `'/results'`
-                prepended to it when saving results. Defaults to `None`..
+                prepended to it when saving results. Defaults to `None`.
             overwrite (bool, optional): Sets whether or not to overwrite the
                 previous value if the dataset already exists. If set to
                 `False` and the dataset already exists, a `PermissionError` is
@@ -749,25 +732,19 @@ class Run(object):
                     argument, or set a default value using the set_group()
                     method."""
                 raise ValueError(dedent(msg))
-            # Save dataset to results group by default
             group = 'results/' + self.group
         elif group not in self.h5_file:
-            # Create the group if it doesn't exist
-            self.h5_file.create_group(group) 
+            self.h5_file.create_group(group)
         if name in self.h5_file[group]:
             if overwrite:
-                # Overwrite if dataset already exists
                 if keep_attrs:
                     attrs = dict(self.h5_file[group][name].attrs)
                 del self.h5_file[group][name]
             else:
-                msg = """Cannot save result; group '{group}' already has
+                msg = f"""Cannot save result; group '{group}' already has
                     dataset '{name}' and overwrite is set to False. Set
                     overwrite=True to overwrite the existing
-                    value.""".format(
-                        group=group,
-                        name=name,
-                    )
+                    value."""
                 raise PermissionError(dedent(msg))
         self.h5_file[group].create_dataset(name, data=data, **kwargs)
         for key, val in attrs.items():
@@ -790,7 +767,7 @@ class Run(object):
             traces.extend(self.get_trace(name))
         return traces
 
-    @open_file('r')             
+    @open_file('r')
     def get_result_arrays(self, group, *names):
         """Retrieve multiple result arrays from the same group.
 
@@ -812,7 +789,7 @@ class Run(object):
     def save_results(self, *args, **kwargs):
         """Save multiple results to the hdf5 file.
 
-        This method iteratively calls 
+        This method iteratively calls
         :obj:`self.save_result() <save_result>` on multiple results.
         It assumes arguments are ordered such that each result to be saved is
         preceded by the name of the attribute to save it under. Keywords
@@ -847,12 +824,13 @@ class Run(object):
 
         Iteratively calls :obj:`self.save_result(key,value) <save_result>` on
         the provided dictionary. If uncertainties is `True`, `value` is a two-element
-        list where the second element is the uncertainty in the result and saved with
-        to the same key with `u_` prepended.
+        list where the second element is the uncertainty in the result and is saved
+        under the same key with `u_` prepended.
 
         Args:
             results_dict (dict): Dictionary of results to save. If uncertainties is
-                `False`, form is `{name:value}`. If `True`, for is `{name,[value,uncertainty]}`.
+                `False`, form is `{name:value}`. If `True`, form is
+                `{name:[value,uncertainty]}`.
             uncertainties (bool, optional): Marks if uncertainties are provided.
             **kwargs: Extra arguments provided to :obj:`save_result`.
         """
@@ -868,9 +846,9 @@ class Run(object):
     def save_result_arrays(self, *args, **kwargs):
         """Save multiple result arrays.
 
-        Iteratively calls :obj:`save_result_array() <save_result_array>` on multiple data sets. 
-        Assumes arguments are ordered such that each dataset to be saved is 
-        preceded by the name to save it as. 
+        Iteratively calls :obj:`save_result_array() <save_result_array>` on multiple data sets.
+        Assumes arguments are ordered such that each dataset to be saved is
+        preceded by the name to save it as.
         All keyword arguments are passed to each call of save_result_array().
 
         Args:
@@ -883,7 +861,7 @@ class Run(object):
         for name, value in zip(names, values):
             self.save_result_array(name, value, **kwargs)
 
-    @open_file('r')    
+    @open_file('r')
     def get_image(self, orientation, label, image):
         """Get previously saved image from the h5 file.
 
@@ -903,14 +881,14 @@ class Run(object):
         if 'images' not in self.h5_file:
             raise Exception('File does not contain any images')
         if orientation not in self.h5_file['images']:
-            raise Exception('File does not contain any images with orientation \'%s\''%orientation)
+            raise Exception(f"File does not contain any images with orientation '{orientation}'")
         if label not in self.h5_file['images'][orientation]:
-            raise Exception('File does not contain any images with label \'%s\''%label)
+            raise Exception(f"File does not contain any images with label '{label}'")
         if image not in self.h5_file['images'][orientation][label]:
-            raise Exception('Image \'%s\' not found in file'%image)
+            raise Exception(f"Image '{image}' not found in file")
         return np.array(self.h5_file['images'][orientation][label][image])
 
-    @open_file('r')    
+    @open_file('r')
     def get_images(self, orientation, label, *images):
         """Get multiple saved images from orientation and label.
 
@@ -958,10 +936,10 @@ class Run(object):
         """
         images_list = {}
         for orientation in self.h5_file['/images'].keys():
-            images_list[orientation] = list(self.h5_file['/images'][orientation].keys())               
+            images_list[orientation] = list(self.h5_file['/images'][orientation].keys())
         return images_list
 
-    @open_file('r')    
+    @open_file('r')
     def get_image_attributes(self, orientation):
         """Return the attributes of a saved orientation image group.
 
@@ -970,13 +948,14 @@ class Run(object):
 
         Raises:
             Exception: If images or orientation group do not exist.
+
         Returns:
             dict: Dictionary of attributes and their values.
         """
         if 'images' not in self.h5_file:
             raise Exception('File does not contain any images')
         if orientation not in self.h5_file['images']:
-            raise Exception('File does not contain any images with orientation \'%s\''%orientation)
+            raise Exception(f"File does not contain any images with orientation '{orientation}'")
         return get_attributes(self.h5_file['images'][orientation])
 
     @open_file('r')
@@ -1010,7 +989,7 @@ class Run(object):
             dict: Dictionary of raw globals and their values
         """
         globals_dict = {}
-        if group == None:
+        if group is None:
             for obj in self.h5_file['globals'].values():
                 temp_dict = dict(obj.attrs)
                 for key, val in temp_dict.items():
@@ -1018,21 +997,16 @@ class Run(object):
         else:
             globals_dict = dict(self.h5_file['globals'][group].attrs)
         return globals_dict
-        
-    @open_file('r')            
+
+    @open_file('r')
     def get_globals_expansion(self):
         """Get the expansion type of each global.
 
         This will skip global variables that do not have
         an expansion.
 
-        Args:
-            h5_file (h5py.File, optional): Allows passing in a handle
-                to an already opened h5 file. If None, will open in
-                read only mode and close after operation.
-
         Returns:
-            dict: Dcitionary of globals with their expansion type.
+            dict: Dictionary of globals with their expansion type.
         """
         expansion_dict = {}
         def append_expansion(name, obj):
@@ -1041,11 +1015,11 @@ class Run(object):
                 for key, val in temp_dict.items():
                     if val:
                         expansion_dict[key] = val
-        
+
         self.h5_file['globals'].visititems(append_expansion)
         return expansion_dict
 
-    @open_file('r')                   
+    @open_file('r')
     def get_units(self, group=None):
         """Get the units of globals.
 
@@ -1071,10 +1045,8 @@ class Run(object):
         """
         path = 'globals'
         if group is not None:
-            path = path + '/{group}'.format(group=group)
+            path = path + f'/{group}'
         units = {}
-        # Define method that when applied to an hdf5 group adds all of its
-        # globals and units to the units dict.
         def append_units(name, obj):
             if 'units' in name:
                 units.update(dict(obj.attrs))
@@ -1095,7 +1067,7 @@ class Run(object):
             return list(self.h5_file['globals'].keys())
         except KeyError:
             return []
-                
+
     def globals_diff(self, other_run, group=None):
         """Take a diff between this run and another run.
 
@@ -1104,14 +1076,14 @@ class Run(object):
         Args:
             other_run (:obj:`Run`): Run to compare to.
             group (str, optional): When `None` (default), compare all globals.
-                Otherwise only compare globals in `group`. 
+                Otherwise only compare globals in `group`.
 
         Returns:
             dict: Dictionary of different globals.
         """
-        return globals_diff(self, other_run, group)            
-    
-        
+        return globals_diff(self, other_run, group)
+
+
 class Sequence(Run):
     def __init__(self, h5_path, run_paths, no_write=False):
         """Generic results storage that is not associated with a specific Run.
@@ -1135,20 +1107,20 @@ class Sequence(Run):
         # Ensure file exists without affecting its last modification time if it
         # already exists.
         try:
-            with h5py.File(h5_path, 'r') as f:
+            with h5py.File(h5_path, 'r'):
                 pass
         except OSError:
             if no_write:
                 msg = "Cannot create the hdf5 file; this instance is read-only."
                 raise PermissionError(msg)
             else:
-                with h5py.File(h5_path, 'a') as f:
+                with h5py.File(h5_path, 'a'):
                     pass
 
         super().__init__(h5_path, no_write=no_write)
 
         if isinstance(run_paths, pandas.DataFrame):
-            run_paths = run_paths['filepath']      
+            run_paths = run_paths['filepath']
         self.runs = {path: Run(path,no_write=True) for path in run_paths}
 
     def get_trace(self,*args):
@@ -1158,10 +1130,10 @@ class Sequence(Run):
             *args (str): Name of trace. Passed directly to :obj:`get_trace`.
 
         Return:
-            dict: Dictonary of path:trace pairs for each run.
+            dict: Dictionary of path:trace pairs for each run.
         """
         return {path:run.get_trace(*args) for path,run in self.runs.items()}
-        
+
     def get_result_array(self,*args):
         """Get the specified result array from each run in the sequence.
 
@@ -1173,7 +1145,7 @@ class Sequence(Run):
             dict: Dictionary of path:result pairs for each run.
         """
         return {path:run.get_result_array(*args) for path,run in self.runs.items()}
-         
+
     def get_traces(self,*args):
         """Not implemented!
 
@@ -1181,7 +1153,7 @@ class Sequence(Run):
             Not implemented, but could be.
         """
         raise NotImplementedError('If you want to use this feature please ask me to implement it! -Chris')
-             
+
     def get_result_arrays(self,*args):
         """Not implemented!
 
@@ -1189,11 +1161,11 @@ class Sequence(Run):
             Not implemented, but could be.
         """
         raise NotImplementedError('If you want to use this feature please ask me to implement it! -Chris')
-     
+
     def get_image(self,*args):
         """Not implemented!
 
         Attention:
             Not implemented, but could be.
         """
-        raise NotImplementedError('If you want to use this feature please ask me to implement it! -Chris')     
+        raise NotImplementedError('If you want to use this feature please ask me to implement it! -Chris')

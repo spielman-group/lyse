@@ -39,7 +39,7 @@ def rangeindex_to_multiindex(df, inplace):
             integer_indexing = False
         if integer_indexing:
             out = df.set_index(['sequence_index', 'run number', 'run repeat'], inplace=inplace, drop=False)
-            # out is None if inplace is True, and is the new dataframe is inplace is False.
+            # set_index returns None when inplace is True.
             if not inplace:
                 df = out
         else:
@@ -84,13 +84,13 @@ def get_nested_dict_from_shot(filepath):
             row['sequence_index'] = h5_file.attrs['sequence_index']
         except KeyError:
             row['sequence_index'] = None
-        if 'script' in h5_file: 
+        if 'script' in h5_file:
             row['labscript'] = ensure_str(h5_file['script'].attrs['name'])
         try:
             row['run time'] = asdatetime(ensure_str(h5_file.attrs['run time']))
         except KeyError:
             row['run time'] = float('nan')
-        try:    
+        try:
             row['run number'] = h5_file.attrs['run number']
         except KeyError:
             row['run number'] = float('nan')
@@ -110,7 +110,7 @@ def get_nested_dict_from_shot(filepath):
             # shot made any other way has none.
             row['shot_id'] = ''
         return row
-            
+
 def flatten_dict(dictionary, keys=tuple()):
     """Takes a nested dictionary whose keys are strings, and returns a
     flat dictionary whose keys are tuples of strings, each element of
@@ -123,7 +123,7 @@ def flatten_dict(dictionary, keys=tuple()):
         else:
             result[keys + (name,)] = dictionary[name]
     return result
-            
+
 def flat_dict_to_hierarchical_dataframe(dictionary):
     """Make all the keys tuples of the same length"""
     max_tuple_length = 2 # Must have at least two levels to make a MultiIndex
@@ -134,9 +134,9 @@ def flat_dict_to_hierarchical_dataframe(dictionary):
         newkey = key[:]
         while len(newkey) < max_tuple_length:
             newkey += ('',)
-        result[newkey] = dictionary[key]    
+        result[newkey] = dictionary[key]
     index = pandas.MultiIndex.from_tuples(sorted(result.keys()))
-    return pandas.DataFrame([result],columns=index)  
+    return pandas.DataFrame([result],columns=index)
 
 def flat_dict_to_flat_series(dictionary):
     result = {}
@@ -146,16 +146,16 @@ def flat_dict_to_flat_series(dictionary):
         else:
             result[key[0]] = dictionary[key]
     keys = list(result.keys())
-    keys.sort(key = lambda item: 
+    keys.sort(key = lambda item:
         (len(item),) + item if isinstance(item, tuple) else (1,item))
-    return pandas.Series(result,index=keys)  
-          
+    return pandas.Series(result,index=keys)
+
 def get_dataframe_from_shot(filepath):
     nested_dict = get_nested_dict_from_shot(filepath)
     flat_dict =  flatten_dict(nested_dict)
     df = flat_dict_to_hierarchical_dataframe(flat_dict)
     return df
-    
+
 def get_dataframe_from_shots(filepaths):
     return concat_with_padding(*[get_dataframe_from_shot(filepath) for filepath in filepaths])
 
@@ -164,9 +164,9 @@ def get_series_from_shot(filepath):
     flat_dict =  flatten_dict(nested_dict)
     s = flat_dict_to_flat_series(flat_dict)
     return s
-    
+
 def pad_columns(df, n):
-    """Add depth to hiererchical column labels with empty strings"""
+    """Add depth to hierarchical column labels with empty strings"""
     if df.columns.nlevels == n:
         return df
     new_columns = []
@@ -184,7 +184,7 @@ def concat_with_padding(*dataframes):
     the same nlevels."""
     dataframes = list(dataframes)
     max_nlevels = max(df.columns.nlevels for df in dataframes)
-    # Remove empty dataframes (these don't concat since pandas 0.18) 
+    # Empty dataframes do not concat.
     dataframes = [df for df in dataframes if not df.empty]
     for i, df in enumerate(dataframes):
         if df.columns.nlevels < max_nlevels:
