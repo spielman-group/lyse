@@ -203,6 +203,9 @@ moving into shared code.
   `figure_to_clipboard` and `tempfile2clipboard`: no copy in another repo.
 - `AnalysisWorker` and `GuiWorker`: one `mainloop`; `GuiWorker` overrides
   `quit`, `analyse` and `windows` by design.
+- runmanager's `ItemDelegate` and lyse's: the same name, different jobs.
+  runmanager's sets row height and column width, draws grid lines and edits
+  multi-line values; lyse's draws the status column's progress bar.
 
 Ian approved C, and D across lyse, runmanager and runviewer, with runmanager
 gaining window geometry. labscript-utils 6c9fdc3; lyse cea6a15; runmanager
@@ -238,3 +241,40 @@ cause.
   same behaviour as pandas' removed `errors='ignore'`.
 - A deleted saved widget left out of the controls (`routine.py`,
   `read_saved_widgets`): designed behaviour, not a guard.
+
+## Step 2.4: dead code and compatibility leftovers
+
+Searched: every name lyse defines, counted with `git grep -w` across all repos,
+hyde included; the librarian's mapping list (`issues/seen_while_mapping.md`,
+lyse's section); and each branch's commits against `Development`. The
+INI-to-TOML conversion stays, by Ian's decision in labscript-utils' pass, so
+lyse's INI paths and the plot window's settings migration are not candidates.
+
+### Candidates
+
+| | What | Evidence | Removal visible to |
+| --- | --- | --- | --- |
+| G | `AnalysisWorker.reset_figs` (`analysis_subprocess.py:572`), a stub whose body is `pass` | Referenced nowhere but its definition | no one |
+| H | Loading a `.msg` dataframe: the `*.msg` filter and the `read_msgpack` branch of `on_load_dataframe_triggered` (`__main__.py:330-350`) | pandas removed `read_msgpack` in 1.0, so the branch only reports that it cannot load the file | an operator, who no longer sees `.msg` offered; none can be loaded today |
+| I | Running a classic script outside lyse with a shot path: `if len(sys.argv) > 1` in `__init__.py:65` sets `lyse.path` | Upstream deprecated it with a FutureWarning asking users to speak up. It also fires on any import with an argument, under pytest included | anyone who runs `python script.py shot.h5` |
+| J | The Qt5 names for matplotlib's Qt backend: `backend_qt5agg` (`analysis_subprocess.py:43`) and `MPLBACKEND = "qt5agg"` (`:737`) | The suite is PyQt6; matplotlib's `qtagg` serves any binding, and `routine.py` already uses `backend_qtagg` | no one |
+
+Not candidates: `lyse.Run`'s methods that no repo calls (`get_wait`,
+`get_units`, `trace_names`, `get_results`, `save_result_arrays` and others) are
+the analysis API for users' scripts. `Sequence`'s methods that raise
+`NotImplementedError` are upstream's. `LyseServer.handle_get_dataframe` is
+reached by name. All 25 `on_` handlers are connected.
+
+### Branches
+
+Every branch other than the tiers and `CodeHealth`. lyse has no
+`UpstreamBugFixes` and no open pull request.
+
+| | Branch | Content | Proposal |
+| --- | --- | --- | --- |
+| K | `MacOS` (local and origin) | One merge not in `Development`, whose 7 lines (the worker's app name, icon property and Qt setup) `Development` already has | delete |
+| L | origin `Collecting-for-fork` | 66 commits, 2023-2025: upstream merges and Ian's first prototype of per-worker windows, which ClassRoutines replaced | delete |
+| M | origin `maintenance/3.0.x` | Upstream's 2020 maintenance branch, kept upstream | delete from the fork |
+| N | `spielman_merged/SaveDataframeAndNamedFigures` | Every commit is in `Development` and `Production` | delete |
+| O | `spielman_retired/ClassRoutinesThrowAway` | The first draft of GUI routines, which ClassRoutines replaced, with its spec | delete |
+| P | `spielman_retired/share` (local and origin) | 8 commits moving lyse onto shared helpers, which the campaign's step 2 has done | delete |
