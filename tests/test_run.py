@@ -84,13 +84,13 @@ class RunTests(unittest.TestCase):
         with h5py.File(self.path, 'r') as f:
             self.assertEqual(f['results/routine'].attrs['N'], 3)
 
-    def test_a_result_not_yet_saved_is_reported_as_before(self):
+    def test_reading_a_result_never_saved_raises_that_its_group_does_not_exist(self):
         with self.assertRaisesRegex(Exception, "result group 'routine' does not exist"):
             lyse.Run(self.path).get_result('routine', 'N')
 
     def test_the_results_groups_are_empty_before_the_first_write(self):
-        """As they were when construction created them. Other groups that are
-        not there still raise."""
+        """A script may read them before it writes. Other groups that are not
+        there still raise."""
         run = lyse.Run(self.path)
         run.set_group('routine')
         self.assertEqual(run.get_attrs('results'), {})

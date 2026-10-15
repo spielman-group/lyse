@@ -18,7 +18,7 @@ scratch copy for this list.
 ### Totals
 
 - Test files: 8, plus `conftest.py`. Tests: 44, with 17 subtests.
-- Marks: keep 42, rename 1, fix 1, cut 0.
+- Marks: keep 42, rename 1, fix 1, cut 0. Approved by Ian; the rename and the fix are made.
 
 ### tests/test_analysis_subprocess.py
 
@@ -156,6 +156,8 @@ upstream's behaviour, since upstream made the groups at construction. It is
 protected, not a candidate.
 
 ### Candidates
+
+Ian kept both.
 
 Both came from a code review of the `RunmanagerControl` work, not from a
 request. Each prevents a result being lost without a word.
