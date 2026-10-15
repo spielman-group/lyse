@@ -75,7 +75,6 @@ import qtutils.icons
 # Lyse imports
 splash.update_text('importing core Lyse modules')
 import lyse.utils
-import lyse.utils.gui
 import lyse.routines
 import lyse.filebox
 import lyse.communication
@@ -107,13 +106,7 @@ class Lyse(LabscriptGuiApplication):
     app_name = 'lyse'
     default_config_filename = 'lyse.toml'
     config_description = 'which scripts are loaded and other GUI state'
-    geometry_keys = (
-        'window_size',
-        'window_pos',
-        'splitter',
-        'splitter_vertical',
-        'splitter_horizontal',
-    )
+    splitters = ('splitter', 'splitter_vertical', 'splitter_horizontal')
 
     def __init__(self, qapplication):
         # First: Start logging
@@ -252,23 +245,12 @@ class Lyse(LabscriptGuiApplication):
         save_data['lastfileboxfolder'] = self.filebox.last_opened_shots_folder
 
         save_data['analysis_paused'] = self.filebox.analysis_paused
-        window_size = self.ui.size()
-        save_data['window_size'] = (window_size.width(), window_size.height())
-        window_pos = self.ui.pos()
-
-        save_data['window_pos'] = (window_pos.x(), window_pos.y())
-
-        save_data['screen_geometry'] = lyse.utils.gui.get_screen_geometry(self.qapplication)
-        save_data['splitter'] = self.ui.splitter.sizes()
-        save_data['splitter_vertical'] = self.ui.splitter_vertical.sizes()
-        save_data['splitter_horizontal'] = self.ui.splitter_horizontal.sizes()
+        save_data.update(self.geometry_save_data())
         return save_data
 
     def load_configuration(self, filename, restore_window_geometry=True):
         # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         appconfig, save_target = load_appconfig(filename, return_save_path=True)
-        self.last_save_config_file = save_target
-        self.ui.actionSave_configuration.setText('Save configuration %s' % save_target)
         save_data = appconfig.get('lyse_state', {})
         if 'singleshot' in save_data:
             self.singleshot_routinebox.add_routines(save_data['singleshot'], clear_existing=True)
@@ -283,42 +265,15 @@ class Lyse(LabscriptGuiApplication):
         if 'analysis_paused' in save_data and save_data['analysis_paused']:
             self.filebox.pause_analysis()
         if restore_window_geometry:
-            self.load_window_geometry_configuration(filename)
-
-        # Set as self.last_save_data:
-        save_data = self.get_save_data()
-        self.last_save_data = save_data
-        self.ui.actionSave_configuration_as.setEnabled(True)
-        self.ui.actionRevert_configuration.setEnabled(True)
-        self.set_config_window_title(save_target)
+            self.restore_geometry(save_data)
+        self.configuration_loaded(save_target)
 
     def load_window_geometry_configuration(self, filename):
         """Load only the window geometry from the config file. It's useful to have this
         separate from the rest of load_configuration so that it can be called before the
         window is shown."""
         # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-        save_data = load_appconfig(filename).get('lyse_state', {})
-        if 'screen_geometry' not in save_data:
-            return
-        screen_geometry = save_data['screen_geometry']
-        # Only restore the window size and position, and splitter
-        # positions if the screen is the same size/same number of monitors
-        # etc. This prevents the window moving off the screen if say, the
-        # position was saved when 2 monitors were plugged in but there is
-        # only one now, and the splitters may not make sense in light of a
-        # different window size, so better to fall back to defaults:
-        current_screen_geometry = lyse.utils.gui.get_screen_geometry(self.qapplication)
-        if list(map(tuple, current_screen_geometry)) == list(map(tuple, screen_geometry)):
-            if 'window_size' in save_data:
-                self.ui.resize(*save_data['window_size'])
-            if 'window_pos' in save_data:
-                self.ui.move(*save_data['window_pos'])
-            if 'splitter' in save_data:
-                self.ui.splitter.setSizes(save_data['splitter'])
-            if 'splitter_vertical' in save_data:
-                self.ui.splitter_vertical.setSizes(save_data['splitter_vertical'])
-            if 'splitter_horizontal' in save_data:
-                self.ui.splitter_horizontal.setSizes(save_data['splitter_horizontal'])
+        self.restore_geometry(load_appconfig(filename).get('lyse_state', {}))
 
     def setup_config(self):
         required_config_params = {"default": ["apparatus_name"],

@@ -84,13 +84,3 @@ def scientific_notation(x, sigfigs=4, mode='eng'):
                 superscript = ''.join(sups.get(char, char) for char in str(exponent))
                 result += thinspace + times + thinspace + '10' + superscript
     return result
-
-def get_screen_geometry(qapplication):
-    """Return the a list of the geometries of each screen: each a tuple of
-    left, top, width and height"""
-    geoms = []
-    screens = qapplication.screens()
-    for screen in screens:
-        sg = screen.geometry()
-        geoms.append((sg.x(), sg.y(), sg.width(), sg.height()))
-    return geoms
