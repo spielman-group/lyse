@@ -36,13 +36,13 @@ from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 import lyse.widgets
 import lyse.utils
 
-class RoutineBox(object):
-    
+class RoutineBox:
+
     COL_ACTIVE = 0
     COL_STATUS = 1
     COL_NAME = 2
     ROLE_FULLPATH = QtCore.Qt.UserRole + 1
-    
+
     def __init__(self, app, container, exp_config, filebox, from_filebox, to_filebox, output_box_port, multishot=False):
         self.app = app
         self.multishot = multishot
@@ -51,10 +51,10 @@ class RoutineBox(object):
         self.from_filebox = from_filebox
         self.to_filebox = to_filebox
         self.output_box_port = output_box_port
-        
-        self.logger = logging.getLogger('lyse.RoutineBox.%s'%('multishot' if multishot else 'singleshot'))
+
+        self.logger = logging.getLogger(f'lyse.RoutineBox.{"multishot" if multishot else "singleshot"}')
         self.logger.info('starting')
-        
+
         loader = UiLoader()
         loader.registerCustomWidget(TreeView)
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/routinebox.ui'))
@@ -70,7 +70,7 @@ class RoutineBox(object):
         self.header = HorizontalHeaderViewWithWidgets(self.model)
         self.ui.treeView.setHeader(self.header)
         self.ui.treeView.setModel(self.model)
-        
+
         active_item = QtGui.QStandardItem()
         active_item.setToolTip('Whether the analysis routine should run')
         status_item = QtGui.QStandardItem()
@@ -84,17 +84,16 @@ class RoutineBox(object):
         self.header.setWidget(self.COL_ACTIVE, self.select_all_checkbox)
         self.header.setStretchLastSection(True)
         self.select_all_checkbox.setTristate(False)
-        
+
         self.model.setHorizontalHeaderItem(self.COL_ACTIVE, active_item)
         self.model.setHorizontalHeaderItem(self.COL_STATUS, status_item)
         self.model.setHorizontalHeaderItem(self.COL_NAME, name_item)
-        
+
         self.ui.treeView.resizeColumnToContents(self.COL_ACTIVE)
         self.ui.treeView.resizeColumnToContents(self.COL_STATUS)
         self.ui.treeView.setColumnWidth(self.COL_NAME, 200)
-        
+
         self.ui.treeView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        # Make the actions for the context menu:
         self.action_set_selected_active = QtWidgets.QAction(
             QtGui.QIcon(':qtutils/fugue/ui-check-box'), 'set selected routines active',  self.ui)
         self.action_set_selected_inactive = QtWidgets.QAction(
@@ -114,23 +113,22 @@ class RoutineBox(object):
         add_menu.addActions([self.action_add_routines, self.action_add_routine_folder])
         self.ui.toolButton_add_routines.setMenu(add_menu)
         self.last_opened_routine_folder = self.exp_config.get('paths', 'analysislib')
-        
+
         self.routines = []
-        
+
         self.connect_signals()
 
         self.logger.info('starting analysis loop')
         self.analysis = threading.Thread(target = self.analysis_loop)
         self.analysis.daemon = True
         self.analysis.start()
-        
+
     def connect_signals(self):
         self.action_add_routines.triggered.connect(self.on_add_routines_clicked)
         self.action_add_routine_folder.triggered.connect(self.on_add_routine_folder_clicked)
         self.ui.toolButton_remove_routines.clicked.connect(self.on_remove_selection)
         self.model.itemChanged.connect(self.on_model_item_changed)
         self.ui.treeView.doubleLeftClicked.connect(self.on_treeview_double_left_clicked)
-        # A context manager with which we can temporarily disconnect the above connection.
         self.model_item_changed_disconnected = DisconnectContextManager(
             self.model.itemChanged, self.on_model_item_changed)
         self.select_all_checkbox.stateChanged.connect(self.on_select_all_state_changed)
@@ -184,11 +182,9 @@ class RoutineBox(object):
         self.add_routines([(folder, QtCore.Qt.CheckState.Checked)])
 
     def add_routines(self, routine_files, clear_existing=False):
-        """Add routines to the routine box, where routine_files is a list of
-        tuples containing the filepath and whether the routine is enabled or
-        not when it is added. if clear_existing == True, then existing routines
-        not in routine_files are removed and those in it are restarted, so
-        that the box holds routine_files in order, as if just added."""
+        """Add routines, given as (filepath, checked) tuples. With
+        clear_existing, routines not in routine_files are removed and those in
+        it restarted, so the box holds routine_files in order."""
         existing = {routine.filepath: routine for routine in self.routines}
         if clear_existing:
             filepaths = [filepath for filepath, checked in routine_files]
@@ -197,11 +193,10 @@ class RoutineBox(object):
                     routine.remove()
                     self.routines.remove(routine)
 
-        # Queue the files to be opened:
         added = []
         for filepath, checked in routine_files:
             if filepath in added or (not clear_existing and filepath in existing):
-                self.app.output_box.output('Warning: Ignoring duplicate analysis routine %s\n'%filepath, red=True)
+                self.app.output_box.output(f'Warning: Ignoring duplicate analysis routine {filepath}\n', red=True)
                 continue
             added.append(filepath)
             if clear_existing and filepath in existing:
@@ -221,10 +216,8 @@ class RoutineBox(object):
                 [added.index(routine.filepath) for routine in self.routines]
             )
         self.update_select_all_checkstate()
-        
+
     def on_treeview_double_left_clicked(self, index):
-        # If double clicking on the the name item, open
-        # the routine in the specified text editor:
         if index.column() != self.COL_NAME:
             return
         name_item = self.model.item(index.row(), self.COL_NAME)
@@ -242,7 +235,7 @@ class RoutineBox(object):
         if not selected_rows:
             return
         if confirm and not self.app.question_dialog(
-                "Remove %d routines?" % len(selected_rows)):
+                f"Remove {len(selected_rows)} routines?"):
             return
         name_items = [self.model.item(row, self.COL_NAME) for row in selected_rows]
         filepaths = [item.data(self.ROLE_FULLPATH) for item in name_items]
@@ -252,11 +245,11 @@ class RoutineBox(object):
                 self.routines.remove(routine)
                 self.logger.info(f'removing routine for {routine.filepath}')
         self.update_select_all_checkstate()
-        
+
     def on_model_item_changed(self, item):
         if item.column() == self.COL_ACTIVE:
             self.update_select_all_checkstate()
-        
+
     def on_select_all_state_changed(self, state):
         with self.select_all_checkbox_state_changed_disconnected:
             # Do not allow a switch *to* a partially checked state:
@@ -266,7 +259,7 @@ class RoutineBox(object):
             for row in range(self.model.rowCount()):
                 active_item = self.model.item(row, self.COL_ACTIVE)
                 active_item.setCheckState(state)
-        
+
     def on_treeView_context_menu_requested(self, point):
         menu = QtWidgets.QMenu(self.ui.treeView)
         menu.addAction(self.action_set_selected_active)
@@ -275,7 +268,7 @@ class RoutineBox(object):
         menu.addAction(self.action_show_windows_selected)
         menu.addAction(self.action_remove_selected)
         menu.exec(QtGui.QCursor.pos())
-        
+
     def on_set_selected_triggered(self, active):
         selected_indexes = self.ui.treeView.selectedIndexes()
         selected_rows = set(index.row() for index in selected_indexes)
@@ -293,7 +286,7 @@ class RoutineBox(object):
             if routine.filepath in filepaths:
                 method(routine)
         self.update_select_all_checkstate()
-       
+
     def analysis_loop(self):
         while True:
             filepath = self.from_filebox.get()
@@ -302,32 +295,30 @@ class RoutineBox(object):
                 # A multishot routine box is given the shot files analysed
                 # since its last pass, rather than a shot file:
                 filepath, paths = None, filepath
-            self.logger.info('got a file to process: %s'%filepath)
+            self.logger.info(f'got a file to process: {filepath}')
             self.do_analysis(filepath, paths)
-    
+
     def todo(self):
         """How many analysis routines are not done?"""
         return len([r for r in self.routines if r.enabled() and not r.done])
-        
+
     def do_analysis(self, filepath, paths):
-        """Run all analysis routines once on the given filepath,
-        which is a shot file if we are a singleshot routine box. paths, for a
-        multishot routine box, are the shot files analysed since its last pass,
-        which its routines see as lyse.paths"""
+        """Run all analysis routines once, on filepath (singleshot box) or, for a
+        multishot box, on paths: the shot files since its last pass (lyse.paths)."""
         for routine in self.routines:
             routine.set_status('clear')
         remaining = self.todo()
         error = False
         updated_data = {}
         while remaining:
-            self.logger.debug('%d routines left to do'%remaining)
+            self.logger.debug(f'{remaining} routines left to do')
             for routine in self.routines:
                 if routine.enabled() and not routine.done:
                     break
             else:
                 routine = None
             if routine is not None:
-                self.logger.info('running analysis routine %s'%routine.shortname)
+                self.logger.info(f'running analysis routine {routine.shortname}')
                 routine.set_status('working')
                 success, updated_data = routine.do_analysis(filepath, paths)
                 if success:
@@ -353,8 +344,8 @@ class RoutineBox(object):
             self.to_filebox.put(['error', None, updated_data])
         else:
             self.to_filebox.put(['done', 100.0, {}])
-        self.logger.debug('completed analysis of %s'%filepath)
-            
+        self.logger.debug(f'completed analysis of {filepath}')
+
     def on_rows_reordered(self, order):
         self.routines = [self.routines[order.index(i)] for i in range(len(order))]
 
@@ -372,7 +363,7 @@ class RoutineBox(object):
                 self.select_all_checkbox.setCheckState(QtCore.Qt.PartiallyChecked)
 
 
-class AnalysisRoutine(object):
+class AnalysisRoutine:
 
     def __init__(self, app, filepath, model, output_box_port, checked=QtCore.Qt.Checked):
         self.app = app
@@ -380,12 +371,12 @@ class AnalysisRoutine(object):
         self.shortname = os.path.basename(self.filepath)
         self.model = model
         self.output_box_port = output_box_port
-        
+
         self.COL_ACTIVE = RoutineBox.COL_ACTIVE
         self.COL_STATUS = RoutineBox.COL_STATUS
         self.COL_NAME = RoutineBox.COL_NAME
         self.ROLE_FULLPATH = RoutineBox.ROLE_FULLPATH
-        
+
         self.error = False
         self.done = False
 
@@ -394,8 +385,7 @@ class AnalysisRoutine(object):
         self.logger.info('starting worker')
         self.to_worker, self.from_worker, self.worker = self.start_worker(checked == QtCore.Qt.Checked)
         self.logger.info('analysis_subprocess started')
-        
-        # Make a row to put into the model:
+
         active_item =  QtGui.QStandardItem()
         active_item.setCheckable(True)
         active_item.setCheckState(checked)
@@ -404,11 +394,10 @@ class AnalysisRoutine(object):
         name_item.setToolTip(self.filepath)
         name_item.setData(self.filepath, self.ROLE_FULLPATH)
         self.model.appendRow([active_item, info_item, name_item])
-            
+
         self.shutdown = None
-        
+
     def start_worker(self, active):
-        # Start a worker process for this analysis routine:
         worker_path = os.path.join(lyse.utils.LYSE_DIR, 'analysis_subprocess.py')
 
         child_handles = self.app.process_tree.subprocess(
@@ -416,12 +405,12 @@ class AnalysisRoutine(object):
             output_redirection_port=self.output_box_port,
             startup_timeout=30,
         )
-        
+
         to_worker, from_worker, worker = child_handles
         # Tell the worker what script it will be executing, and whether the routine is active:
         to_worker.put((self.filepath, active))
         return to_worker, from_worker, worker
-        
+
     @inmain_decorator()
     def send_analysis(self, filepath, paths):
         # On the GUI thread, where shutdowns start, so that none can start between the
@@ -453,8 +442,8 @@ class AnalysisRoutine(object):
         elif signal == 'done':
             return True, data
         else:
-            raise ValueError('invalid signal %s'%str(signal))
-        
+            raise ValueError(f'invalid signal {signal}')
+
     @inmain_decorator()
     def set_status(self, status):
         index = self.get_row_index()
@@ -480,7 +469,7 @@ class AnalysisRoutine(object):
             self.error = False
         else:
             raise ValueError(status)
-        
+
     @inmain_decorator()
     def enabled(self):
         index = self.get_row_index()
@@ -489,9 +478,9 @@ class AnalysisRoutine(object):
             return False
         enabled_item = self.model.item(index, self.COL_ACTIVE)
         return (enabled_item.checkState() == QtCore.Qt.Checked)
-        
+
     def get_row_index(self):
-        """Returns the row index for this routine's row in the model"""
+        """Row index of this routine in the model, or None once it is removed."""
         for row in range(self.model.rowCount()):
             name_item = self.model.item(row, self.COL_NAME)
             fullpath = name_item.data(self.ROLE_FULLPATH)
@@ -500,7 +489,7 @@ class AnalysisRoutine(object):
 
     def restart(self):
         self.end_child(restart=True)
-        
+
     @inmain_decorator()
     def show_windows(self):
         # On the GUI thread, where shutdowns start.
@@ -516,7 +505,7 @@ class AnalysisRoutine(object):
             # Already gone
             return
         self.model.removeRow(index)
-         
+
     def end_child(self, restart=False):
         if self.shutdown is not None:
             # One shutdown at a time: a removal or quit cancels a pending restart,
@@ -544,11 +533,11 @@ class AnalysisRoutine(object):
         elif worker.returncode is None:
             if not kill:
                 worker.terminate()
-                self.app.output_box.output('%s worker not responding.\n'%self.shortname)
+                self.app.output_box.output(f'{self.shortname} worker not responding.\n')
                 timeout_time = time.time() + 2
             else:
                 worker.kill()
-                self.app.output_box.output('%s worker killed\n'%self.shortname, red=True)
+                self.app.output_box.output(f'{self.shortname} worker killed\n', red=True)
                 timeout_time = None
             QtCore.QTimer.singleShot(50,
                 lambda: self.check_child_exited(timeout_time, kill=True))
@@ -557,17 +546,17 @@ class AnalysisRoutine(object):
             # killed: the message was printed when kill() was sent.
             pass
         elif kill:
-            self.app.output_box.output('%s worker terminated\n'%self.shortname, red=True)
+            self.app.output_box.output(f'{self.shortname} worker terminated\n', red=True)
         elif worker.returncode != 0:
             self.app.output_box.output(
                 f'{self.shortname} worker exited with return code {worker.returncode}\n', red=True)
         else:
-            self.app.output_box.output('%s worker exited cleanly\n'%self.shortname)
-        
+            self.app.output_box.output(f'{self.shortname} worker exited cleanly\n')
+
         # if analysis was running notify analysisloop that analysis has failed
         shutdown.from_worker.put(('error', {}))
         self.shutdown = None
 
         if shutdown.restart:
             self.to_worker, self.from_worker, self.worker = self.start_worker(self.enabled())
-            self.app.output_box.output('%s worker restarted\n'%self.shortname)
+            self.app.output_box.output(f'{self.shortname} worker restarted\n')
