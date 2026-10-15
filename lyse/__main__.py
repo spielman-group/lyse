@@ -34,7 +34,6 @@ splash.update_text('importing standard library modules')
 import time
 import sys
 import queue
-import warnings
 
 # 3rd party imports:
 splash.update_text('importing numpy')
@@ -59,7 +58,6 @@ from labscript_utils.qtwidgets.application import (
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import FirstPaintWindow, ThemedWindow
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
-from labscript_utils import dedent
 
 # qt imports
 splash.update_text('importing qt modules')
@@ -327,27 +325,12 @@ class Lyse(LabscriptGuiApplication):
             self.ui,
             'Select dataframe file to load',
             default,
-            "dataframe files (*.pkl *.msg)",
+            "dataframe files (*.pkl)",
         )
         if not file:
             # User cancelled
             return
-        if file.endswith('.msg'):
-            # try to read msgpack in case using older pandas
-            try:
-                df = pandas.read_msgpack(file).sort_values("run time").reset_index()
-                # raise a deprecation warning if this succeeds
-                msg = """msgpack support is being dropped by pandas >= 1.0.0.
-                Please resave this dataframe to use the new format."""
-                warnings.warn(dedent(msg),DeprecationWarning)
-            except AttributeError as err:
-                # using newer pandas that can't read msg
-                msg = """msgpack is no longer supported by pandas.
-                To read this dataframe, you must downgrade pandas to < 1.0.0.
-                You can then read this dataframe and resave it with the new format."""
-                raise DeprecationWarning(dedent(msg)) from err
-        else:
-            df = pandas.read_pickle(file).sort_values("run time").reset_index()
+        df = pandas.read_pickle(file).sort_values("run time").reset_index()
                 
         # Check for changes in the shot files since the dataframe was exported
         def changed_since(filepath, time):

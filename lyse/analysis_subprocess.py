@@ -40,7 +40,7 @@ import qtutils.icons
 
 import multiprocessing
 
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
 # Labscript imports
 from labscript_utils.modulewatcher import ModuleWatcher
@@ -569,9 +569,6 @@ class AnalysisWorker(object):
 
         return self.plots[fig]
 
-    def reset_figs(self):
-        pass
-
 
 class GuiWorker(AnalysisWorker):
     """The worker of a GUI routine, a folder whose name ends in .lyse. The routine loads once as
@@ -734,7 +731,7 @@ if __name__ == '__main__':
     gui = Path(filepath).suffix == lyse.utils.GUI_ROUTINE_SUFFIX
     if not gui:
         # Only a classic worker captures pyplot's figures.
-        os.environ['MPLBACKEND'] = "qt5agg"
+        os.environ['MPLBACKEND'] = "qtagg"
         lyse.figure_manager.install()
         # Where are pylab features used?  Should this be here?
         import pylab

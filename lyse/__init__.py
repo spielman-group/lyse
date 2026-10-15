@@ -22,7 +22,6 @@ from pathlib import Path
 import sys
 import functools
 import contextlib
-import warnings
 
 import labscript_utils.h5_lock, h5py
 import pandas
@@ -62,12 +61,6 @@ __all__ = [
     'Sequence',
 ]
 
-if len(sys.argv) > 1:
-    warnings.warn("Running standalone single-shot lyse scripts is deprecated. "
-                  "If you need this feature, let the developers know so it is not removed.",
-                  FutureWarning)
-    path = sys.argv[1]
-
 if 'sphinx' in sys.modules:
     # building docs, define path with docstring here so docs knows it's present
     path = None
@@ -75,7 +68,6 @@ if 'sphinx' in sys.modules:
     
     Automatically populated by the lyse GUI for a singleshot routine; None in a
     multishot routine, which gets :attr:`lyse.paths` instead.
-    Can be passed as a command line argument, but this behavior is deprecated.
     """
     paths = None
     """Links to :attr:`lyse.utils.worker.paths` which contains the hdf5
