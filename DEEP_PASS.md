@@ -242,6 +242,14 @@ cause.
 - A deleted saved widget left out of the controls (`routine.py`,
   `read_saved_widgets`): designed behaviour, not a guard.
 
+Ian approved E and F. F: lyse 1b083d6. E: zprocess 7b6f393 (and 3fced92 on its
+`UpstreamBugFixes`, since upstream has the same hang) raises `ProcessExited`
+from a put to a child that has exited. lyse a0c8e97 catches it in `end_child` and
+`show_windows` in place of their `poll()` checks. `send_analysis` keeps its
+check, because a put to a worker that has only just exited can still be taken by
+its socket and lost, and the reply would never come. Its cause is open item 4,
+an analysis left waiting by a worker that has gone.
+
 ## Step 2.4: dead code and compatibility leftovers
 
 Searched: every name lyse defines, counted with `git grep -w` across all repos,
