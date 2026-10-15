@@ -205,7 +205,8 @@ moving into shared code.
   `quit`, `analyse` and `windows` by design.
 
 Ian approved C, and D across lyse, runmanager and runviewer, with runmanager
-gaining window geometry. labscript-utils 6c9fdc3; lyse cea6a15. Quitting now
+gaining window geometry. labscript-utils 6c9fdc3; lyse cea6a15; runmanager
+6e80ffb; runviewer 3e2f02f. A real start of each restored the window. Quitting now
 treats `screen_geometry` as geometry too, so a change of screens alone is saved
 without asking.
 
