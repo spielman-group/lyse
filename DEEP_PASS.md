@@ -172,3 +172,34 @@ memory, and each commit's message and branch. Users reached: the operator
 through lyse's window, analysis routines through `lyse.Run`, `lyse.data`,
 `lyse.paths` and `lyse.Routine`, labscript-optimization as a GUI routine, and
 runmanager through `LyseClient`.
+
+## Step 2.2: duplication
+
+Searched: the librarian's map (`labscript-library/capabilities.md`,
+`inventory/lyse.txt`, `notes/lyse.txt`), then `git grep` in every repo for each
+lyse helper whose job could be done elsewhere. labscript-utils' step 2 rounds
+already moved lyse's version, dialogs, file dialogs, left-click views, theme and
+first-paint mixins, event loop, `ensure_str`, editor launch, quit prompt and row
+moving into shared code.
+
+### Candidates
+
+| | Solved more than once | Should it exist | Its one copy |
+| --- | --- | --- | --- |
+| C | The bookkeeping after a configuration load: record the file and the loaded state, name the file in the Save item, enable Save as and Revert, and set the title. lyse `__main__.py:267` `load_configuration`, runmanager `__main__.py:4125`, runviewer `__main__.py:389`, about 6 lines each | Yes: it is what makes Save, Revert and the quit prompt work after a load | A `LabscriptGuiApplication` method in labscript-utils, called at the end of each app's `load_configuration`. Not visible to a user. Touches labscript-utils, lyse, runmanager and runviewer |
+| D | The main window's size, position and splitters, saved with the configuration and restored on load. lyse `get_save_data` and `load_window_geometry_configuration` (`__main__.py:250`, `295`, with `utils/gui.py:get_screen_geometry`), and runviewer `get_save_data` and `load_configuration` (`__main__.py:378`, `398`). runmanager saves none | Yes: upstream lyse saved it, with the same-screens check | `LabscriptGuiApplication`, reading the splitters from the `geometry_keys` each app already lists, keeping lyse's keys so saved files still restore. runviewer would gain lyse's rule, restoring nothing after a change of screens: visible to a runviewer user. Touches labscript-utils, lyse and runviewer |
+
+### Not candidates
+
+- `Run.get_globals` (`__init__.py:991`) and labscript-utils'
+  `shot_utils.get_shot_globals`: `Run.get_globals` is upstream's API, takes a
+  group and returns the attributes as stored; `get_shot_globals` converts their
+  types. Different jobs.
+- The plot window's geometry (`analysis_subprocess.py:140`), a GUI routine's
+  layout (`routine.py:286`) and the window state carried across a change of
+  Plot class (`analysis_subprocess.py:270`): three jobs, each on Qt's
+  `saveGeometry`. The plot window's legacy-settings migration is for step 2.4.
+- `get_screen_geometry`, `scientific_notation`, `flatten_dict`,
+  `figure_to_clipboard` and `tempfile2clipboard`: no copy in another repo.
+- `AnalysisWorker` and `GuiWorker`: one `mainloop`; `GuiWorker` overrides
+  `quit`, `analyse` and `windows` by design.
