@@ -17,7 +17,7 @@ A GUI routine is a folder whose name ends in ``.lyse``, holding its code beside 
         compute_OD.ui      Qt Designer files, any name (optional)
         fitting.py         helper modules (optional)
 
-The folder's name is the routine's name in the routine box, in its window title and in its settings file. ``lyse_routine.py`` defines exactly one subclass of :class:`lyse.Routine <lyse.routine.Routine>`. Imported classes do not count, nor does ``lyse.Routine`` itself, and several names for one class count once. No subclass, or more than one, is an error, and a base class that several routines share belongs in an imported module.
+The folder's name is the routine's name in the routine box, in its window title and in its settings file. ``lyse_routine.py`` defines exactly one subclass of :class:`lyse.Routine <lyse.routine.Routine>`. Imported classes do not count, nor does ``lyse.Routine`` itself, and several names for one class count once. No subclass, or more than one, is an error, and a base class that several routines share belongs in an imported module. The routine finds its folder as ``self.folder``, a :class:`~pathlib.Path`.
 
 Adding a routine
 ~~~~~~~~~~~~~~~~

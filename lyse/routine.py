@@ -74,6 +74,8 @@ class Routine:
 
     Attributes
     ----------
+    folder : Path
+        The routine folder.
     output_port : int
         The port of the window's Output box; a child process started with it as its
         ``output_redirection_port`` shows its output there.
@@ -114,7 +116,7 @@ class Routine:
         filename : str or Path
             The file, absolute or relative to the routine folder.
         """
-        ui = loader.load(str(self._folder / filename))
+        ui = loader.load(str(self.folder / filename))
         self.window.setCentralWidget(ui)
         return ui
 
@@ -268,7 +270,7 @@ def construct(cls, controls, window, routine_path, output_port):
     routine._saved_controls = controls
     routine._saved_widgets = {}
     routine._figures = {}
-    routine._folder = Path(routine_path)
+    routine.folder = Path(routine_path)
     routine.window = window
     routine.output_port = output_port
     routine.values = namedtuple('Values', [])()
