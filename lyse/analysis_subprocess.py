@@ -46,6 +46,7 @@ from labscript_utils.qtwidgets.application import exec_qapplication
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils import dedent
+from labscript_utils.file_utils import warn_legacy_file
 from labscript_utils.labconfig import (
     backup_legacy_config,
     load_appconfig,
@@ -121,6 +122,7 @@ class PlotWindow(ThemedWindow, QtWidgets.QWidget):
         legacy_path = self._legacy_settings_path()
         if not os.path.exists(legacy_path):
             return state
+        warn_legacy_file(legacy_path, 'is a Qt INI settings file, not TOML')
         settings = QSettings(legacy_path, QSettings.IniFormat)
         migrated = dict(state)
         for key in settings.allKeys():
