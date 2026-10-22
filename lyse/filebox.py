@@ -74,7 +74,7 @@ class EditColumns:
         loader = UiLoader()
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/edit_columns.ui'), lyse.widgets.EditColumnsDialog())
 
-        self.model = lyse.widgets.UneditableModel()
+        self.model = QtGui.QStandardItemModel()
         self.header = HorizontalHeaderViewWithWidgets(self.model)
         self.select_all_checkbox = QtWidgets.QCheckBox()
         self.select_all_checkbox.setTristate(False)
@@ -91,6 +91,7 @@ class EditColumns:
         self.model.setHorizontalHeaderLabels(['', 'Name'])
         self.header.setWidget(self.COL_VISIBLE, self.select_all_checkbox)
         self.ui.treeView.resizeColumnToContents(self.COL_VISIBLE)
+        self.ui.treeView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.ui.setWindowModality(QtCore.Qt.ApplicationModal)
 
         self.ui.treeView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -275,7 +276,7 @@ class DataFrameModel(QtCore.QObject):
         self.app = app
         self._view = view
         self.exp_config = exp_config
-        self._model = lyse.widgets.UneditableModel()
+        self._model = QtGui.QStandardItemModel()
         self.row_number_by_filepath = {}
         self._previous_n_digits = 0
 
@@ -293,6 +294,7 @@ class DataFrameModel(QtCore.QObject):
         self._vertheader.setHighlightSections(True)
         self._vertheader.setSectionsClickable(True)
         self._view.setModel(self._model)
+        self._view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._view.setHorizontalHeader(self._header)
         self._view.setVerticalHeader(self._vertheader)
         self._delegate = lyse.widgets.ItemDelegate(self.app, self._model, self.COL_STATUS, self.ROLE_STATUS_PERCENT)
