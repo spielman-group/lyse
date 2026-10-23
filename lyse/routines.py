@@ -260,63 +260,67 @@ class RoutineBox:
     def analysis_loop(self):
         while True:
             filepath = self.from_filebox.get()
-            paths = None
             if self.multishot:
-                # A multishot routine box is given the shot files analysed
-                # since its last pass, rather than a shot file:
-                filepath, paths = None, filepath
+                assert filepath is None
+                # TODO: get the filepath of the output h5 file: 
+                # filepath = self.filechooserentry.get_text()
             self.logger.info('got a file to process: %s', filepath)
-            self.do_analysis(filepath, paths)
+            self.do_analysis(filepath)
+    
+    def _start_next_routine(self):
+        """Set the status of the first enabled routine that has not run to working, and
+        return it. Return None if there is no such routine. Call from the main
+        thread."""
+        for routine in self.routines:
+            if routine.enabled() and not routine.done:
+                routine.set_status('working')
+                return routine
+        return None
 
-    def todo(self):
-        """How many analysis routines have not run?"""
-        return len([r for r in self.routines if r.enabled() and not (r.done or r.error)])
-
-    def do_analysis(self, filepath, paths):
-        """Run all analysis routines once, on filepath (singleshot box) or, for a
-        multishot box, on paths: the shot files since its last pass (lyse.paths)."""
+    @inmain_decorator()
+    def start_analysis(self):
+        """Clear the status of every routine and start the first enabled one. Return
+        it, or None if no routine is enabled."""
         for routine in self.routines:
             routine.set_status('clear')
-        remaining = self.todo()
-        error = stopped = False
+        return self._start_next_routine()
+
+    @inmain_decorator()
+    def end_routine(self, routine, success):
+        """Set the status of a routine that has run. If it succeeded, start the next
+        enabled routine that has not run. Return the next routine, or None, and the
+        percentage of enabled routines that are done."""
+        if not success:
+            routine.set_status('error')
+            return None, None
+        routine.set_status('done')
+        enabled_routines = [r for r in self.routines if r.enabled()]
+        if enabled_routines:
+            n_done = len([r for r in enabled_routines if r.done])
+            status_percent = 100 * n_done / len(enabled_routines)
+        else:
+            # All routines got deleted mid-analysis, we're done here:
+            status_percent = 100.0
+        return self._start_next_routine(), status_percent
+
+    def do_analysis(self, filepath):
+        """Run all analysis routines once on the given filepath,
+        which is a shot file if we are a singleshot routine box"""
+        error = False
         updated_data = {}
-        while remaining:
-            self.logger.debug('%s routines left to do', remaining)
-            for routine in self.routines:
-                if routine.enabled() and not (routine.done or routine.error):
-                    break
-            else:
-                routine = None
-            if routine is not None:
-                self.logger.info('running analysis routine %s', routine.shortname)
-                routine.set_status('working')
-                success, updated_data = routine.do_analysis(filepath, paths)
-                if success:
-                    routine.set_status('done')
-                    self.logger.debug('success')
-                else:
-                    routine.set_status('error')
-                    self.logger.debug('failure')
-                    error = True
-                    # The multishot routines after a failed one still run, unless analysis is paused:
-                    if not self.multishot or self.app.filebox.analysis_paused:
-                        stopped = True
-                        break
-            # Race conditions here, but it's only for reporting percent done
-            # so it doesn't matter if it's wrong briefly:
-            remaining = self.todo()
-            total = len([r for r in self.routines if r.enabled()])
-            done = total - remaining
-            try:
-                status_percent = 100*float(done)/(remaining + done)
-            except ZeroDivisionError:
-                # All routines got deleted mid-analysis, we're done here:
-                status_percent = 100.0
+        routine = self.start_analysis()
+        while routine is not None:
+            self.logger.info('running analysis routine %s', routine.shortname)
+            success, updated_data = routine.do_analysis(filepath)
+            routine, status_percent = self.end_routine(routine, success)
+            if not success:
+                self.logger.debug('failure')
+                error = True
+                break
+            self.logger.debug('success')
             self.to_filebox.put(['progress', status_percent, updated_data])
         if error:
-            # Decided here, not by the filebox, which would read the pause state later:
-            # None if the routines after the failed one did not run.
-            self.to_filebox.put(['error', None if stopped else 100.0, updated_data])
+            self.to_filebox.put(['error', None, updated_data])
         else:
             self.to_filebox.put(['done', 100.0, {}])
         self.logger.debug('completed analysis of %s', filepath)
