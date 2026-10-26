@@ -815,10 +815,6 @@ class DataFrameModel(QtCore.QObject):
         if not done:
             self._first_incomplete = min(self._first_incomplete, first_new_row)
         self._model.endInsertRows()
-        if first_new_row == 0:
-            # All rows have the height of the first:
-            self._view.resizeRowToContents(0)
-            self._vertheader.setDefaultSectionSize(self._view.rowHeight(0))
         self._resize_new_columns(new_column_numbers)
 
         if not adding_shots:
