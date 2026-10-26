@@ -26,12 +26,12 @@ import queue
 # 3rd party imports:
 import numpy as np
 import labscript_utils.h5_lock, h5py # use patched h5py
+from labscript_utils.qtwidgets.application import monospace_font
 import pandas
 
 # Labscript imports
 import zprocess
 from labscript_utils.labconfig import LabConfig
-from labscript_utils.qtwidgets.application import monospace_font
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 from labscript_utils.qtwidgets.leftclick import TableView
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs

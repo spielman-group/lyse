@@ -377,9 +377,8 @@ if __name__ == "__main__":
 
     current_style = qapplication.styleSheet()
     qapplication.setStyleSheet(current_style + extra_styles)
-    # After the style sheet, which gives the widget classes the platform's fonts again:
-    setup_application(qapplication)
 
+    setup_application(qapplication)
     app = Lyse(qapplication)
     # Before exec_qapplication deletes the windows, one of which the output box writes to:
     qapplication.aboutToQuit.connect(app.output_box.shutdown)
