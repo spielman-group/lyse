@@ -40,11 +40,11 @@ from labscript_utils.text_editor import open_in_editor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
-from qtutils.icons import Icon
 from qtutils.qt.QtCore import pyqtSignal as Signal
 from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 from qtutils.auto_scroll_to_end import set_auto_scroll_to_end
 import qtutils.icons
+from qtutils.icons import Icon
 
 # Lyse imports
 from lyse.dataframe_utilities import (concat_with_padding, get_dataframe_from_shot,
@@ -294,9 +294,9 @@ class ShotsTableModel(QtCore.QAbstractTableModel):
         self.shots = shots
         # Positions of the columns in the dataframe, by column number:
         self._positions = {}
-        self._status_icon = QtGui.QIcon(':qtutils/fugue/information')
-        self._tick_icon = QtGui.QIcon(':qtutils/fugue/tick')
-        self._deleted_icon = QtGui.QIcon(':qtutils/fugue/drive--minus')
+        self._status_icon = Icon(':qtutils/fugue/information')
+        self._tick_icon = Icon(':qtutils/fugue/tick')
+        self._deleted_icon = Icon(':qtutils/fugue/drive--minus')
         self._alignment = QtCore.Qt.AlignCenter
 
     def dataframe_changed(self):

@@ -33,12 +33,12 @@ from pathlib import Path
 from types import ModuleType
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
-from qtutils.icons import Icon
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
 
 from qtutils import inmain, inmain_decorator
 import qtutils.icons
+from qtutils.icons import Icon
 
 import multiprocessing
 

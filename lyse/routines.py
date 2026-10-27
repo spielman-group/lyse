@@ -34,8 +34,8 @@ from zprocess import ProcessExited
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
-from qtutils.icons import Icon
 from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
+from qtutils.icons import Icon
 
 import lyse.widgets
 import lyse.utils
