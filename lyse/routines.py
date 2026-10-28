@@ -25,11 +25,11 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 # Labscript imports
+import zprocess
+from labscript_utils.programs import open_file
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 from labscript_utils.qtwidgets.leftclick import TreeView
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
-from labscript_utils.text_editor import open_in_editor
-import zprocess
 from zprocess import ProcessExited
 
 # qt imports
@@ -192,10 +192,12 @@ class RoutineBox:
             return
         name_item = self.model.item(index.row(), self.COL_NAME)
         routine_filepath = name_item.data(self.ROLE_FULLPATH)
-        if os.path.splitext(routine_filepath)[1] == lyse.utils.GUI_ROUTINE_SUFFIX:
-            routine_filepath = os.path.join(routine_filepath, 'lyse_routine.py')
-        open_in_editor(routine_filepath, parent=self.app.ui)
-
+        try:
+            open_file(routine_filepath, 'text_editor', self.exp_config)
+        except Exception as e:
+            lyse.utils.gui.error_dialog(self.app, "Unable to launch text editor. Error was: %s. The text editor is set in the [programs] section of %s." %
+                         (str(e), self.exp_config.config_path))
+                         
     def on_remove_selection(self):
         self.remove_selection()
 
