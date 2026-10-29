@@ -66,7 +66,8 @@ class ItemDelegate(QtWidgets.QStyledItemDelegate):
                 # http://qt-project.org/doc/qt-4.8/network-torrent-torrentclient-cpp.html
 
                 progress_bar_option = QtWidgets.QStyleOptionProgressBar()
-                progress_bar_option.state = QtWidgets.QStyle.State_Enabled
+                # Qt6 takes the orientation from the state, not the option's orientation:
+                progress_bar_option.state = QtWidgets.QStyle.State_Enabled | QtWidgets.QStyle.State_Horizontal
                 progress_bar_option.direction = self.app.qapplication.layoutDirection()
                 progress_bar_option.rect = option.rect
                 # option.fontMetrics, as Qt6 has no QApplication.fontMetrics().
