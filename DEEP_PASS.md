@@ -26,7 +26,7 @@ Range: `8c04e38..5d6a338`.
 | 9ff5102 | `lyse.data()` and Save dataframe infer column types | 7d00a47 |
 | 12cbb2c | Python floor, set to the suite's 3.13 | 51bd3c2 |
 | 1beb61c, 9c71b2e | High-DPI icons; qtutils 4.4.1 | 4c7346b |
-| 8af660f | `Run.get_globals` returns Python values, through labscript-utils' `get_group_globals`; in `NEWS.md` | 541a929 |
+| 8af660f | `Run.get_globals` returns Python values, through labscript-utils' `get_shot_globals` since 40370bd; in `NEWS.md` | 541a929 |
 | 455f19b, 197dbad | Workers start together, across both boxes | c88c079 |
 | 8d7a297 | The output box's thread stops before lyse exits | 6a5d81f |
 | 07866b2 | zprocess floor, 3.0.1, for the concurrent starts | 8d9ef86 |
