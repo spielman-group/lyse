@@ -14,6 +14,7 @@
 """
 
 import os
+import re
 import sys
 import logging
 import threading
@@ -49,6 +50,13 @@ from lyse.dataframe_utilities import (concat_with_padding, flatten_dict, get_dat
 import lyse.utils
 import lyse.utils.gui
 import lyse.widgets
+
+
+def natural_sort_key(path):
+    """Sort key for a string that compares runs of digits by their integer value."""
+    parts = re.split(r'(\d+)', path)
+    parts[1::2] = map(int, parts[1::2])
+    return parts
 
 
 class EditColumns:
@@ -748,6 +756,8 @@ class FileBox:
         if not shot_files:
             # User cancelled selection
             return
+        # In the order of their sequences and repeats, whatever order the dialog gives:
+        shot_files = sorted(shot_files, key=natural_sort_key)
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_shots_folder = os.path.dirname(shot_files[0])
