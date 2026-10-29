@@ -1,76 +1,73 @@
 # Shots table speed
 
-Upstream's large-table set, to be ported onto `CodeHealth` for Ian's review:
-4d30a1e, 10d9022, 79f9db9, b33f1c6, 8f4d140, 0bb3acd, ed71cc7, 4954e44,
-4edeed4, 4394eb3. (f347bca, the add-shots dialog's sort, is already ported.)
+Upstream's large-table set, built from upstream's own commits: 4d30a1e, 10d9022,
+79f9db9, b33f1c6, 8f4d140, 0bb3acd, ed71cc7, 4954e44, 4edeed4, 4394eb3.
+(f347bca, the add-shots dialog's sort, is already in, as 3d866a1.)
 
 ## Requirements
 
 1. With tens of thousands of shots, adding, removing, analysing and drawing
-   shots stays responsive: no Qt item per cell, no relayout of the whole table
-   per routine, no removal or duplicate check that grows with the square of the
-   shots.
-2. The table shows what the dataframe holds, read as it is drawn: values,
-   tooltips, the status column's progress bar, the deleted-off-disk icon and the
-   integer-indexing row labels, formatted as now.
-3. The dataframe stays the one store. `lyse.data()`, `where=`, `n_sequences`,
-   `columns=` and `shot_id` behave as now, since the server reads only it.
-4. A routine's reply reaches the dataframe in one main-thread call, for all its
-   rows. The row it leaves equals a reload of the shot: dicts flattened into
-   column levels, the pandas 3 dtype rules (a float makes an integer column
-   float64, anything else incompatible makes it object).
-5. Results for a shot with no row are reported in the output box, as now.
-6. `lyse.paths` is unchanged: the filebox's `analysed_since_multishot`, a failed
-   pass's shots offered to the next.
-7. Columns behave as now: visibility, the edit-columns dialog, new and defunct
-   columns, added levels.
-8. Status behaves as now: the first shot not analysed, mark as not done, the
-   progress percentage, deleted off disk, pause and Abort.
-9. A routine box makes two main-thread calls per routine run, not seven.
-10. The add-shots progress bar shows only once adding has taken 0.5 s.
+   shots stays responsive.
+2. The code is upstream's wherever the fork does not truly differ.
+3. `lyse.data()`, `where=`, `n_sequences`, `columns=` and `shot_id` behave as
+   now: the server reads only the dataframe, which stays the one store.
+4. `lyse.paths` behaves as now: a failed pass's shots are offered to the next.
+5. Results for a shot with no row are reported in the output box, as Ian kept.
 
-## Architecture
+## Build
 
-- `ShotsTableModel(QAbstractTableModel)`, upstream's, replaces the
-  `QStandardItemModel` of the shots table. Its rows come from three
-  `DataFrameModel` lists, `filepaths`, `status_percent` and `deleted_off_disk`;
-  its columns from `column_names`. `data()` reads `dataframe.iat` through a
-  cache of column positions, which `dataframe_changed()` clears whenever the
-  dataframe is replaced or its columns renumbered. `headerData()` gives the
-  column names and `row_label()`. labscript-utils' `HorizontalHeaderViewWithWidgets`
-  serves it as it is: it reads header items only for sections holding a widget,
-  and the shots table's header holds none.
-- `DataFrameModel` keeps the surface the filebox and server use: `dataframe`,
-  `row_number_by_filepath`, `add_files`, `set_status_percent`,
-  `get_first_incomplete`, `mark_as_deleted_off_disk`, `mark_selection_not_done`,
-  `remove_selection`, `set_columns_visible`, `update_column_levels`.
-  `update_row` gives way to upstream's `update_rows(updated_data)`, which
-  takes a whole reply. It keeps the fork's report of a shot with no row and the
-  fork's dtype fallback. A column with one updated row is set with `.at`, more
-  rows or a new column with `.loc`. It emits `dataChanged` for the cells it
-  touched, and `layoutChanged` only when it added columns.
-- `FileBox` calls `update_rows` once per reply, and skips a progress update that
-  changes nothing. `analysed_since_multishot` is untouched.
-- Removal reads the selection's ranges and removes each block of rows with one
-  `removeRows`, last block first. The routine lists and the edit-columns dialog
-  use a plain `QStandardItemModel` with `NoEditTriggers` in place of
-  `UneditableModel`, whose Python `flags()` Qt called per cell.
-- The first row not analysed is kept, and moves back when shots are added,
-  removed or marked not done, or a status below 100 is set.
-- `add_files` checks duplicates with a set. The progress bar shows from a 0.5 s
-  timer, or from the next progress update while the main thread is busy.
-- `RoutineBox.do_analysis` (4394eb3) makes the status changes before and after
-  each routine in one main-thread call each, as upstream's `start_analysis` and
-  `end_routine`. These must carry the fork's `(filepath, paths)` arguments,
-  Abort's `working` and `run_number`, the multishot rule of 6003d7c, and the
-  fork's `stopped` value in place of 9c52248's `done`. `todo()` goes.
+On `CodeHealth`, `git cherry-pick -x` each commit below, in upstream's order.
+Every conflict is resolved to upstream's side, except the adaptations A, B and C,
+each its own commit with its reason. Starred commits are upstream commits the
+fork already ported in its own form into code that the set replaces; they are
+picked again so that the code is upstream's. A dry run of the whole stack, in a
+scratch clone, gave the conflicts below; the suite then failed only at A, B, C,
+the test harness, and the dry run's own slip of taking 3a0888c's import block
+from upstream, where the fork's already imports `setup_application`.
 
-## Size and risks
+| Upstream | How it goes in |
+| --- | --- |
+| ed71cc7 | As is. Its conflicts are neighbouring fork lines (d2bc831's header set-up), kept beside it. |
+| 0bb3acd | As is, but one line: the removal prompt calls the app's `question_dialog`, labscript-utils' shared helper from step 2.2, since `lyse.utils.gui.question_dialog` is gone. |
+| 79f9db9 | As is: upstream's `update_rows` replaces the fork's `update_row`. Adaptation A. |
+| 061ce1f* | Picked again, clean. |
+| b33f1c6 | As is, clean. |
+| 8f4d140 | As is, but adaptation B's line in `do_multishot_analysis`. |
+| 4394eb3 | As is, but adaptation C. |
+| b35294c* | Picked again, clean. |
+| 4d30a1e | As is. Its twelve conflicts are the style pass and the fork's forms of later upstream commits (1beb61c's icons, 3a0888c's header fonts, 2b5d616's row height, and `open_in_editor` where 74e6127 calls `programs.open_file`); upstream's side throughout, then 1beb61c*, 3a0888c* (its `filebox.py` part), 2b5d616* and 74e6127* picked again. |
+| 10d9022 | As is, clean. |
+| 4edeed4 | As is. One conflict, an f-string. |
+| 4954e44 | As is. One conflict, an f-string. |
+| 6003d7c*, 9c52248* | Picked again onto 4394eb3's `start_analysis` and `end_routine`, replacing the fork's ports; then adaptation B. |
 
-- About +400 −350 lines in `filebox.py`, `routines.py` and `widgets.py`, as
-  upstream's.
-- The fork's tests stub `update_row` and the shots model; they move to
-  `update_rows`. `tests/test_widgets.py` paints the delegate over a
-  `QStandardItemModel`; it moves to `ShotsTableModel`.
-- One new test: a result saved by a routine shows in the table, in a new
-  column, read from the dataframe.
+### Adaptations
+
+- **A, results for a removed shot.** Upstream's `update_rows` skips a reply's
+  shot that has no row. The fork reports it, since a result saved with
+  `save_to_h5=False` is then kept nowhere (Ian kept this, as candidate B of
+  step 2.1). Three lines in `update_rows`.
+- **B, `lyse.paths` after a failed multishot pass.** Upstream's 9c52248 sends
+  `done` when the routines after a failed one ran, and the filebox then forgets
+  the pass's shots. The fork sends `error`, with 100 rather than None as its
+  status, so that `do_multishot_analysis` puts the shots back for the next pass,
+  and the pause state is still decided in the routine box.
+- **C, `lyse.paths` itself.** `RoutineBox.do_analysis` and
+  `AnalysisRoutine.do_analysis` take `(filepath, paths)`, a multishot box's
+  shots since its last pass; upstream's take `filepath` only.
+- The tests that stub `update_row` and call `todo()` move to `update_rows` and
+  `start_analysis`/`end_routine`.
+
+### Would upstream's `update_row` remove the differences?
+
+Mostly, yes. Taking upstream's code removes everything the fork's `update_row`
+held except A: its other changes were ports of upstream commits (0b010a9,
+00a26a1, 3723c9b's signals) that `update_rows` already holds, or that are picked
+again (061ce1f, b35294c). A can be offered upstream: report a reply's results
+for a shot that has no row. With A upstream, 79f9db9 goes in with no adaptation.
+B and C stay: they come from `lyse.paths`, a fork design, not from `update_row`.
+
+## Size
+
+About +400 −350 lines in `filebox.py`, `routines.py` and `widgets.py`, nearly
+all upstream's, and A, B and C at about 20 lines together.
