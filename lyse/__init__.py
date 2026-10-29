@@ -1011,7 +1011,7 @@ class Run:
         """
         expansion_dict = {}
         def append_expansion(name, obj):
-            if 'expansion' in name:
+            if name.split('/')[-1] == 'expansion':
                 temp_dict = dict(obj.attrs)
                 for key, val in temp_dict.items():
                     if val:
@@ -1049,7 +1049,7 @@ class Run:
             path = path + f'/{group}'
         units = {}
         def append_units(name, obj):
-            if 'units' in name:
+            if name.split('/')[-1] == 'units':
                 units.update(dict(obj.attrs))
         try:
             self.h5_file[path].visititems(append_units)
