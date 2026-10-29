@@ -37,7 +37,7 @@ dependencies = [
     "qtutils>=4.4.1",
     "scipy",
     "tzlocal",
-    "zprocess>=2.2.2",
+    "zprocess>=3.0.1",
 ]
 dynamic = ["version"]
 
