@@ -27,32 +27,36 @@ none of them changes the table's rows.
 
 ## Build
 
-On `CodeHealth`, `git cherry-pick -x` each commit below, in upstream's order.
-Every conflict is resolved to upstream's side, except the adaptations below,
-each its own commit with its reason. Starred commits are upstream commits the
-fork already ported in its own form into code that the set replaces; they are
-picked again so that the code is upstream's. A dry run of the stack, in a
-scratch clone, gave the conflicts below; the suite then failed only at the
-adaptations and the test harness.
+On `CodeHealth`, `git cherry-pick -x` each commit below, in the order upstream
+merged them into `master`. Every conflict is resolved to upstream's side, except
+the adaptations below, each its own commit with its reason. Starred commits are
+upstream commits the fork already ported in its own form into code that the set
+replaces; they are picked again so that the code is upstream's. A dry run of
+this sequence, in a scratch clone, gave the conflicts below. The suite then
+failed only where the tests stub `update_row` and call `todo()`; D and E were
+needed though no test reached them, since the dry run called `lyse.utils.gui`'s
+dialogs, which the fork no longer has, and opened a GUI routine's folder.
 
 | Upstream | How it goes in |
 | --- | --- |
 | ed71cc7 | As is. Its conflicts are neighbouring fork lines (d2bc831's header set-up), kept beside it. |
-| 0bb3acd | As is, but adaptation D's line in the removal prompt. |
+| 0bb3acd | As is, but adaptation D. |
 | 79f9db9 | As is, then adaptation A. |
 | 061ce1f* | Picked again, clean. |
 | b33f1c6 | As is, clean. |
-| 8f4d140 | As is, but adaptation B's line in `do_multishot_analysis`. |
-| 4394eb3 | As is, but adaptation C. |
+| 8f4d140 | As is, clean. |
+| 4394eb3 | As is, then adaptation C. |
 | b35294c* | Picked again, clean. |
-| 3a0888c*, 2b5d616* | Picked again (3a0888c's `filebox.py` part), clean in the dry run. |
-| 4d30a1e | As is, then fix F. Its twelve conflicts are the style pass and the fork's forms of upstream commits near it (3a0888c's header fonts, 2b5d616's row height, 1beb61c's icons, 74e6127's file opening), each picked again in its place; upstream's side throughout. |
-| 1beb61c* | Picked again. |
+| 4d30a1e | As is, then fix F. Its twelve conflicts are the style pass and the fork's forms of upstream commits merged after it (1beb61c's icons, 3a0888c's header fonts, 2b5d616's row height, 74e6127's file opening), each picked again in its place below. |
 | 10d9022 | As is, clean. |
 | 4edeed4 | As is. One conflict, an f-string. |
 | 4954e44 | As is. One conflict, an f-string. |
-| 74e6127* | Picked again, but adaptations D and E. |
-| 6003d7c*, 9c52248* | Picked again onto 4394eb3's `start_analysis` and `end_routine`, replacing the fork's ports; then adaptation B. |
+| 1beb61c* | Picked again. Its two conflicts are the fork's own `Icon` lines. |
+| 6003d7c* | Picked again onto 4394eb3's `start_analysis` and `end_routine`. Its conflicts are the fork's port of it, which goes. |
+| 9c52248* | Picked again, clean, then adaptation B. |
+| 3a0888c* | Picked again. Its one conflict, in `__main__.py`, keeps the fork's import, which already has `setup_application`. |
+| 2b5d616* | Picked again, clean. It removes the per-row resize that 4d30a1e adds, so it comes after it. |
+| 74e6127* | Picked again, then adaptations D and E. |
 
 ### Adaptations and fixes
 
@@ -85,8 +89,8 @@ adaptations and the test harness.
   between that block's `beginRemoveRows` and `endRemoveRows`. A selection of
   more than a few hundred blocks is removed in one model reset instead, one
   drop between `beginResetModel` and `endResetModel`, so that removal stays
-  linear in the shots; removal clears the selection either way. Its own commit,
-  offered upstream.
+  linear in the shots; removal clears the selection either way. The cutoff is a
+  class constant, 200 blocks. Its own commit, offered upstream.
 - The tests that stub `update_row` and call `todo()` move to `update_rows` and
   `start_analysis`/`end_routine`.
 
@@ -109,9 +113,11 @@ adaptations and the test harness.
 Offscreen, on the real `DataFrameModel` and its `ShotsTableModel`, as the
 behaviours users rely on (rule 13); each replaces a stub test or adds one:
 
-1. Removing rows 1 and 3 of five: at each removal notification the table's
-   filepath column matches the dataframe's, and a later reply updates the right
-   rows.
+1. Removal, with the cutoff set low for the test: one block, two blocks below
+   the cutoff, and more blocks than it. At each removal notification the table's
+   filepath column matches the dataframe's. Afterwards the surviving shots and
+   their statuses are right, a reply updates the right rows, the next shot not
+   analysed is the right one, and column visibility is kept.
 2. A reply that adds a column shows it in the header; a hidden column stays
    hidden when columns are added, and when it is removed and added again.
 3. Save dataframe then Load dataframe gives the same rows and values.
@@ -124,13 +130,23 @@ behaviours users rely on (rule 13); each replaces a stub test or adds one:
 
 ## Benchmark
 
-A script in the repo, `tools/table_benchmark.py`, run offscreen. It loads 4,000
-and 50,000 shots with 200 result columns, then times: adding them, a multishot
-reply updating every row, removing a contiguous half, removing every other row,
-and marking all not done. It reports each step's time and the longest stall of
-the GUI thread, the largest gap between ticks of a 10 ms `QTimer`. Numbers
-compare builds on one machine only; this machine's absolute timings mean
-nothing.
+A script in the repo, `tools/table_benchmark.py`, run offscreen with the shots
+table shown. Each case starts from a dataset the script makes: 4,000 or 50,000
+shots, each with 200 result columns. It times:
+
+- adding the shots;
+- on a preloaded table, single-shot analysis of 1,000 shots in turn, each a
+  one-row reply and a lookup of the next shot not analysed;
+- a multishot reply updating every row;
+- removing a contiguous half, every other row, and a selection one block below
+  F's cutoff;
+- marking all not done.
+
+For each case it reports the time and the longest stall of the GUI thread: the
+largest gap between ticks of a 10 ms `QTimer`, sampled until one tick after the
+case ends, so that a stall at its end counts. Acceptance, on this machine: no
+stall longer than 0.5 s in any case with 50,000 shots, and none longer than
+0.1 s in single-shot analysis. Numbers compare builds on one machine only.
 
 ## Size
 
