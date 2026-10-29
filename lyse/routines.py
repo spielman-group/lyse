@@ -212,7 +212,7 @@ class RoutineBox:
             if routine.filepath in filepaths:
                 routine.remove()
                 self.routines.remove(routine)
-                self.logger.info(f'removing routine for {routine.filepath}')
+                self.logger.info('removing routine for %s', routine.filepath)
         self.update_select_all_checkstate()
 
     def on_model_item_changed(self, item):
@@ -264,7 +264,7 @@ class RoutineBox:
                 # A multishot routine box is given the shot files analysed
                 # since its last pass, rather than a shot file:
                 filepath, paths = None, filepath
-            self.logger.info(f'got a file to process: {filepath}')
+            self.logger.info('got a file to process: %s', filepath)
             self.do_analysis(filepath, paths)
 
     def todo(self):
@@ -280,14 +280,14 @@ class RoutineBox:
         error = stopped = False
         updated_data = {}
         while remaining:
-            self.logger.debug(f'{remaining} routines left to do')
+            self.logger.debug('%s routines left to do', remaining)
             for routine in self.routines:
                 if routine.enabled() and not (routine.done or routine.error):
                     break
             else:
                 routine = None
             if routine is not None:
-                self.logger.info(f'running analysis routine {routine.shortname}')
+                self.logger.info('running analysis routine %s', routine.shortname)
                 routine.set_status('working')
                 success, updated_data = routine.do_analysis(filepath, paths)
                 if success:
@@ -318,7 +318,7 @@ class RoutineBox:
             self.to_filebox.put(['error', None if stopped else 100.0, updated_data])
         else:
             self.to_filebox.put(['done', 100.0, {}])
-        self.logger.debug(f'completed analysis of {filepath}')
+        self.logger.debug('completed analysis of %s', filepath)
 
     def abort(self):
         """Interrupt the routine that is running, if any."""
@@ -391,7 +391,7 @@ def add_routines(additions):
             # The other routines are still added.
             zprocess.raise_exception_in_thread(sys.exc_info())
             continue
-        box.logger.info(f'adding routine for {filepath}')
+        box.logger.info('adding routine for %s', filepath)
         box.routines.append(
             AnalysisRoutine(box.app, filepath, box.model, box.output_box_port, checked, worker))
     for box, added in orders:

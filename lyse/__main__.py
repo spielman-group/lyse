@@ -107,9 +107,9 @@ class Lyse(LabscriptGuiApplication):
         self.logger = setup_logging(APPLICATION_NAME)
         labscript_utils.excepthook.set_logger(self.logger)
         self.logger.info('\n\n===============starting===============\n')
-        self.logger.info(f'Qt Environment: {QT_ENV}')
-        self.logger.info(f'PySide/PyQt version: {PYQT_VERSION_STR}')
-        self.logger.info(f'Qt version: {QT_VERSION_STR}')
+        self.logger.info('Qt Environment: %s', QT_ENV)
+        self.logger.info('PySide/PyQt version: %s', PYQT_VERSION_STR)
+        self.logger.info('Qt version: %s', QT_VERSION_STR)
 
         self.setup_config()
 
@@ -146,11 +146,11 @@ class Lyse(LabscriptGuiApplication):
             self.server = lyse.communication.LyseServer(self)
         except OSError as e:
             # Its port is taken, most likely by another copy of lyse.
-            self.logger.error(str(e))
+            self.logger.error('%s', e)
             splash.hide()
             self.error_dialog(str(e))
             sys.exit(1)
-        self.logger.info(f'Started lyse server on port {self.server.port}')
+        self.logger.info('Started lyse server on port %s', self.server.port)
 
         self.last_save_config_file = None
         self.last_save_data = None

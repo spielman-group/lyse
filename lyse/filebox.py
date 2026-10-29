@@ -917,7 +917,7 @@ class FileBox:
                     if not self.analysis_paused:
                         filepath = self.shots_model.get_first_incomplete()
                         if filepath is not None:
-                            logger.info(f'analysing: {filepath}')
+                            logger.info('analysing: %s', filepath)
                             self.do_singleshot_analysis(filepath)
                             at_least_one_shot_analysed = True
                         # Multishot analysis runs once the queue drains, not once per shot, so a
