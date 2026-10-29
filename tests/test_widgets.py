@@ -33,7 +33,7 @@ class StatusColumnTests(unittest.TestCase):
         view = QtWidgets.QTableView()
         view.setModel(model)
         app = types.SimpleNamespace(qapplication=qapplication)
-        view.setItemDelegate(lyse.widgets.ItemDelegate(app, view, model, status, role))
+        view.setItemDelegate(lyse.widgets.ItemDelegate(app, model, status, role))
         # A failure while painting goes to sys.excepthook, not to the caller.
         seen = []
         original = sys.excepthook

@@ -52,6 +52,7 @@ from labscript_utils.setup_logging import setup_logging
 from labscript_utils.qtwidgets.application import (
     LabscriptGuiApplication,
     exec_qapplication,
+    setup_application,
 )
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import FirstPaintWindow, ThemedWindow
@@ -376,6 +377,8 @@ if __name__ == "__main__":
 
     current_style = qapplication.styleSheet()
     qapplication.setStyleSheet(current_style + extra_styles)
+    # After the style sheet, which gives the widget classes the platform's fonts again:
+    setup_application(qapplication)
 
     app = Lyse(qapplication)
     # Before exec_qapplication deletes the windows, one of which the output box writes to:
