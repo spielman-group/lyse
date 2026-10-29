@@ -374,3 +374,4 @@ if __name__ == "__main__":
     exec_qapplication(qapplication)
 
     app.server.shutdown()
+    app.output_box.shutdown()
