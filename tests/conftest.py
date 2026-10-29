@@ -18,4 +18,4 @@ import os
 # module, and so before anything reads these; setdefault keeps a value you
 # have exported yourself.
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-os.environ.setdefault('LABSCRIPT_NO_ERROR_DIALOG', '1')
+os.environ.setdefault('LABSCRIPT_DISABLE_GRAPHICAL_EXCEPTHOOK', '1')
