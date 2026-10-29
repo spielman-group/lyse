@@ -51,6 +51,7 @@ __all__ = [
     # lyse analysis API objects
     'path',  # needed so old star imports know to pull `path` from the lazy loader here
     'paths',  # likewise
+    'spinning_top',  # likewise
     'routine_storage',
     'data',
     'globals_diff',
@@ -76,7 +77,7 @@ if 'sphinx' in sys.modules:
 
 # lazy import so we catch updated path from analysis subprocess
 def __getattr__(name):
-    if name in ('path', 'paths'):
+    if name in ('path', 'paths', 'spinning_top'):
         from lyse.utils import worker
         return getattr(worker, name)
     # Lazy, so that import lyse stays free of Qt.
