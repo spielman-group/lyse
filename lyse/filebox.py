@@ -443,12 +443,16 @@ class DataFrameModel(QtCore.QObject):
                 column_name = (group, name) + ('',) * (self.nlevels - 2)
                 value = updated_row_data[group, name]
                 try:
-                    self.dataframe.at[row_number, column_name] = value
+                    if column_name in self.dataframe.columns:
+                        self.dataframe.at[row_number, column_name] = value
+                    else:
+                        # pandas deprecates making a column with .at:
+                        self.dataframe.loc[row_number, column_name] = value
                 except (ValueError, TypeError):
                     # did the column not already exist when we tried to set an iterable?
                     if not column_name in self.dataframe.columns:
                         # create it with a non-iterable and then overwrite with the iterable value:
-                        self.dataframe.at[row_number, column_name] = None
+                        self.dataframe.loc[row_number, column_name] = None
                     elif (pandas.api.types.is_integer_dtype(self.dataframe[column_name].dtype)
                           and isinstance(value, (float, np.floating))):
                         # pandas 3 no longer makes an integer column float by itself:
