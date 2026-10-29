@@ -823,14 +823,18 @@ class FileBox:
                 filepaths = sorted(set(filepaths), key=filepaths.index) # Inefficient but readable
                 # We open the HDF5 files here outside the GUI thread so as not to hang the GUI:
                 dataframes = []
-                indices_of_files_not_found = []
+                indices_of_files_skipped = []
                 for i, filepath in enumerate(filepaths):
                     try:
                         dataframe = get_dataframe_from_shot(filepath)
                         dataframes.append(dataframe)
                     except IOError:
                         self.app.output_box.output(f'Warning: Ignoring shot file not found or not readable {filepath}\n', red=True)
-                        indices_of_files_not_found.append(i)
+                        indices_of_files_skipped.append(i)
+                    except Exception as e:
+                        self.app.output_box.output(
+                            f'Warning: Ignoring shot file {filepath}: {type(e).__name__}: {e}\n', red=True)
+                        indices_of_files_skipped.append(i)
                     n_shots_added += 1
                     shots_remaining = self.incoming_queue.qsize()
                     total_shots = n_shots_added + shots_remaining + len(filepaths) - (i + 1)
@@ -841,10 +845,10 @@ class FileBox:
                 else:
                     new_row_data = None
 
-                # Do not add the shots that were not found on disk. Reverse
+                # Do not add the shots that could not be read. Reverse
                 # loop so that removing an item doesn't change the indices of
                 # subsequent removals:
-                for i in reversed(indices_of_files_not_found):
+                for i in reversed(indices_of_files_skipped):
                     del filepaths[i]
                 if filepaths:
                     self.shots_model.add_files(filepaths, new_row_data)
@@ -857,6 +861,8 @@ class FileBox:
             except Exception:
                 # Keep this incoming loop running at all costs, but make the
                 # otherwise uncaught exception visible to the user:
+                self.set_add_shots_progress(None, None, None)
+                n_shots_added = 0
                 zprocess.raise_exception_in_thread(sys.exc_info())
 
     def analysis_loop(self):
