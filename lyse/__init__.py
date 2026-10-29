@@ -34,6 +34,7 @@ from labscript_utils import dedent
 from labscript_utils.dict_diff import dict_diff
 
 from labscript_utils.properties import get_attributes, get_attribute, set_attributes
+from labscript_utils.shot_utils import get_group_globals
 
 import lyse.dataframe_utilities
 import lyse.utils
@@ -968,13 +969,15 @@ class Run:
                 If defined, only return globals from `group`.
 
         Returns:
-            dict: Dictionary of globals and their values.
+            dict: Dictionary of globals and their values, as Python values: a
+            global that is None is None, a bool is a bool and a string is a str,
+            as :func:`labscript_utils.shot_utils.get_shot_globals` gives them.
         """
         if not group:
-            return dict(self.h5_file['globals'].attrs)
+            return get_group_globals(self.h5_file['globals'])
         else:
             try:
-                return dict(self.h5_file['globals'][group].attrs)
+                return get_group_globals(self.h5_file['globals'][group])
             except KeyError:
                 return {}
 

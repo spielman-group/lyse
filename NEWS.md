@@ -1,3 +1,12 @@
+## Unreleased
+
+- `Run.get_globals()` returns each global as a Python value, as
+  `labscript_utils.shot_utils.get_shot_globals()` does: `None` rather than a null
+  HDF5 reference, `bool` rather than `numpy.bool_`, and `str` rather than bytes or a
+  numpy string. A script that compared a global with a numpy type or decoded it
+  itself may need changing. `globals_diff()` compares these values.
+
+
 ## [2.6.0] - 2020-02-17
 
 This release includes six bugfixes, two changes to work with newer versions of a
