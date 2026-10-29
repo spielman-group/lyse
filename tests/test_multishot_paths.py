@@ -66,8 +66,6 @@ class LysePathsTests(unittest.TestCase):
         lyse.figure_manager.figuremanager = types.SimpleNamespace(
             reset=lambda: None, set_first_figure_current=lambda: None, figs={})
         self.addCleanup(setattr, lyse.figure_manager, 'figuremanager', saved)
-        lyse.analysis_subprocess.kill_lock = threading.Lock()
-        self.addCleanup(delattr, lyse.analysis_subprocess, 'kill_lock')
         self.filebox = types.SimpleNamespace(
             analysed_since_multishot=[], multishot_required=True, pause_analysis=lambda: None,
             shots_model=types.SimpleNamespace(update_row=lambda *a, **k: None,

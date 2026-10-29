@@ -356,8 +356,8 @@ class AnalysisWorker:
             inmain(qapplication.exit)
 
     def analyse(self, path, paths):
-        with kill_lock:
-            self.reply(self.do_analysis(path, paths))
+        # A restart may terminate a run; h5_lock holds the kill lock while a file is open.
+        self.reply(self.do_analysis(path, paths))
 
     def reply(self, success):
         if success:
@@ -588,21 +588,20 @@ class GuiWorker(AnalysisWorker):
         # Silenced per thread, as in mainloop().
         h5py._errors.silence_errors()
         for path, paths in iter(self.analyses.get, None):
-            with kill_lock:
-                self.reset_results(path, paths)
-                try:
-                    self.print_header(path)
-                    self.routine.values = self.save_controls()
-                    self.routine.path, self.routine.paths = path, paths
-                    self.routine.run()
-                    success = True
-                except BaseException as e:
-                    # sys.exit() with no status, or status 0, ends the run successfully.
-                    success = isinstance(e, SystemExit) and e.code in (None, 0)
-                    if not success:
-                        traceback.print_exception(type(e), e, e.__traceback__.tb_next)
-                print('')
-                self.reply(success)
+            self.reset_results(path, paths)
+            try:
+                self.print_header(path)
+                self.routine.values = self.save_controls()
+                self.routine.path, self.routine.paths = path, paths
+                self.routine.run()
+                success = True
+            except BaseException as e:
+                # sys.exit() with no status, or status 0, ends the run successfully.
+                success = isinstance(e, SystemExit) and e.code in (None, 0)
+                if not success:
+                    traceback.print_exception(type(e), e, e.__traceback__.tb_next)
+            print('')
+            self.reply(success)
 
     @inmain_decorator()
     def save_controls(self):
