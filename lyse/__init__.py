@@ -646,8 +646,8 @@ class Run:
             ValueError: A `ValueError` is raised if `self.group` is `None` and
                 no value is provided for `group` because the method then doesn't
                 know where to save the result. It is also raised if `save_to_h5`
-                is `False` and `group` is not in `'/results'`, because only
-                results there reach lyse's dataframe.
+                is `False` and `group` is not directly under `'/data'` or
+                `'/results'`, because only results there reach lyse's dataframe.
             PermissionError: A `PermissionError` is raised if an attribute with
                 name `name` already exists but `overwrite` is set to `False`.
         """
@@ -665,10 +665,14 @@ class Run:
                 group = 'results/' + self.group
             elif save_to_h5 and group not in self.h5_file:
                 self.h5_file.create_group(group)
-            if not save_to_h5 and not group.startswith('results'):
+            # lyse's dataframe holds the attributes of the groups directly under
+            # 'data' and 'results', as a reload of the shot reads them.
+            group_path = group.strip('/').split('/')
+            in_dataframe = len(group_path) == 2 and group_path[0] in ('data', 'results')
+            if not save_to_h5 and not in_dataframe:
                 msg = f"""Cannot save result to group '{group}' with
-                    save_to_h5=False; only results in the 'results' group reach
-                    lyse's dataframe."""
+                    save_to_h5=False; only results in a group directly under
+                    'data' or 'results' reach lyse's dataframe."""
                 raise ValueError(dedent(msg))
             if save_to_h5:
                 if name in self.h5_file[group].attrs and not overwrite:
@@ -677,13 +681,10 @@ class Run:
                         overwrite=True to overwrite the existing value."""
                     raise PermissionError(dedent(msg))
                 set_attributes(self.h5_file[group], {name: value})
-
-        if spinning_top:
-            if self.h5_path not in _updated_data:
-                _updated_data[self.h5_path] = {}
-            if group.startswith('results'):
-                toplevel = group.replace('results/', '', 1)
-                _updated_data[self.h5_path][toplevel, name] = value
+            if spinning_top and in_dataframe:
+                if save_to_h5:
+                    value = get_attribute(self.h5_file[group], name)
+                _updated_data.setdefault(self.h5_path, {})[group_path[1], name] = value
 
     @open_file('r+')
     def save_result_array(self, name, data, group=None,

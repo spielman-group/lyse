@@ -1,5 +1,15 @@
 ## Unreleased
 
+- The dataframe holds the attributes of the groups under a shot's `data` group, as
+  it does those under `results`; where both have a group of one name, a results
+  attribute wins. A group or global that hides another name, or a shot column such
+  as `run time`, is reported in lyse's output box.
+
+- A result saved while lyse runs reaches the shot's row as a reload of the shot
+  reads it: a dict as one column per key, a tuple as an array, and only for a group
+  directly under `data` or `results`. `save_result(..., save_to_h5=False)` refuses
+  any other group, since the result would be kept nowhere.
+
 - `Run.get_globals()` returns each global as a Python value, as
   `labscript_utils.shot_utils.get_shot_globals()` does: `None` rather than a null
   HDF5 reference, `bool` rather than `numpy.bool_`, and `str` rather than bytes or a

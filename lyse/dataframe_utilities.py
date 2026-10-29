@@ -13,6 +13,8 @@
 """Lyse dataframe utilities
 """
 
+import warnings
+
 import labscript_utils.h5_lock, h5py
 import pandas
 import tzlocal
@@ -63,13 +65,24 @@ def asdatetime(timestr):
         return timestamp.tz_convert(tz)
     return timestamp.tz_localize(tz, ambiguous=True, nonexistent='shift_forward')
 
-def get_nested_dict_from_shot(filepath):
+def get_nested_dict_from_shot(filepath, warn=warnings.warn):
+    """Return the shot's globals, results and attributes as a nested dict. warn is
+    called with a message for each name that hides another: a group named like a
+    global, or a global or group named like one of the shot's own columns."""
     row = get_shot_globals(filepath)
     with h5py.File(filepath,'r') as h5_file:
-        if 'results' in h5_file:
-            for groupname in h5_file['results']:
-                resultsgroup = h5_file['results'][groupname]
-                row[groupname] = get_attributes(resultsgroup)
+        # The groups under 'data' and 'results' share one namespace; a results
+        # attribute overrides a data attribute of the same name.
+        groups = {}
+        for toplevel in ('data', 'results'):
+            if toplevel in h5_file:
+                for groupname, group in h5_file[toplevel].items():
+                    groups.setdefault(groupname, {}).update(get_attributes(group))
+        for groupname in groups:
+            if groupname in row:
+                warn(f"{filepath}: the group '{groupname}' has the same name as a global; "
+                     "the global is not included in the dataframe")
+        row.update(groups)
         if 'images' in h5_file:
             for orientation in h5_file['images'].keys():
                 if isinstance(h5_file['images'][orientation], h5py.Group):
@@ -82,39 +95,45 @@ def get_nested_dict_from_shot(filepath):
                             for key, val in get_attributes(group[image]).items():
                                 if not isinstance(val, h5py.Reference):
                                     row[orientation][label][image][key] = val
-        row['filepath'] = ensure_str(filepath)
-        row['agnostic_path'] = labscript_utils.shared_drive.path_to_agnostic(filepath)
+        shot = {}
+        shot['filepath'] = ensure_str(filepath)
+        shot['agnostic_path'] = labscript_utils.shared_drive.path_to_agnostic(filepath)
         seq_id = ensure_str(h5_file.attrs['sequence_id'])
-        row['sequence'] = asdatetime(seq_id.split('_')[0])
+        shot['sequence'] = asdatetime(seq_id.split('_')[0])
         try:
-            row['sequence_index'] = h5_file.attrs['sequence_index']
+            shot['sequence_index'] = h5_file.attrs['sequence_index']
         except KeyError:
-            row['sequence_index'] = None
+            shot['sequence_index'] = None
         if 'script' in h5_file:
-            row['labscript'] = ensure_str(h5_file['script'].attrs['name'])
+            shot['labscript'] = ensure_str(h5_file['script'].attrs['name'])
         try:
-            row['run time'] = asdatetime(ensure_str(h5_file.attrs['run time']))
+            shot['run time'] = asdatetime(ensure_str(h5_file.attrs['run time']))
         except KeyError:
-            row['run time'] = float('nan')
+            shot['run time'] = float('nan')
         try:
-            row['run number'] = h5_file.attrs['run number']
+            shot['run number'] = h5_file.attrs['run number']
         except KeyError:
-            row['run number'] = float('nan')
+            shot['run number'] = float('nan')
         try:
-            row['run repeat'] = h5_file.attrs['run repeat']
+            shot['run repeat'] = h5_file.attrs['run repeat']
         except KeyError:
-            row['run repeat'] = 0
+            shot['run repeat'] = 0
         try:
-            row['n_runs'] = h5_file.attrs['n_runs']
+            shot['n_runs'] = h5_file.attrs['n_runs']
         except KeyError:
-            row['n_runs'] = float('nan')
+            shot['n_runs'] = float('nan')
         try:
-            row['shot_id'] = ensure_str(h5_file.attrs['shot_id'])
+            shot['shot_id'] = ensure_str(h5_file.attrs['shot_id'])
         except KeyError:
             # Written by runmanager for a shot it queued, so that a result
             # coming back can be matched to the shot that was asked for. A
             # shot made any other way has none.
-            row['shot_id'] = ''
+            shot['shot_id'] = ''
+        for name in shot:
+            if name in row:
+                warn(f"{filepath}: '{name}' is a reserved column name; the global or group "
+                     "of that name is not included in the dataframe")
+        row.update(shot)
         return row
 
 def flatten_dict(dictionary, keys=tuple()):
@@ -156,8 +175,8 @@ def flat_dict_to_flat_series(dictionary):
         (len(item),) + item if isinstance(item, tuple) else (1,item))
     return pandas.Series(result,index=keys)
 
-def get_dataframe_from_shot(filepath):
-    nested_dict = get_nested_dict_from_shot(filepath)
+def get_dataframe_from_shot(filepath, warn=warnings.warn):
+    nested_dict = get_nested_dict_from_shot(filepath, warn)
     flat_dict =  flatten_dict(nested_dict)
     df = flat_dict_to_hierarchical_dataframe(flat_dict)
     return df
