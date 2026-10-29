@@ -54,8 +54,8 @@ changes for users and scripts.
 
 The large-table set: 4d30a1e, 10d9022, 79f9db9, b33f1c6, 8f4d140, 0bb3acd,
 ed71cc7, 4954e44, 4edeed4, 4394eb3. Requirements and architecture in
-`issues/shots_table_speed.md`; it needs labscript-utils' header view to read
-`headerData`.
+`issues/shots_table_speed.md`, reviewed by the librarian: nothing in the suite
+does its model's job, and it needs nothing from another repo.
 
 ### Not ported
 

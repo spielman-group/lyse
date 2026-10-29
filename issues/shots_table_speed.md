@@ -37,7 +37,9 @@ Upstream's large-table set, to be ported onto `CodeHealth` for Ian's review:
   its columns from `column_names`. `data()` reads `dataframe.iat` through a
   cache of column positions, which `dataframe_changed()` clears whenever the
   dataframe is replaced or its columns renumbered. `headerData()` gives the
-  column names and `row_label()`.
+  column names and `row_label()`. labscript-utils' `HorizontalHeaderViewWithWidgets`
+  serves it as it is: it reads header items only for sections holding a widget,
+  and the shots table's header holds none.
 - `DataFrameModel` keeps the surface the filebox and server use: `dataframe`,
   `row_number_by_filepath`, `add_files`, `set_status_percent`,
   `get_first_incomplete`, `mark_as_deleted_off_disk`, `mark_selection_not_done`,
@@ -62,12 +64,6 @@ Upstream's large-table set, to be ported onto `CodeHealth` for Ian's review:
   `end_routine`. These must carry the fork's `(filepath, paths)` arguments,
   Abort's `working` and `run_number`, the multishot rule of 6003d7c, and the
   fork's `stopped` value in place of 9c52248's `done`. `todo()` goes.
-
-## Needed from elsewhere
-
-- labscript-utils: `HorizontalHeaderViewWithWidgets` reads
-  `model.horizontalHeaderItem`, which only a `QStandardItemModel` has. It must
-  read `headerData`, as upstream's does, before the shots table can change.
 
 ## Size and risks
 
