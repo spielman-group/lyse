@@ -91,6 +91,7 @@ An analysis on multiple shots
 
 .. code-block:: python
 
+	import os
 	import lyse
 	import matplotlib.pyplot as plt
 
@@ -117,11 +118,14 @@ An analysis on multiple shots
 	plt.plot(detunings, m*detunings + c, 'ro', label='linear fit')
 	plt.legend()
 
-	#To save this result to an output hdf5 file, we have to instantiate a
-	#Sequence object, giving it the path of the file to save in and the shots
-	#it describes:
-	seq = lyse.Sequence('path/to/results.h5', df)
-	seq.save_result('detuning_loadrate_slope',c)
+	# To save this result to an hdf5 file, we instantiate a Sequence object.
+	# lyse does not provide a file for the results of multi-shot routines
+	# (lyse.path is None in a multi-shot routine), so we choose one: here, a
+	# file in the folder of the most recent shot. The file is created if it
+	# does not exist.
+	h5_path = os.path.join(os.path.dirname(df['filepath'].iloc[-1]), 'load_rate.h5')
+	seq = lyse.Sequence(h5_path, df)
+	seq.save_result('detuning_loadrate_slope', m)
 
 Moving a classic script to a GUI routine
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
