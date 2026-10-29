@@ -37,6 +37,7 @@ from labscript_utils.text_editor import open_in_editor
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
+from qtutils.icons import Icon
 from qtutils.qt.QtCore import pyqtSignal as Signal
 from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 from qtutils.auto_scroll_to_end import set_auto_scroll_to_end
@@ -80,9 +81,9 @@ class EditColumns:
 
         self.ui.treeView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.action_set_selected_visible = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/ui-check-box'), 'Show selected columns',  self.ui)
+            Icon(':qtutils/fugue/ui-check-box'), 'Show selected columns',  self.ui)
         self.action_set_selected_hidden = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/ui-check-box-uncheck'), 'Hide selected columns',  self.ui)
+            Icon(':qtutils/fugue/ui-check-box-uncheck'), 'Hide selected columns',  self.ui)
 
         self.connect_signals()
         self.populate_model(column_names, self.columns_visible)
@@ -297,7 +298,7 @@ class DataFrameModel(QtCore.QObject):
         self.nlevels = self.dataframe.columns.nlevels
 
         status_item = QtGui.QStandardItem()
-        status_item.setIcon(QtGui.QIcon(':qtutils/fugue/information'))
+        status_item.setIcon(Icon(':qtutils/fugue/information'))
         status_item.setToolTip('status/progress of single-shot analysis')
         self._model.setHorizontalHeaderItem(self.COL_STATUS, status_item)
 
@@ -317,7 +318,7 @@ class DataFrameModel(QtCore.QObject):
         self.deleted_columns_visible = {}
 
         self.action_remove_selected = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/minus'), 'Remove selected shots',  self._view)
+            Icon(':qtutils/fugue/minus'), 'Remove selected shots',  self._view)
 
         self.connect_signals()
 
@@ -357,7 +358,7 @@ class DataFrameModel(QtCore.QObject):
                 if not os.path.exists(filepath):
                     continue
                 status_item.setData(False, self.ROLE_DELETED_OFF_DISK)
-                status_item.setIcon(QtGui.QIcon(':qtutils/fugue/tick'))
+                status_item.setIcon(Icon(':qtutils/fugue/tick'))
                 status_item.setToolTip(None)
 
             status_item.setData(0, self.ROLE_STATUS_PERCENT)
@@ -415,7 +416,7 @@ class DataFrameModel(QtCore.QObject):
         status_item.setData(True, self.ROLE_DELETED_OFF_DISK)
         status_item.setData(100, self.ROLE_STATUS_PERCENT)
         status_item.setToolTip("Shot has been deleted off disk or is unreadable")
-        status_item.setIcon(QtGui.QIcon(':qtutils/fugue/drive--minus'))
+        status_item.setIcon(Icon(':qtutils/fugue/drive--minus'))
         self.app.output_box.output(f'Warning: Shot deleted from disk or no longer readable {filepath}\n', red=True)
 
     @inmain_decorator()
@@ -564,10 +565,10 @@ class DataFrameModel(QtCore.QObject):
         status_item = QtGui.QStandardItem()
         if done:
             status_item.setData(100, self.ROLE_STATUS_PERCENT)
-            status_item.setIcon(QtGui.QIcon(':/qtutils/fugue/tick'))
+            status_item.setIcon(Icon(':/qtutils/fugue/tick'))
         else:
             status_item.setData(0, self.ROLE_STATUS_PERCENT)
-        status_item.setIcon(QtGui.QIcon(':qtutils/fugue/tick'))
+        status_item.setIcon(Icon(':qtutils/fugue/tick'))
         name_item = QtGui.QStandardItem(filepath)
         return [status_item, name_item]
 
@@ -746,11 +747,11 @@ class FileBox:
     def on_analysis_running_toggled(self, pressed):
         if pressed:
             self.analysis_paused = True
-            self.ui.pushButton_analysis_running.setIcon(QtGui.QIcon(':qtutils/fugue/control'))
+            self.ui.pushButton_analysis_running.setIcon(Icon(':qtutils/fugue/control'))
             self.ui.pushButton_analysis_running.setText('Analysis paused')
         else:
             self.analysis_paused = False
-            self.ui.pushButton_analysis_running.setIcon(QtGui.QIcon(':qtutils/fugue/control'))
+            self.ui.pushButton_analysis_running.setIcon(Icon(':qtutils/fugue/control'))
             self.ui.pushButton_analysis_running.setText('Analysis running')
             self.analysis_pending.set()
 

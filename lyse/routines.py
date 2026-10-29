@@ -31,6 +31,7 @@ from zprocess import ProcessExited
 
 # qt imports
 from qtutils.qt import QtCore, QtGui, QtWidgets
+from qtutils.icons import Icon
 from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 
 import lyse.widgets
@@ -74,7 +75,7 @@ class RoutineBox:
         active_item = QtGui.QStandardItem()
         active_item.setToolTip('Whether the analysis routine should run')
         status_item = QtGui.QStandardItem()
-        status_item.setIcon(QtGui.QIcon(':qtutils/fugue/information'))
+        status_item.setIcon(Icon(':qtutils/fugue/information'))
         status_item.setToolTip('The status of this analyis routine\'s execution')
         name_item = QtGui.QStandardItem('name')
         name_item.setToolTip('The name of the python script for the analysis routine')
@@ -95,20 +96,20 @@ class RoutineBox:
 
         self.ui.treeView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.action_set_selected_active = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/ui-check-box'), 'set selected routines active',  self.ui)
+            Icon(':qtutils/fugue/ui-check-box'), 'set selected routines active',  self.ui)
         self.action_set_selected_inactive = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/ui-check-box-uncheck'), 'set selected routines inactive',  self.ui)
+            Icon(':qtutils/fugue/ui-check-box-uncheck'), 'set selected routines inactive',  self.ui)
         self.action_restart_selected = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/arrow-circle'), 'restart worker process for selected routines',  self.ui)
+            Icon(':qtutils/fugue/arrow-circle'), 'restart worker process for selected routines',  self.ui)
         self.action_show_windows_selected = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/applications-blue'), 'show windows for selected routines',  self.ui)
+            Icon(':qtutils/fugue/applications-blue'), 'show windows for selected routines',  self.ui)
         self.action_remove_selected = QtWidgets.QAction(
-            QtGui.QIcon(':qtutils/fugue/minus'), 'Remove selected routines',  self.ui)
+            Icon(':qtutils/fugue/minus'), 'Remove selected routines',  self.ui)
 
         self.action_add_routines = QtWidgets.QAction(
-            QtGui.QIcon(':/qtutils/fugue/script--plus'), 'Add classic scripts (.py)…', self.ui)
+            Icon(':/qtutils/fugue/script--plus'), 'Add classic scripts (.py)…', self.ui)
         self.action_add_routine_folder = QtWidgets.QAction(
-            QtGui.QIcon(':/qtutils/fugue/folder--plus'), 'Add a GUI routine folder (.lyse)…', self.ui)
+            Icon(':/qtutils/fugue/folder--plus'), 'Add a GUI routine folder (.lyse)…', self.ui)
         add_menu = QtWidgets.QMenu(self.ui.toolButton_add_routines)
         add_menu.addActions([self.action_add_routines, self.action_add_routine_folder])
         self.ui.toolButton_add_routines.setMenu(add_menu)
@@ -452,15 +453,15 @@ class AnalysisRoutine:
             return
         status_item = self.model.item(index, self.COL_STATUS)
         if status == 'done':
-            status_item.setIcon(QtGui.QIcon(':/qtutils/fugue/tick'))
+            status_item.setIcon(Icon(':/qtutils/fugue/tick'))
             self.done = True
             self.error = False
         elif status == 'working':
-            status_item.setIcon(QtGui.QIcon(':/qtutils/fugue/hourglass'))
+            status_item.setIcon(Icon(':/qtutils/fugue/hourglass'))
             self.done = False
             self.error = False
         elif status == 'error':
-            status_item.setIcon(QtGui.QIcon(':/qtutils/fugue/exclamation'))
+            status_item.setIcon(Icon(':/qtutils/fugue/exclamation'))
             self.error = True
             self.done = False
         elif status == 'clear':

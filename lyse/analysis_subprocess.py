@@ -31,6 +31,7 @@ from pathlib import Path
 from types import ModuleType
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
+from qtutils.icons import Icon
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
 
@@ -186,7 +187,7 @@ class Plot:
         self.navigation_toolbar = NavigationToolbar(self.canvas, self.ui)
 
         self.lock_action = self.navigation_toolbar.addAction(
-            QtGui.QIcon(':qtutils/fugue/lock-unlock'),
+            Icon(':qtutils/fugue/lock-unlock'),
            'Lock axes', self.on_lock_axes_triggered)
         self.lock_action.setCheckable(True)
         self.lock_action.setToolTip('Lock axes')
@@ -205,10 +206,10 @@ class Plot:
     def on_lock_axes_triggered(self):
         if self.lock_action.isChecked():
             self.lock_axes = True
-            self.lock_action.setIcon(QtGui.QIcon(':qtutils/fugue/lock'))
+            self.lock_action.setIcon(Icon(':qtutils/fugue/lock'))
         else:
             self.lock_axes = False
-            self.lock_action.setIcon(QtGui.QIcon(':qtutils/fugue/lock-unlock'))
+            self.lock_action.setIcon(Icon(':qtutils/fugue/lock-unlock'))
 
     def on_copy_to_clipboard_triggered(self):
         lyse.utils.worker.figure_to_clipboard(self.figure)

@@ -23,6 +23,7 @@ from pathlib import Path
 # Before matplotlib's Qt backend, which follows the Qt binding that is already imported.
 from qtutils import UiLoader
 from qtutils.qt import QtCore, QtGui, QtWidgets
+from qtutils.icons import Icon
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
@@ -45,7 +46,7 @@ loader = UiLoader()
 def fill_plot_form(form, toolbar, on_copy):
     """Fill a plot form with a toolbar and its canvas; return the toolbar's new Copy action."""
     action = toolbar.addAction(
-        QtGui.QIcon(':qtutils/fugue/clipboard--arrow'), 'Copy to clipboard', on_copy)
+        Icon(':qtutils/fugue/clipboard--arrow'), 'Copy to clipboard', on_copy)
     action.setToolTip('Copy to clipboard')
     form.verticalLayout_canvas.addWidget(toolbar.canvas)
     form.verticalLayout_navigation_toolbar.addWidget(toolbar)
