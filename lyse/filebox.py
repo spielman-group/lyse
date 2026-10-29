@@ -600,7 +600,7 @@ class DataFrameModel(QtCore.QObject):
                 for col in header_cols:
                     val = self.dataframe[col].values[row_number]
                     if pandas.notna(val):
-                        header_strings.append(f'{val:04d}')
+                        header_strings.append(f'{int(val):04d}')
                     else:
                         header_strings.append('----')
                 vert_header_text += ' | '.join(header_strings)
