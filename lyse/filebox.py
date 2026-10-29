@@ -78,6 +78,10 @@ class EditColumns:
         self.header.setStretchLastSection(True)
         self.proxy_model.setSortRole(self.ROLE_SORT_DATA)
         self.ui.treeView.setModel(self.proxy_model)
+        # Set once: clearing the model would delete the header items the header view holds.
+        self.model.setHorizontalHeaderLabels(['', 'Name'])
+        self.header.setWidget(self.COL_VISIBLE, self.select_all_checkbox)
+        self.ui.treeView.resizeColumnToContents(self.COL_VISIBLE)
         self.ui.setWindowModality(QtCore.Qt.ApplicationModal)
 
         self.ui.treeView.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -107,10 +111,7 @@ class EditColumns:
             lambda: self.on_set_selected_triggered(QtCore.Qt.Unchecked))
 
     def populate_model(self, column_names, columns_visible):
-        self.model.clear()
-        self.model.setHorizontalHeaderLabels(['', 'Name'])
-        self.header.setWidget(self.COL_VISIBLE, self.select_all_checkbox)
-        self.ui.treeView.resizeColumnToContents(self.COL_VISIBLE)
+        self.model.removeRows(0, self.model.rowCount())
         # Which indices in self.columns_visible the row numbers correspond to
         self.column_indices = {}
 
