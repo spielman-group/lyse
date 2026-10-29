@@ -238,12 +238,14 @@ class Lyse(LabscriptGuiApplication):
         # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         appconfig, save_target = load_appconfig(filename, return_save_path=True)
         save_data = appconfig.get('lyse_state', {})
-        if 'singleshot' in save_data:
-            self.singleshot_routinebox.add_routines(save_data['singleshot'], clear_existing=True)
+        lyse.routines.add_routines([
+            (box, save_data[name], True)
+            for box, name in [(self.singleshot_routinebox, 'singleshot'),
+                              (self.multishot_routinebox, 'multishot')]
+            if name in save_data
+        ])
         if 'lastsingleshotfolder' in save_data:
             self.singleshot_routinebox.last_opened_routine_folder = save_data['lastsingleshotfolder']
-        if 'multishot' in save_data:
-            self.multishot_routinebox.add_routines(save_data['multishot'], clear_existing=True)
         if 'lastmultishotfolder' in save_data:
             self.multishot_routinebox.last_opened_routine_folder = save_data['lastmultishotfolder']
         if 'lastfileboxfolder' in save_data:

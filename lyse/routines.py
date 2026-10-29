@@ -17,16 +17,19 @@ analysis GUI code
 
 import contextlib
 import os
+import sys
 import time
 import types
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 # Labscript imports
 from labscript_utils.qtwidgets.headerview_with_widgets import HorizontalHeaderViewWithWidgets
 from labscript_utils.qtwidgets.leftclick import TreeView
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.text_editor import open_in_editor
+import zprocess
 from zprocess import ProcessExited
 
 # qt imports
@@ -167,7 +170,7 @@ class RoutineBox:
 
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_routine_folder = os.path.dirname(routine_files[0])
-        self.add_routines([(routine_file, QtCore.Qt.Checked) for routine_file in routine_files])
+        add_routines([(self, [(routine_file, QtCore.Qt.Checked) for routine_file in routine_files], False)])
 
     def on_add_routine_folder_clicked(self):
         folder = file_dialogs.choose_folder(
@@ -180,43 +183,7 @@ class RoutineBox:
                 f'Warning: Ignoring {folder}: a GUI routine folder is named <name>{lyse.utils.GUI_ROUTINE_SUFFIX}\n',
                 red=True)
             return
-        self.add_routines([(folder, QtCore.Qt.CheckState.Checked)])
-
-    def add_routines(self, routine_files, clear_existing=False):
-        """Add routines, given as (filepath, checked) tuples. With
-        clear_existing, routines not in routine_files are removed and those in
-        it restarted, so the box holds routine_files in order."""
-        existing = {routine.filepath: routine for routine in self.routines}
-        if clear_existing:
-            filepaths = [filepath for filepath, checked in routine_files]
-            for routine in self.routines[:]:
-                if routine.filepath not in filepaths:
-                    routine.remove()
-                    self.routines.remove(routine)
-
-        added = []
-        for filepath, checked in routine_files:
-            if filepath in added or (not clear_existing and filepath in existing):
-                self.app.output_box.output(f'Warning: Ignoring duplicate analysis routine {filepath}\n', red=True)
-                continue
-            added.append(filepath)
-            if clear_existing and filepath in existing:
-                # A restart, unlike a new routine, ends the old worker before the new one starts.
-                routine = existing[filepath]
-                routine.restart()
-                routine.set_status('clear')
-                active_item = self.model.item(routine.get_row_index(), self.COL_ACTIVE)
-                active_item.setCheckState(QtCore.Qt.CheckState(checked))
-                continue
-            self.logger.info(f'adding routine for {filepath}')
-            routine = AnalysisRoutine(self.app, filepath, self.model, self.output_box_port,
-                                      QtCore.Qt.CheckState(checked))
-            self.routines.append(routine)
-        if clear_existing:
-            self.ui.treeView.reorder_rows(
-                [added.index(routine.filepath) for routine in self.routines]
-            )
-        self.update_select_all_checkstate()
+        add_routines([(self, [(folder, QtCore.Qt.CheckState.Checked)], False)])
 
     def on_treeview_double_left_clicked(self, index):
         if index.column() != self.COL_NAME:
@@ -364,9 +331,83 @@ class RoutineBox:
                 self.select_all_checkbox.setCheckState(QtCore.Qt.PartiallyChecked)
 
 
+def add_routines(additions):
+    """Add routines to routine boxes, starting all their new workers together.
+
+    additions holds (routinebox, routine_files, clear_existing) tuples, with
+    routine_files (filepath, checked) tuples. With clear_existing, the box's
+    routines not in routine_files are removed and those in it restarted, so the
+    box holds routine_files in order."""
+    new = []
+    orders = []
+    for box, routine_files, clear_existing in additions:
+        existing = {routine.filepath: routine for routine in box.routines}
+        if clear_existing:
+            filepaths = [filepath for filepath, checked in routine_files]
+            for routine in box.routines[:]:
+                if routine.filepath not in filepaths:
+                    routine.remove()
+                    box.routines.remove(routine)
+        added = []
+        for filepath, checked in routine_files:
+            if filepath in added or (not clear_existing and filepath in existing):
+                box.app.output_box.output(f'Warning: Ignoring duplicate analysis routine {filepath}\n', red=True)
+                continue
+            added.append(filepath)
+            if clear_existing and filepath in existing:
+                # A restart, unlike a new routine, ends the old worker before the new one starts.
+                routine = existing[filepath]
+                routine.restart()
+                routine.set_status('clear')
+                active_item = box.model.item(routine.get_row_index(), box.COL_ACTIVE)
+                active_item.setCheckState(QtCore.Qt.CheckState(checked))
+            else:
+                new.append((box, filepath, QtCore.Qt.CheckState(checked)))
+        if clear_existing:
+            orders.append((box, added))
+
+    # Each start waits for its worker to connect, so they wait together.
+    starts = []
+    if new:
+        with ThreadPoolExecutor(max_workers=len(new)) as executor:
+            starts = [executor.submit(start_worker, box.app.process_tree, filepath,
+                                      box.output_box_port, checked == QtCore.Qt.Checked)
+                      for box, filepath, checked in new]
+    for (box, filepath, checked), started in zip(new, starts):
+        try:
+            worker = started.result()
+        except Exception:
+            # The other routines are still added.
+            zprocess.raise_exception_in_thread(sys.exc_info())
+            continue
+        box.logger.info(f'adding routine for {filepath}')
+        box.routines.append(
+            AnalysisRoutine(box.app, filepath, box.model, box.output_box_port, checked, worker))
+    for box, added in orders:
+        box.ui.treeView.reorder_rows([added.index(routine.filepath) for routine in box.routines])
+    for box, _, _ in additions:
+        box.update_select_all_checkstate()
+
+
+def start_worker(process_tree, filepath, output_box_port, active):
+    """Start the worker of the routine at filepath, and return the queues to and from
+    it and its process, once it has connected."""
+    logger = logging.getLogger(f'lyse.AnalysisRoutine.{os.path.basename(filepath)}')
+    logger.info('starting worker')
+    to_worker, from_worker, worker = process_tree.subprocess(
+        os.path.join(lyse.utils.LYSE_DIR, 'analysis_subprocess.py'),
+        output_redirection_port=output_box_port,
+        startup_timeout=30,
+    )
+    # Tell the worker what script it will be executing, and whether the routine is active:
+    to_worker.put((filepath, active))
+    logger.info('analysis_subprocess started')
+    return to_worker, from_worker, worker
+
+
 class AnalysisRoutine:
 
-    def __init__(self, app, filepath, model, output_box_port, checked=QtCore.Qt.Checked):
+    def __init__(self, app, filepath, model, output_box_port, checked, worker):
         self.app = app
         self.filepath = filepath
         self.shortname = os.path.basename(self.filepath)
@@ -383,9 +424,8 @@ class AnalysisRoutine:
 
         self.logger = logging.getLogger(f'lyse.AnalysisRoutine.{self.shortname}')
 
-        self.logger.info('starting worker')
-        self.to_worker, self.from_worker, self.worker = self.start_worker(checked == QtCore.Qt.Checked)
-        self.logger.info('analysis_subprocess started')
+        # As start_worker returns them:
+        self.to_worker, self.from_worker, self.worker = worker
 
         active_item =  QtGui.QStandardItem()
         active_item.setCheckable(True)
@@ -397,20 +437,6 @@ class AnalysisRoutine:
         self.model.appendRow([active_item, info_item, name_item])
 
         self.shutdown = None
-
-    def start_worker(self, active):
-        worker_path = os.path.join(lyse.utils.LYSE_DIR, 'analysis_subprocess.py')
-
-        child_handles = self.app.process_tree.subprocess(
-            worker_path,
-            output_redirection_port=self.output_box_port,
-            startup_timeout=30,
-        )
-
-        to_worker, from_worker, worker = child_handles
-        # Tell the worker what script it will be executing, and whether the routine is active:
-        to_worker.put((self.filepath, active))
-        return to_worker, from_worker, worker
 
     @inmain_decorator()
     def send_analysis(self, filepath, paths):
@@ -559,5 +585,6 @@ class AnalysisRoutine:
         self.shutdown = None
 
         if shutdown.restart:
-            self.to_worker, self.from_worker, self.worker = self.start_worker(self.enabled())
+            self.to_worker, self.from_worker, self.worker = start_worker(
+                self.app.process_tree, self.filepath, self.output_box_port, self.enabled())
             self.app.output_box.output(f'{self.shortname} worker restarted\n')
