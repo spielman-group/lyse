@@ -54,8 +54,14 @@ def rangeindex_to_multiindex(df, inplace):
     return df
 
 def asdatetime(timestr):
+    """Return timestr in the local time zone. A time without a UTC offset is local:
+    one in the hour repeated as daylight saving time ends is taken as daylight saving
+    time, and one in the hour skipped as it begins moves to the end of that hour."""
     tz = tzlocal.get_localzone()
-    return pandas.Timestamp(timestr, tz=tz)
+    timestamp = pandas.Timestamp(timestr)
+    if timestamp.tz is not None:
+        return timestamp.tz_convert(tz)
+    return timestamp.tz_localize(tz, ambiguous=True, nonexistent='shift_forward')
 
 def get_nested_dict_from_shot(filepath):
     row = get_shot_globals(filepath)
