@@ -82,6 +82,7 @@ class LysePathsTests(unittest.TestCase):
         worker.routine_module = types.ModuleType('routine')
         worker.routine_module.__file__ = path
         worker.routine_module_clean_dict = worker.routine_module.__dict__.copy()
+        worker.routine_source = None
         worker.plots = {}
         worker.modulewatcher = types.SimpleNamespace(lock=threading.Lock())
         worker.to_parent = queue.Queue()
