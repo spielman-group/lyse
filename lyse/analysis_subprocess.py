@@ -49,7 +49,7 @@ from labscript_utils.qtwidgets.application import exec_qapplication
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils import dedent
-from labscript_utils.file_utils import warn_legacy_file
+from labscript_profile.legacy_files import warn_legacy_file
 from labscript_utils.labconfig import (
     LabConfig,
     backup_legacy_config,
