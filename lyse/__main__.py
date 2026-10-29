@@ -30,6 +30,7 @@ splash = labscript_utils.splash.Splash(
 splash.show()
 
 splash.update_text('importing standard library modules')
+import sys
 import time
 import queue
 
@@ -139,7 +140,14 @@ class Lyse(LabscriptGuiApplication):
 
         # Only now, since the server puts submitted shots in the filebox's queue. Until
         # then the port is unbound, and a client's request times out rather than failing.
-        self.server = lyse.communication.LyseServer(self)
+        try:
+            self.server = lyse.communication.LyseServer(self)
+        except OSError as e:
+            # Its port is taken, most likely by another copy of lyse.
+            self.logger.error(str(e))
+            splash.hide()
+            self.error_dialog(str(e))
+            sys.exit(1)
         self.logger.info(f'Started lyse server on port {self.server.port}')
 
         self.last_save_config_file = None
