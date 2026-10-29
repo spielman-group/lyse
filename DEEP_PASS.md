@@ -4,7 +4,7 @@
 
 Upstream's `master..upstream/master`, to `4c6ae2b`: 109 commits, 68 of them not
 merges. Ported by hand onto `CodeHealth`, each commit naming its upstream source.
-Range: `8c04e38..77280c7`.
+Range: `8c04e38..5d6a338`.
 
 | Upstream | What | Commit |
 | --- | --- | --- |
@@ -32,29 +32,41 @@ Range: `8c04e38..77280c7`.
 | 07866b2 | zprocess floor, 3.0.1, for the concurrent starts | 8d9ef86 |
 | 23ff55a | A second lyse exits with a message when its port is in use, from labscript-utils' `ZMQServer` | 2325a16 |
 | b8346c9 | The PyQt exit crash workaround is labscript-utils' `exec_qapplication`; the output box stops before it | 72c5efb |
+| 6066df4, 001df5f, baffcac, b8a55d0, ff31a48, 0b010a9 | The shot's `data` groups in the dataframe; collisions reported; live results match a reload | 42dd396 |
+| de837f5 | `lyse.data(columns=)` | 103d721 |
+| 40370bd | `get_globals` and `globals_diff` take no `group` | 09e3762 |
+| 28675dc | A classic routine compiled only when its source changes | 47cdb4f |
+| d2bc831 | The column editor keeps its header items | 436c68e |
+| 03e3c95, f347bca | Dialog shots queued in path order, digits by value | 3d866a1 |
+| 9c573dd, 0c73f77 | The release workflow | 0955a92 |
+| 25cd0bf | The screenshot | 6f5d316 |
+| 6003d7c | A multishot routine's error does not pause analysis | 086ee76 |
+| b956ecf | The excepthook installed explicitly | 18acd28 |
+| 3a0888c, 2b5d616 | The suite's font and style; 20 px rows | bf26f5e |
+| f424513 | Abort | 2b790e6 |
+| 9c52248 | The routine box says whether a failed pass stopped, in the fork's form | e0e13dd |
+| 4e593d4 | Logging arguments passed lazily | 5d6a338 |
 
-### Waiting on another repo
+`NEWS.md`'s Unreleased section, and the docs where they describe them, say what
+changes for users and scripts.
 
-| Upstream | What | Waits on |
-| --- | --- | --- |
-| 3a0888c, 2b5d616 | The suite's font and style | labscript-utils' `setup_application` |
+### Designed, for Ian's review
 
-### For Ian later
+The large-table set: 4d30a1e, 10d9022, 79f9db9, b33f1c6, 8f4d140, 0bb3acd,
+ed71cc7, 4954e44, 4edeed4, 4394eb3. Requirements and architecture in
+`issues/shots_table_speed.md`; it needs labscript-utils' header view to read
+`headerData`.
 
-- Large-table speed: 4d30a1e, 10d9022, 79f9db9, b33f1c6, 8f4d140, 0bb3acd,
-  ed71cc7, 4954e44, 4edeed4, 4394eb3, f347bca.
-- Attributes of the shot's `data` group in the dataframe: 6066df4, 001df5f,
-  baffcac, b8a55d0, ff31a48, 0b010a9.
-- `lyse.data(columns=)`: de837f5.
-- No multishot pass while analysis is paused: 9cff0f3.
+### Not ported
 
-### Not adopted
+- 9cff0f3, no multishot pass while analysis is paused: in upstream's form the
+  Run multishot button does nothing while paused, until analysis resumes.
+- 0625332, a command-line shot path only if it is an HDF5 file: lyse no longer
+  takes a shot path from the command line, by Ian's decision in step 2.4.
+- 9c52248 in upstream's form: its `done` after a failure would drop the failed
+  pass's shots from the next `lyse.paths`; ported in the fork's form instead.
 
-- Conflicting with the fork: 40370bd drops `get_globals`' `group` argument, which
-  users' scripts pass; 6003d7c and 9c52248 stop pausing on a multishot error,
-  which breaks `lyse.paths`' retry; f424513's Abort interrupts the main thread,
-  where GUI routines do not run; 0625332 serves the command-line shot path the
-  fork removed.
-- Not needed: b956ecf, 74e6127, 4e593d4, 28675dc, d2bc831, 03e3c95, 9c573dd,
-  0c73f77, 25cd0bf.
-- Already in `CodeHealth`: 50335c6, 2bf63cb, 3723c9b, feb7540, f9e6e72.
+### Already in `CodeHealth`
+
+50335c6, 2bf63cb, 3723c9b, feb7540, f9e6e72, and 74e6127 through labscript-utils'
+`open_in_editor`, which now calls `programs.open_file`.
