@@ -34,12 +34,12 @@ class LyseClient(ZMQClient):
         """
         self.request('add_shot', filepath)
 
-    def get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None):
+    def get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None, columns=None):
         """Return lyse's dataframe, or the rows of it that the arguments choose.
 
         Parameters
         ----------
-        n_sequences, filter_kwargs, where : optional
+        n_sequences, filter_kwargs, where, columns : optional
             As for :func:`lyse.data`.
 
         Returns
@@ -50,7 +50,10 @@ class LyseClient(ZMQClient):
         ------
         ValueError
             If ``where`` names a column the dataframe does not have.
+        KeyError
+            If a name in ``columns`` names no column of the dataframe.
         """
         return self.request(
-            'get_dataframe', n_sequences=n_sequences, filter_kwargs=filter_kwargs, where=where
+            'get_dataframe', n_sequences=n_sequences, filter_kwargs=filter_kwargs, where=where,
+            columns=columns,
         )

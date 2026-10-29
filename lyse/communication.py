@@ -27,6 +27,10 @@ from qtutils import inmain_decorator
 from lyse.dataframe_utilities import rangeindex_to_multiindex
 from lyse.utils import LYSE_PORT
 
+# The columns that rangeindex_to_multiindex() indexes the rows by, with and without
+# integer indexing:
+INDEX_COLUMNS = ['sequence', 'run time', 'sequence_index', 'run number', 'run repeat']
+
 class LyseServer(ZMQServer):
 
     server = 'lyse'
@@ -39,27 +43,44 @@ class LyseServer(ZMQServer):
     def handle_add_shot(self, filepath):
         self.app.filebox.incoming_queue.put(shared_drive.path_to_local(filepath))
 
-    def handle_get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None):
-        if n_sequences is None:
-            # where chooses the rows before the dataframe is copied, so
-            # that a request for a few rows copies only those:
-            df = self._copy_dataframe(where)
-        else:
-            # where applies after n_sequences, which, run in the main
-            # thread where the copy is made, would cost more than it saves:
-            df = self._extract_n_sequences_from_df(self._copy_dataframe(), n_sequences)
-            df = self._select_rows(df, where)
-        df = rangeindex_to_multiindex(df, inplace=True)
+    def handle_get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None, columns=None):
+        df = rangeindex_to_multiindex(self._copy_dataframe(n_sequences, where, columns), inplace=True)
         if filter_kwargs is not None:
             df = df.filter(**filter_kwargs)
         # Typed here, not as each row changes, since only a client needs it:
         return df.infer_objects()
 
     @inmain_decorator(wait_for_return=True)
-    def _copy_dataframe(self, where=None):
-        """Copy the rows of lyse's dataframe that where chooses, or all of
-        them, in the main thread, where the dataframe is changed."""
-        return self._select_rows(self.app.filebox.shots_model.dataframe, where).copy(deep=True)
+    def _copy_dataframe(self, n_sequences=None, where=None, columns=None):
+        """Copy the rows and columns of lyse's dataframe that the arguments
+        choose, as lyse.data takes them, in the main thread, where the dataframe
+        is changed. Only those are copied, so a request for a few copies few."""
+        df = self.app.filebox.shots_model.dataframe
+        # Named before the rows are chosen, so that a bad name raises whatever rows remain:
+        labels = None if columns is None or df.empty else self._column_labels(df, columns)
+        if n_sequences is not None:
+            df = self._extract_n_sequences_from_df(df, n_sequences)
+        df = self._select_rows(df, where)
+        if labels is not None:
+            df = df[labels].sort_index(axis=1)
+        return df.copy(deep=True)
+
+    def _column_labels(self, df, columns):
+        """The labels of df's columns that columns names, with the columns that
+        index the rows. A name is a string or a tuple of strings, and names a
+        column, else every column whose label begins with it."""
+        labels = []
+        for name in columns:
+            key = (name,) if isinstance(name, str) else tuple(name)
+            padded = key + ('',) * (df.columns.nlevels - len(key))
+            matches = [padded] if padded in df.columns else [
+                label for label in df.columns if label[:len(key)] == key]
+            if not matches:
+                raise KeyError(f'No column {name!r} in the lyse dataframe.')
+            labels.extend(matches)
+        padding = ('',) * (df.columns.nlevels - 1)
+        labels += [(name,) + padding for name in INDEX_COLUMNS if (name,) + padding in df.columns]
+        return list(dict.fromkeys(labels))
 
     def _select_rows(self, df, where):
         """The rows of df matching where, a dict of {column: value}."""
@@ -76,27 +97,12 @@ class LyseServer(ZMQServer):
         return df
 
     def _extract_n_sequences_from_df(self, df, n_sequences):
-        # An empty dataframe has no columns to read below, which would raise a KeyError.
-        if df.empty:
-            return df
-
+        if df.empty or n_sequences == 0:
+            return df.iloc[:0]
         # One engage in runmanager makes one sequence, identified by its 'sequence' time,
         # 'sequence_index' (apart calls within one second) and 'labscript'. Sorting the
         # identities orders sequences oldest first, whatever the order of the rows.
-        identities = [
-            (sequence, -1 if pandas.isna(index) else int(index), str(labscript))
-            for sequence, index, labscript
-            in zip(df['sequence'], df['sequence_index'], df['labscript'])
-        ]
-
-        unique_identities = sorted(set(identities))
-
-        # Keep the last n_sequences sequences. A slice longer than unique_identities
-        # returns all of it, but [-0:] does too, so 0 needs its own branch.
-        if n_sequences == 0:
-            identities_included = set()
-        else:
-            identities_included = set(unique_identities[-n_sequences:])
-        df_subset = df[[id in identities_included for id in identities]]
-
-        return df_subset
+        identities = [df['sequence'], df['sequence_index'].fillna(-1).astype(int),
+                      df['labscript'].astype(str)]
+        numbers = df.groupby(identities, sort=True, dropna=False).ngroup()
+        return df[(numbers > numbers.max() - n_sequences).to_numpy()]

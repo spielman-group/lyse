@@ -105,7 +105,8 @@ these cases."""
 _client = functools.cache(LyseClient)
 
 
-def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None, where=None):
+def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, n_sequences=None, filter_kwargs=None, where=None,
+         columns=None):
     """Get data from the lyse dataframe or a file.
 
     This function allows for either extracting information from a run's hdf5
@@ -114,13 +115,14 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
     `filepath` is not provided then the dataframe in lyse, or a portion of it,
     will be returned.
 
-    Often only part of the lyse dataframe is needed, so the `n_sequences` and
-    `filter_kwargs` arguments provide ways to restrict what parts of the lyse
-    dataframe are returned. The dataframe can be quite large, so only requesting
-    a small part of it can speed up the execution of `lyse.data()` noticeably.
-    Setting `n_sequences` makes this function return only the rows of the lyse
-    dataframe that correspond to the `n_sequences` most recent sequences, where
-    one sequence corresponds to one call to engage in runmanager. Additionally,
+    Often only part of the lyse dataframe is needed, so the `n_sequences`,
+    `where`, `columns` and `filter_kwargs` arguments provide ways to restrict
+    what parts of the lyse dataframe are returned. The dataframe can be quite
+    large, so only requesting a small part of it can speed up the execution of
+    `lyse.data()` noticeably. Setting `n_sequences` makes this function return
+    only the rows of the lyse dataframe that correspond to the `n_sequences` most
+    recent sequences, where one sequence corresponds to one call to engage in
+    runmanager. Setting `columns` makes it return only the named columns. Additionally,
     the `Dataframe.filter()` method can be called on the dataframe before it is
     transmitted, and the arguments specified in `filter_kwargs` are passed to
     that method.
@@ -164,13 +166,23 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
             returned only if every column matches. Applied after `n_sequences`
             and before `filter_kwargs`. A column not in the dataframe raises a
             `ValueError`. Defaults to `None`.
+        columns (list, optional): The names of the columns to return. A name is
+            a string, or a tuple of strings for a nested column, such as
+            `('fit', 'amplitude')`, without the empty strings that pad column
+            names to one length. A name that is not a column's selects every
+            column whose name begins with it, so that `'fit'` selects all the
+            results of a routine named `fit`. The columns that index the rows
+            are always included, and the columns are returned sorted by name.
+            If set to `None`, then all columns are returned. Defaults to `None`.
 
     Raises:
         ValueError: If `n_sequences` isn't `None` or a nonnegative integer, then
             a `ValueError` is raised. Note that no `ValueError` is raised if
             `n_sequences` is greater than the number of sequences available. In
             that case as all available sequences are returned, i.e. the entire
-            lyse dataframe is returned.
+            lyse dataframe is returned. A `ValueError` is also raised if
+            `columns` isn't `None` or a list or tuple of names.
+        KeyError: If a name in `columns` names no column of the dataframe.
 
     Returns:
         :obj:`pandas:pandas.DataFrame` or :obj:`pandas:pandas.Series`: If
@@ -196,8 +208,18 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
                 msg = f"""where must be None or a dictionary but was
                     {where}."""
                 raise ValueError(dedent(msg))
+        if columns is not None:
+            if not isinstance(columns, (list, tuple)) or not all(
+                isinstance(name, str)
+                or (isinstance(name, tuple) and all(isinstance(part, str) for part in name))
+                for name in columns
+            ):
+                msg = f"""columns must be None or a list of strings and tuples of
+                    strings but was {columns}."""
+                raise ValueError(dedent(msg))
 
-        return _client(host, port, timeout).get_dataframe(n_sequences, filter_kwargs, where)
+        return _client(host, port, timeout).get_dataframe(
+            n_sequences, filter_kwargs, where, None if columns is None else list(columns))
 
 def globals_diff(run1, run2, group=None):
     """Take a diff of the globals between two runs.

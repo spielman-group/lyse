@@ -136,6 +136,13 @@ class WhereTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no_such_column'):
             self.data(where={'no_such_column': 1})
 
+    def test_columns_are_chosen_by_name_or_by_the_start_of_one(self):
+        names = {column[0] for column in self.data(columns=['filepath', 'fit']).columns}
+        self.assertLessEqual({'filepath', 'fit'}, names)
+        self.assertNotIn('labscript', names)
+        with self.assertRaisesRegex(KeyError, 'no_such_column'):
+            self.data(columns=['no_such_column'])
+
     def test_rows_are_chosen_after_n_sequences(self):
         """A row of an older sequence is not among the most recent one's."""
         older_shot = self.older[0]['filepath'].iloc[0]
