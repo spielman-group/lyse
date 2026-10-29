@@ -428,7 +428,10 @@ class AnalysisWorker:
                         dont_inherit=True,
                     )
                     exec(code, self.routine_module.__dict__)
-        except Exception:
+        except BaseException as e:
+            # sys.exit() with no status, or status 0, ends the routine successfully.
+            if isinstance(e, SystemExit) and e.code in (None, 0):
+                return True
             traceback_lines = traceback.format_exception(*sys.exc_info())
             print('\n'.join(traceback_lines[1:]), file=sys.stderr)
             return False
@@ -593,9 +596,11 @@ class GuiWorker(AnalysisWorker):
                     self.routine.path, self.routine.paths = path, paths
                     self.routine.run()
                     success = True
-                except Exception:
-                    traceback.print_exc()
-                    success = False
+                except BaseException as e:
+                    # sys.exit() with no status, or status 0, ends the run successfully.
+                    success = isinstance(e, SystemExit) and e.code in (None, 0)
+                    if not success:
+                        traceback.print_exc()
                 print('')
                 self.reply(success)
 

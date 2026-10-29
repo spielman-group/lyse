@@ -226,6 +226,16 @@ class GuiWorkerTests(unittest.TestCase):
         # The analysis thread and the command listener have survived.
         self.assertEqual(worker.analyse(self.good)[0], 'done')
 
+    def test_sys_exit_in_a_routine_replies_by_its_status(self):
+        classic = self.folder / 'classic.py'
+        classic.write_text('import sys, lyse\nsys.exit(int(lyse.path.endswith("bad.h5")))\n')
+        gui = self.start('import sys, lyse\nclass A(lyse.Routine):\n    def run(self):\n'
+                         '        sys.exit(int(self.path.endswith("bad.h5")))\n')
+        self.addCleanup((classic_worker := Worker(classic)).kill)
+        for worker in [gui, classic_worker]:
+            self.assertEqual(worker.analyse(self.good)[0], 'done')
+            self.assertEqual(worker.analyse(self.bad)[0], 'error')
+
     def test_quit_waits_for_run_and_calls_close_once(self):
         running = ProcessTree.instance().event('running')
         worker = self.start(ROUTINE)
