@@ -4,7 +4,7 @@
 
 Upstream's `master..upstream/master`, to `4c6ae2b`: 109 commits, 68 of them not
 merges. Ported by hand onto `CodeHealth`, each commit naming its upstream source.
-Range: `8c04e38..6a5d81f`.
+Range: `8c04e38..8d9ef86`.
 
 | Upstream | What | Commit |
 | --- | --- | --- |
@@ -29,6 +29,7 @@ Range: `8c04e38..6a5d81f`.
 | 8af660f | `Run.get_globals` returns Python values, through labscript-utils' `get_group_globals`; in `NEWS.md` | 541a929 |
 | 455f19b, 197dbad | Workers start together, across both boxes | c88c079 |
 | 8d7a297 | The output box's thread stops before lyse exits | 6a5d81f |
+| 07866b2 | zprocess floor, 3.0.1, for the concurrent starts | 8d9ef86 |
 
 ### Waiting on another repo
 
