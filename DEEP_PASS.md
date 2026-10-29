@@ -77,7 +77,7 @@ does its model's job, and it needs nothing from another repo.
 
 Every compatibility path the campaign or the upstream stage added, against
 `master` (upstream). None serves only the fork's other tiers or nothing, so none
-was removed. Two keep users' files working, for Ian:
+was removed. Two keep users' files working:
 
 - The INI-to-TOML conversion: a plot window's geometry saved by upstream lyse in
   `lyse-<name>.ini` (`analysis_subprocess.py`, `PlotWindow._migrate_legacy_geometry`
@@ -89,5 +89,6 @@ was removed. Two keep users' files working, for Ian:
   step 1 entries 1, 3 and 8, at 9f40c73).
 - A shot file without a `shot_id` attribute loads with `shot_id` `''`
   (`dataframe_utilities.get_nested_dict_from_shot`): every shot made before the
-  fork's runmanager wrote it, or not queued by runmanager.
+  fork's runmanager wrote it, or not queued by runmanager. Kept on Ian's word
+  (C-LY1).
 
