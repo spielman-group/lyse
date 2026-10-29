@@ -435,9 +435,6 @@ class DataFrameModel(QtCore.QObject):
                     f'Warning: results not recorded for {filepath}, which has no row\n', red=True)
             return
 
-        # To speed things up block signals to the model during update
-        self._model.blockSignals(True)
-
         filepath_colname = ('filepath',) + ('',) * (self.nlevels - 1)
         assert filepath == self.dataframe.at[row_number, filepath_colname]
 
@@ -447,20 +444,27 @@ class DataFrameModel(QtCore.QObject):
                 value = updated_row_data[group, name]
                 try:
                     self.dataframe.at[row_number, column_name] = value
-                except ValueError:
+                except (ValueError, TypeError):
                     # did the column not already exist when we tried to set an iterable?
                     if not column_name in self.dataframe.columns:
                         # create it with a non-iterable and then overwrite with the iterable value:
                         self.dataframe.at[row_number, column_name] = None
+                    elif (pandas.api.types.is_integer_dtype(self.dataframe[column_name].dtype)
+                          and isinstance(value, (float, np.floating))):
+                        # pandas 3 no longer makes an integer column float by itself:
+                        self.dataframe[column_name] = self.dataframe[column_name].astype('float64')
                     else:
                         # Incompatible datatype - convert the datatype of the column to
                         # 'object'
                         self.dataframe[column_name] = self.dataframe[column_name].astype('object')
-                    # Now that the column exists and has dtype object, we can set the value:
+                    # Now that the column exists and has a compatible dtype, we can set the value:
                     self.dataframe.at[row_number, column_name] = value
 
             dataframe_already_updated = True
 
+        # To speed things up block signals to the model during update. Only after the
+        # dataframe is updated, so that an error there cannot leave them blocked.
+        self._model.blockSignals(True)
         new_column_names = set(self.dataframe.columns) - set(self.column_names.values())
         new_columns_start = self._model.columnCount()
         self._model.insertColumns(new_columns_start, len(new_column_names))
