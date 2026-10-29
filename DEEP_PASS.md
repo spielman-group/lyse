@@ -72,3 +72,22 @@ does its model's job, and it needs nothing from another repo.
 
 50335c6, 2bf63cb, 3723c9b, feb7540, f9e6e72, and 74e6127 through labscript-utils'
 `open_in_editor`, which now calls `programs.open_file`.
+
+## Compatibility audit
+
+Every compatibility path the campaign or the upstream stage added, against
+`master` (upstream). None serves only the fork's other tiers or nothing, so none
+was removed. Two keep users' files working, for Ian:
+
+- The INI-to-TOML conversion: a plot window's geometry saved by upstream lyse in
+  `lyse-<name>.ini` (`analysis_subprocess.py`, `PlotWindow._migrate_legacy_geometry`
+  and the `QByteArray` branch of `_decode_geometry`), and lyse's own configuration
+  file, which `load_configuration` reads through labscript-utils'
+  `load_appconfig`. Each converts the file to TOML at once and warns. Ian kept the
+  conversion: "INI files are converted to TOML at once, with no user
+  intervention, and many labs still have them" (labscript-utils `DEEP_PASS.md`,
+  step 1 entries 1, 3 and 8, at 9f40c73).
+- A shot file without a `shot_id` attribute loads with `shot_id` `''`
+  (`dataframe_utilities.get_nested_dict_from_shot`): every shot made before the
+  fork's runmanager wrote it, or not queued by runmanager.
+
