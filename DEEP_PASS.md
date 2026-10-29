@@ -62,7 +62,9 @@ ed71cc7, 4954e44, 4edeed4, 4394eb3. Requirements and architecture in
 - 9cff0f3, no multishot pass while analysis is paused: in upstream's form the
   Run multishot button does nothing while paused, until analysis resumes.
 - 0625332, a command-line shot path only if it is an HDF5 file: lyse no longer
-  takes a shot path from the command line, by Ian's decision in step 2.4.
+  takes a shot path from the command line, by Ian's decision in step 2.4. That
+  removal is offered upstream on `UpstreamBugFixes` (a643d08, from
+  `upstream/master`).
 - 9c52248 in upstream's form: its `done` after a failure would drop the failed
   pass's shots from the next `lyse.paths`; ported in the fork's form instead.
 
