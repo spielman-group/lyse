@@ -236,6 +236,21 @@ class GuiWorkerTests(unittest.TestCase):
             self.assertEqual(worker.analyse(self.good)[0], 'done')
             self.assertEqual(worker.analyse(self.bad)[0], 'error')
 
+    def test_abort_interrupts_a_classic_routine_and_its_worker_goes_on(self):
+        running = ProcessTree.instance().event('running')
+        classic = self.folder / 'classic.py'
+        classic.write_text(
+            'import time, lyse\nfrom labscript_utils.ls_zprocess import ProcessTree\n'
+            'if lyse.path.endswith("slow.h5"):\n'
+            '    ProcessTree.instance().event("running", role="post").post("slow")\n'
+            '    time.sleep(600)\n')
+        self.addCleanup((worker := Worker(classic)).kill)
+        worker.send('analyse', (str(self.slow), None))
+        running.wait('slow', timeout=60)
+        worker.send('abort')
+        self.assertEqual(worker.reply(), ['error', {}])
+        self.assertEqual(worker.analyse(self.good)[0], 'done')
+
     def test_quit_waits_for_run_and_calls_close_once(self):
         running = ProcessTree.instance().event('running')
         worker = self.start(ROUTINE)

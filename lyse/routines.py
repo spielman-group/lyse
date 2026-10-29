@@ -39,6 +39,7 @@ from qtutils import inmain_decorator, UiLoader, DisconnectContextManager
 
 import lyse.widgets
 import lyse.utils
+import lyse.utils.worker
 
 class RoutineBox:
 
@@ -316,6 +317,11 @@ class RoutineBox:
             self.to_filebox.put(['done', 100.0, {}])
         self.logger.debug(f'completed analysis of {filepath}')
 
+    def abort(self):
+        """Interrupt the routine that is running, if any."""
+        for routine in self.routines:
+            routine.abort()
+
     def on_rows_reordered(self, order):
         self.routines = [self.routines[order.index(i)] for i in range(len(order))]
 
@@ -409,6 +415,10 @@ def start_worker(process_tree, filepath, output_box_port, active):
 
 class AnalysisRoutine:
 
+    # Seconds for which end_child() waits for the worker to exit before killing it. The
+    # worker exits within _ABORT_TIMEOUT + _KILL_LOCK_TIMEOUT unless it is unresponsive.
+    QUIT_TIMEOUT = lyse.utils.worker._ABORT_TIMEOUT + lyse.utils.worker._KILL_LOCK_TIMEOUT + 5
+
     def __init__(self, app, filepath, model, output_box_port, checked, worker):
         self.app = app
         self.filepath = filepath
@@ -423,6 +433,9 @@ class AnalysisRoutine:
 
         self.error = False
         self.done = False
+        self.working = False
+        # Counts the runs, so that abort() can tell whether the one it interrupted goes on:
+        self.run_number = 0
 
         self.logger = logging.getLogger(f'lyse.AnalysisRoutine.{self.shortname}')
 
@@ -475,6 +488,9 @@ class AnalysisRoutine:
 
     @inmain_decorator()
     def set_status(self, status):
+        self.working = status == 'working'
+        if self.working:
+            self.run_number += 1
         index = self.get_row_index()
         if index is None:
             # Yelp, we've just been deleted. Nothing to do here.
@@ -516,6 +532,23 @@ class AnalysisRoutine:
             if fullpath == self.filepath:
                 return row
 
+    def abort(self):
+        """Interrupt the routine if it is running. If it has not stopped after
+        _ABORT_TIMEOUT seconds, restart its worker."""
+        if not self.working or self.shutdown is not None:
+            return
+        # A worker that does not take the abort is replaced below.
+        with contextlib.suppress(ProcessExited, zprocess.TimeoutError):
+            self.to_worker.put(['abort', None], timeout=1)
+        run_number = self.run_number
+        QtCore.QTimer.singleShot(lyse.utils.worker._ABORT_TIMEOUT * 1000,
+                                 lambda: self.check_aborted(run_number))
+
+    def check_aborted(self, run_number):
+        if self.working and self.run_number == run_number and self.shutdown is None:
+            self.app.output_box.output(f'{self.shortname} did not stop, restarting its worker\n', red=True)
+            self.restart()
+
     def restart(self):
         self.end_child(restart=True)
 
@@ -536,6 +569,10 @@ class AnalysisRoutine:
         self.model.removeRow(index)
 
     def end_child(self, restart=False):
+        """Tell the worker to quit, and kill it if it has not exited after QUIT_TIMEOUT
+        seconds. The worker interrupts a running routine, and if that has not stopped
+        after _ABORT_TIMEOUT seconds, exits once it has no HDF5 file open, or after
+        _KILL_LOCK_TIMEOUT seconds."""
         if self.shutdown is not None:
             # One shutdown at a time: a removal or quit cancels a pending restart,
             # and a restart changes nothing.
@@ -545,37 +582,27 @@ class AnalysisRoutine:
         # A worker that has exited never takes the quit.
         with contextlib.suppress(ProcessExited):
             self.to_worker.put(['quit', None])
-        timeout_time = time.time() + 2
+        timeout_time = time.time() + self.QUIT_TIMEOUT
         self.shutdown = types.SimpleNamespace(
             worker=self.worker, from_worker=self.from_worker, restart=restart)
         QtCore.QTimer.singleShot(50, lambda: self.check_child_exited(timeout_time))
 
-    def check_child_exited(self, timeout_time, kill=False):
+    def check_child_exited(self, timeout_time):
         shutdown = self.shutdown
         worker = shutdown.worker
         worker.poll()
         # timeout_time is None once kill() has been sent: only wait for the process to go.
         if worker.returncode is None and (timeout_time is None or time.time() < timeout_time):
-            QtCore.QTimer.singleShot(50,
-                lambda: self.check_child_exited(timeout_time, kill))
+            QtCore.QTimer.singleShot(50, lambda: self.check_child_exited(timeout_time))
             return
         elif worker.returncode is None:
-            if not kill:
-                worker.terminate()
-                self.app.output_box.output(f'{self.shortname} worker not responding.\n')
-                timeout_time = time.time() + 2
-            else:
-                worker.kill()
-                self.app.output_box.output(f'{self.shortname} worker killed\n', red=True)
-                timeout_time = None
-            QtCore.QTimer.singleShot(50,
-                lambda: self.check_child_exited(timeout_time, kill=True))
+            worker.kill()
+            self.app.output_box.output(f'{self.shortname} worker killed\n', red=True)
+            QtCore.QTimer.singleShot(50, lambda: self.check_child_exited(None))
             return
         elif timeout_time is None:
             # killed: the message was printed when kill() was sent.
             pass
-        elif kill:
-            self.app.output_box.output(f'{self.shortname} worker terminated\n', red=True)
         elif worker.returncode != 0:
             self.app.output_box.output(
                 f'{self.shortname} worker exited with return code {worker.returncode}\n', red=True)

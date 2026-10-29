@@ -738,6 +738,7 @@ class FileBox:
         self.ui.toolButton_remove_shots.clicked.connect(self.shots_model.on_remove_selection)
         self.ui.tableView.doubleLeftClicked.connect(self.shots_model.on_double_click)
         self.ui.pushButton_analysis_running.toggled.connect(self.on_analysis_running_toggled)
+        self.ui.pushButton_abort.clicked.connect(self.on_abort_clicked)
         self.ui.pushButton_mark_as_not_done.clicked.connect(self.on_mark_selection_not_done_clicked)
         self.ui.pushButton_run_multishot_analysis.clicked.connect(self.on_run_multishot_analysis_clicked)
 
@@ -766,6 +767,11 @@ class FileBox:
         self.last_opened_shots_folder = os.path.dirname(shot_files[0])
         for filepath in shot_files:
             self.incoming_queue.put(filepath)
+
+    def on_abort_clicked(self):
+        self.pause_analysis()
+        self.app.singleshot_routinebox.abort()
+        self.app.multishot_routinebox.abort()
 
     def on_analysis_running_toggled(self, pressed):
         if pressed:

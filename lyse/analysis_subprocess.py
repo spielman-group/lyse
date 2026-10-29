@@ -19,6 +19,7 @@ import labscript_utils.h5_lock, h5py
 import labscript_utils.splash
 
 from labscript_utils.ls_zprocess import ProcessTree
+from zprocess import interrupt_main_thread
 
 import sys
 import os
@@ -313,6 +314,9 @@ class Plot:
 
 
 class AnalysisWorker:
+    # Whether a classic routine is running, in the main thread:
+    routine_running = False
+
     def __init__(self, filepath, to_parent, from_parent):
         self.to_parent = to_parent
         self.from_parent = from_parent
@@ -339,6 +343,10 @@ class AnalysisWorker:
         # changed on disk:
         self.modulewatcher = ModuleWatcher()
 
+        # Set while no analysis is running:
+        self.idle = threading.Event()
+        self.idle.set()
+
         # Start the thread that listens for instructions from the
         # parent process:
         self.mainloop_thread = threading.Thread(target=self.mainloop)
@@ -358,17 +366,49 @@ class AnalysisWorker:
                 self.analyse(*data)
             elif task == 'show':
                 self.show_windows()
+            elif task == 'abort':
+                self.abort_analysis()
             else:
                 self.to_parent.put(['error', f'invalid task {task}'])
 
     def quit(self):
+        self.abort_analysis()
+        self.wait_to_quit(self.idle.wait)
         with kill_lock:
             self.close_plots()
             inmain(qapplication.exit)
 
+    def wait_to_quit(self, stopped):
+        """Wait for the routine to stop: stopped(timeout) says whether it has. If it has
+        not, exit once no HDF5 file is open, or after _KILL_LOCK_TIMEOUT seconds."""
+        if not stopped(lyse.utils.worker._ABORT_TIMEOUT):
+            print(f'The routine did not stop after {lyse.utils.worker._ABORT_TIMEOUT} seconds. '
+                  'The worker will exit when it has no HDF5 file open, or after '
+                  f'{lyse.utils.worker._KILL_LOCK_TIMEOUT} seconds.', file=sys.stderr)
+            kill_lock.exit_when_released(timeout=lyse.utils.worker._KILL_LOCK_TIMEOUT)
+
     def analyse(self, path, paths):
-        # A restart may terminate a run; h5_lock holds the kill lock while a file is open.
-        self.reply(self.do_analysis(path, paths))
+        self.idle.clear()
+        # In a thread, so that an abort can be received while the routine runs:
+        threading.Thread(target=self.analysis_task, args=(path, paths), daemon=True).start()
+
+    def analysis_task(self, path, paths):
+        try:
+            self.reply(self.do_analysis(path, paths))
+        finally:
+            self.idle.set()
+
+    def abort_analysis(self):
+        """Raise KeyboardInterrupt in the routine if one is running, and end a wait in
+        delay_results_return()."""
+        if not self.idle.is_set():
+            interrupt_main_thread()
+        lyse.utils.worker.delay_event.set()
+
+    def on_interrupt(self):
+        # Only while the routine runs, so that it is raised there and not in the code after it:
+        if self.routine_running:
+            raise KeyboardInterrupt
 
     def reply(self, success):
         if success:
@@ -441,7 +481,14 @@ class AnalysisWorker:
                         dont_inherit=True,
                     )
                     self.routine_source = source
-                exec(self.routine_code, self.routine_module.__dict__)
+                try:
+                    self.routine_running = True
+                    exec(self.routine_code, self.routine_module.__dict__)
+                finally:
+                    self.routine_running = False
+        except KeyboardInterrupt:
+            print('Interrupted', file=sys.stderr)
+            return False
         except BaseException as e:
             # sys.exit() with no status, or status 0, ends the routine successfully.
             if isinstance(e, SystemExit) and e.code in (None, 0):
@@ -585,6 +632,11 @@ class GuiWorker(AnalysisWorker):
             self.analysis_thread.start()
         threading.Thread(target=self.mainloop, daemon=True).start()
 
+    def abort_analysis(self):
+        # run() is on the analysis thread, which no signal reaches; lyse restarts the
+        # worker of a run that goes on.
+        lyse.utils.worker.delay_event.set()
+
     def windows(self):
         # A routine that failed to load has no window.
         return [] if self.routine is None else [self.window]
@@ -634,8 +686,12 @@ class GuiWorker(AnalysisWorker):
                 self.save_controls()
             except Exception:
                 traceback.print_exc()
-            self.analysis_thread.join()
-        # Held only after the join, so that lyse can still terminate a run that hangs.
+
+            def stopped(timeout):
+                self.analysis_thread.join(timeout)
+                return not self.analysis_thread.is_alive()
+
+            self.wait_to_quit(stopped)
         with kill_lock:
             try:
                 if self.routine is not None:
@@ -737,6 +793,7 @@ if __name__ == '__main__':
         worker = GuiWorker(filepath, to_parent, from_parent, active)
     else:
         worker = AnalysisWorker(filepath, to_parent, from_parent)
-    # Its timer lets Python run zprocess's SIGTERM handler, which ends a worker whose
-    # lyse has gone without asking it to quit.
-    exec_qapplication(qapplication)
+    # Its timer lets Python run signal handlers: zprocess's SIGTERM handler, which ends a
+    # worker whose lyse has gone, and on_interrupt, through which Ctrl-C and Abort
+    # interrupt a running classic routine.
+    exec_qapplication(qapplication, on_interrupt=worker.on_interrupt)

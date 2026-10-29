@@ -1,5 +1,12 @@
 ## Unreleased
 
+- An **Abort** button pauses analysis and interrupts the running routine with
+  KeyboardInterrupt, as Ctrl-C would, so its files close and its worker carries on.
+  A routine still running five seconds later has its worker restarted. Restarting,
+  removing or quitting a worker likewise interrupts its routine, then waits for its
+  HDF5 files to close, up to a minute, before the worker exits; lyse kills a worker
+  only after 70 seconds, where before it terminated one after 2.
+
 - A multishot routine that raises an exception no longer pauses analysis, and the
   multishot routines after it still run. The next pass offers its shots again in
   `lyse.paths`. A singleshot routine's exception pauses analysis as before.
