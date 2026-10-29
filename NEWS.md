@@ -16,6 +16,11 @@
   numpy string. A script that compared a global with a numpy type or decoded it
   itself may need changing. `globals_diff()` compares these values.
 
+- `Run.get_globals()`, `globals_diff()` and `Run.globals_diff()` no longer take a
+  `group` argument, since a globals group holds only its globals' unevaluated
+  expressions; `Run.get_globals_raw(group)` returns those. A script that passed
+  `group` must drop it.
+
 
 ## [2.6.0] - 2020-02-17
 

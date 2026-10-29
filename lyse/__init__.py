@@ -34,7 +34,7 @@ from labscript_utils import dedent
 from labscript_utils.dict_diff import dict_diff
 
 from labscript_utils.properties import get_attributes, get_attribute, set_attributes
-from labscript_utils.shot_utils import get_group_globals
+from labscript_utils.shot_utils import get_shot_globals
 
 import lyse.dataframe_utilities
 import lyse.utils
@@ -221,7 +221,7 @@ def data(filepath=None, host='localhost', port=lyse.utils.LYSE_PORT, timeout=5, 
         return _client(host, port, timeout).get_dataframe(
             n_sequences, filter_kwargs, where, None if columns is None else list(columns))
 
-def globals_diff(run1, run2, group=None):
+def globals_diff(run1, run2):
     """Take a diff of the globals between two runs.
 
     Uses the :obj:`labscript-utils:dict_diff` function.
@@ -229,15 +229,13 @@ def globals_diff(run1, run2, group=None):
     Args:
         run1 (:obj:`Run`): First Run to compare.
         run2 (:obj:`Run`): Second Run to compare.
-        group (str, optional): When `None` (default), compare all groups.
-            Otherwise, only compare globals in `group`.
 
     Returns:
         dict: Dictionary of differences between globals in the form `key:[val1,val2]`
         pairs. Keys unique to either dictionary are returned as `key:[val1,'-']` or
         `key:['-',val2]`.
     """
-    return dict_diff(run1.get_globals(group), run2.get_globals(group))
+    return dict_diff(run1.get_globals(), run2.get_globals())
 
 def open_file(mode):
     """Decorator for lyse functions to allow using previously opened file with context manager.
@@ -984,25 +982,17 @@ class Run:
         return get_attributes(self.h5_file['images'][orientation])
 
     @open_file('r')
-    def get_globals(self, group=None):
+    def get_globals(self):
         """Get globals from the shot.
-
-        Args:
-            group (str, optional): If `None`, return all global variables.
-                If defined, only return globals from `group`.
 
         Returns:
             dict: Dictionary of globals and their values, as Python values: a
             global that is None is None, a bool is a bool and a string is a str,
             as :func:`labscript_utils.shot_utils.get_shot_globals` gives them.
+            A globals group's own values are its unevaluated expressions, which
+            :meth:`get_globals_raw` returns.
         """
-        if not group:
-            return get_group_globals(self.h5_file['globals'])
-        else:
-            try:
-                return get_group_globals(self.h5_file['globals'][group])
-            except KeyError:
-                return {}
+        return get_shot_globals(self.h5_file)
 
     @open_file('r')
     def get_globals_raw(self, group=None):
@@ -1095,20 +1085,18 @@ class Run:
         except KeyError:
             return []
 
-    def globals_diff(self, other_run, group=None):
+    def globals_diff(self, other_run):
         """Take a diff between this run and another run.
 
-        This calls :obj:`globals_diff(self, other_run, group) <globals_diff>`.
+        This calls :obj:`globals_diff(self, other_run) <globals_diff>`.
 
         Args:
             other_run (:obj:`Run`): Run to compare to.
-            group (str, optional): When `None` (default), compare all globals.
-                Otherwise only compare globals in `group`.
 
         Returns:
             dict: Dictionary of different globals.
         """
-        return globals_diff(self, other_run, group)
+        return globals_diff(self, other_run)
 
 
 class Sequence(Run):
