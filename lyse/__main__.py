@@ -315,7 +315,7 @@ class Lyse(LabscriptGuiApplication):
         if not file:
             # User cancelled
             return
-        df = pandas.read_pickle(file).sort_values("run time").reset_index()
+        df = pandas.read_pickle(file).sort_values("run time").reset_index(drop=True)
 
         # Check for changes in the shot files since the dataframe was exported
         def changed_since(filepath, time):
