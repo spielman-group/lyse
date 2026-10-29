@@ -4,7 +4,7 @@
 
 Upstream's `master..upstream/master`, to `4c6ae2b`: 109 commits, 68 of them not
 merges. Ported by hand onto `CodeHealth`, each commit naming its upstream source.
-Range: `8c04e38..8d9ef86`.
+Range: `8c04e38..77280c7`.
 
 | Upstream | What | Commit |
 | --- | --- | --- |
@@ -30,13 +30,13 @@ Range: `8c04e38..8d9ef86`.
 | 455f19b, 197dbad | Workers start together, across both boxes | c88c079 |
 | 8d7a297 | The output box's thread stops before lyse exits | 6a5d81f |
 | 07866b2 | zprocess floor, 3.0.1, for the concurrent starts | 8d9ef86 |
+| 23ff55a | A second lyse exits with a message when its port is in use, from labscript-utils' `ZMQServer` | 2325a16 |
+| b8346c9 | The PyQt exit crash workaround is labscript-utils' `exec_qapplication`; the output box stops before it | 72c5efb |
 
 ### Waiting on another repo
 
 | Upstream | What | Waits on |
 | --- | --- | --- |
-| 23ff55a, 07866b2 | A clear exit if lyse's port is in use | zprocess's `port_in_use`, in labscript-utils' `ZMQServer` |
-| b8346c9 | The PyQt exit crash workaround | labscript-utils' `exec_qapplication` |
 | 3a0888c, 2b5d616 | The suite's font and style | labscript-utils' `setup_application` |
 
 ### For Ian later
