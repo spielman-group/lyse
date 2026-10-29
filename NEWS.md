@@ -1,5 +1,9 @@
 ## Unreleased
 
+- A multishot routine that raises an exception no longer pauses analysis, and the
+  multishot routines after it still run. The next pass offers its shots again in
+  `lyse.paths`. A singleshot routine's exception pauses analysis as before.
+
 - The dataframe holds the attributes of the groups under a shot's `data` group, as
   it does those under `results`; where both have a group of one name, a results
   attribute wins. A group or global that hides another name, or a shot column such

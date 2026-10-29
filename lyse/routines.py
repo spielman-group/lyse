@@ -267,8 +267,8 @@ class RoutineBox:
             self.do_analysis(filepath, paths)
 
     def todo(self):
-        """How many analysis routines are not done?"""
-        return len([r for r in self.routines if r.enabled() and not r.done])
+        """How many analysis routines have not run?"""
+        return len([r for r in self.routines if r.enabled() and not (r.done or r.error)])
 
     def do_analysis(self, filepath, paths):
         """Run all analysis routines once, on filepath (singleshot box) or, for a
@@ -281,7 +281,7 @@ class RoutineBox:
         while remaining:
             self.logger.debug(f'{remaining} routines left to do')
             for routine in self.routines:
-                if routine.enabled() and not routine.done:
+                if routine.enabled() and not (routine.done or routine.error):
                     break
             else:
                 routine = None
@@ -296,7 +296,9 @@ class RoutineBox:
                     routine.set_status('error')
                     self.logger.debug('failure')
                     error = True
-                    break
+                    # The multishot routines after a failed one still run, unless analysis is paused:
+                    if not self.multishot or self.app.filebox.analysis_paused:
+                        break
             # Race conditions here, but it's only for reporting percent done
             # so it doesn't matter if it's wrong briefly:
             remaining = self.todo()

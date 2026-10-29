@@ -67,7 +67,7 @@ class LysePathsTests(unittest.TestCase):
             reset=lambda: None, set_first_figure_current=lambda: None, figs={})
         self.addCleanup(setattr, lyse.figure_manager, 'figuremanager', saved)
         self.filebox = types.SimpleNamespace(
-            analysed_since_multishot=[], multishot_required=True, pause_analysis=lambda: None,
+            analysed_since_multishot=[], multishot_required=True, analysis_paused=False,
             shots_model=types.SimpleNamespace(update_row=lambda *a, **k: None,
                                               set_status_percent=lambda *a: None),
         )
@@ -86,14 +86,16 @@ class LysePathsTests(unittest.TestCase):
         worker.plots = {}
         worker.modulewatcher = types.SimpleNamespace(lock=threading.Lock())
         worker.to_parent = queue.Queue()
-        routine = types.SimpleNamespace(shortname='routine.py', done=False, enabled=lambda: True,
+        routine = types.SimpleNamespace(shortname='routine.py', done=False, error=False, enabled=lambda: True,
                                         from_worker=worker.to_parent, shutdown=None,
                                         worker=types.SimpleNamespace(poll=lambda: None))
         routine.to_worker = runs_on_put(worker.mainloop, worker, 'from_parent')
-        routine.set_status = lambda status: setattr(routine, 'done', status == 'done')
+        routine.set_status = lambda status: routine.__dict__.update(
+            done=status == 'done', error=status == 'error')
         routine.do_analysis = types.MethodType(lyse.routines.AnalysisRoutine.do_analysis, routine)
         routine.send_analysis = types.MethodType(lyse.routines.AnalysisRoutine.send_analysis, routine)
         box = types.SimpleNamespace(multishot=multishot, routines=[routine],
+                                    app=types.SimpleNamespace(filebox=self.filebox),
                                     to_filebox=queue.Queue(), logger=logging.getLogger('test'))
         box.todo = types.MethodType(lyse.routines.RoutineBox.todo, box)
         box.do_analysis = types.MethodType(lyse.routines.RoutineBox.do_analysis, box)
@@ -142,9 +144,9 @@ class Stop(BaseException):
 
 class FailedPassTests(unittest.TestCase):
 
-    def test_a_failed_pass_is_not_run_again_until_analysis_resumes(self):
+    def test_a_failed_pass_neither_pauses_nor_runs_again_at_once(self):
         """A pass started during singleshot analysis, by the Run multishot
-        button, fails and pauses analysis; it runs again on resuming."""
+        button, fails; it runs again with the next shots, not now."""
         waits = []
 
         def wait():
@@ -160,7 +162,6 @@ class FailedPassTests(unittest.TestCase):
             analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None),
             analysis_paused=False, multishot_required=False, analysed_since_multishot=[],
             to_multishot=queue.Queue(), from_multishot=queue.Queue(),
-            pause_analysis=lambda: setattr(box, 'analysis_paused', True),
             shots_model=types.SimpleNamespace(
                 get_first_incomplete=lambda: incomplete.pop() if incomplete else None),
             do_singleshot_analysis=singleshot,
@@ -171,6 +172,7 @@ class FailedPassTests(unittest.TestCase):
         with self.assertRaises(Stop):
             lyse.filebox.FileBox.analysis_loop(box)
         self.assertEqual(box.to_multishot.qsize(), 1)
+        self.assertFalse(box.analysis_paused)
 
 
 if __name__ == '__main__':

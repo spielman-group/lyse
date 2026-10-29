@@ -923,8 +923,8 @@ class FileBox:
                     else:
                         logger.info('analysis is paused')
                         break
-                # A pass that has just failed paused analysis, and runs again
-                # when analysis resumes rather than now:
+                # A pass that has just failed runs again with the next shots, or
+                # on resuming if analysis is paused, rather than now:
                 if self.multishot_required and not multishot_failed:
                     logger.info('doing multishot analysis')
                     self.do_multishot_analysis()
@@ -989,5 +989,7 @@ class FileBox:
             elif signal == 'error':
                 # Put them back, so that the next pass has them too:
                 self.analysed_since_multishot[:0] = paths
-                self.pause_analysis()
+                # Paused, the routines after the failed one did not run, and all run on resuming:
+                if not self.analysis_paused:
+                    self.multishot_required = False
                 return False
