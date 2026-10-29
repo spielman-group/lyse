@@ -377,9 +377,10 @@ if __name__ == "__main__":
     qapplication.setStyleSheet(current_style + extra_styles)
 
     app = Lyse(qapplication)
+    # Before exec_qapplication deletes the windows, one of which the output box writes to:
+    qapplication.aboutToQuit.connect(app.output_box.shutdown)
 
     splash.hide()
     exec_qapplication(qapplication)
 
     app.server.shutdown()
-    app.output_box.shutdown()
