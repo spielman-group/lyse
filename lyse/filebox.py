@@ -827,7 +827,13 @@ class FileBox:
                 for i, filepath in enumerate(filepaths):
                     try:
                         dataframe = get_dataframe_from_shot(filepath)
-                        dataframes.append(dataframe)
+                        # BLACS submits a shot once it has run it, so it is added then:
+                        if dataframe['run time'].isna().values.all():
+                            self.app.output_box.output(
+                                f'Warning: Ignoring shot file that has not been run {filepath}\n', red=True)
+                            indices_of_files_skipped.append(i)
+                        else:
+                            dataframes.append(dataframe)
                     except IOError:
                         self.app.output_box.output(f'Warning: Ignoring shot file not found or not readable {filepath}\n', red=True)
                         indices_of_files_skipped.append(i)
