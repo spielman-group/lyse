@@ -4,7 +4,7 @@
 
 Upstream's `master..upstream/master`, to `4c6ae2b`: 109 commits, 68 of them not
 merges. Ported by hand onto `CodeHealth`, each commit naming its upstream source.
-Range: `8c04e38..4c7346b`.
+Range: `8c04e38..6a5d81f`.
 
 | Upstream | What | Commit |
 | --- | --- | --- |
@@ -26,15 +26,16 @@ Range: `8c04e38..4c7346b`.
 | 9ff5102 | `lyse.data()` and Save dataframe infer column types | 7d00a47 |
 | 12cbb2c | Python floor, set to the suite's 3.13 | 51bd3c2 |
 | 1beb61c, 9c71b2e | High-DPI icons; qtutils 4.4.1 | 4c7346b |
+| 8af660f | `Run.get_globals` returns Python values, through labscript-utils' `get_group_globals`; in `NEWS.md` | 541a929 |
+| 455f19b, 197dbad | Workers start together, across both boxes | c88c079 |
+| 8d7a297 | The output box's thread stops before lyse exits | 6a5d81f |
 
 ### Waiting on another repo
 
 | Upstream | What | Waits on |
 | --- | --- | --- |
-| 8af660f | `Run.get_globals` returns Python values, documented in the docs and `NEWS.md` | labscript-utils: `get_shot_globals`'s conversion on an open group |
-| 455f19b, 197dbad | Workers start concurrently | zprocess 3's broker guard |
-| 23ff55a, 07866b2 | A clear exit if lyse's port is in use | zprocess 3's `port_in_use`, in labscript-utils' `ZMQServer` |
-| 8d7a297, b8346c9 | The exit crash workaround | labscript-utils' `exec_qapplication` |
+| 23ff55a, 07866b2 | A clear exit if lyse's port is in use | zprocess's `port_in_use`, in labscript-utils' `ZMQServer` |
+| b8346c9 | The PyQt exit crash workaround | labscript-utils' `exec_qapplication` |
 | 3a0888c, 2b5d616 | The suite's font and style | labscript-utils' `setup_application` |
 
 ### For Ian later
