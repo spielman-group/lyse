@@ -432,8 +432,8 @@ class AnalysisWorker:
             # sys.exit() with no status, or status 0, ends the routine successfully.
             if isinstance(e, SystemExit) and e.code in (None, 0):
                 return True
-            traceback_lines = traceback.format_exception(*sys.exc_info())
-            print('\n'.join(traceback_lines[1:]), file=sys.stderr)
+            # From the routine's first frame, without this one.
+            traceback.print_exception(type(e), e, e.__traceback__.tb_next)
             return False
         else:
             return True
@@ -506,13 +506,13 @@ class AnalysisWorker:
             if not issubclass(cls, Plot):
                 raise RuntimeError('The specified class must be a subclass of lyse.utils.worker.Plot')
             self.plots[fig] = cls(fig, identifier, self.filepath)
-        except Exception:
-            traceback_lines = traceback.format_exception(*sys.exc_info())
+        except Exception as e:
+            traceback_lines = traceback.format_exception(type(e), e, e.__traceback__.tb_next)
             message = f"""Failed to instantiate custom class for plot "{identifier}".
                 Perhaps lyse.register_plot_class() was called incorrectly from your
                 script? The exception raised was:
                 """
-            message = dedent(message) + '\n'.join(traceback_lines[1:])
+            message = dedent(message) + ''.join(traceback_lines)
             message += '\n'
             message += 'Due to this error, we used the default lyse.Plot class instead.\n'
             sys.stderr.write(message)
@@ -600,7 +600,7 @@ class GuiWorker(AnalysisWorker):
                     # sys.exit() with no status, or status 0, ends the run successfully.
                     success = isinstance(e, SystemExit) and e.code in (None, 0)
                     if not success:
-                        traceback.print_exc()
+                        traceback.print_exception(type(e), e, e.__traceback__.tb_next)
                 print('')
                 self.reply(success)
 
