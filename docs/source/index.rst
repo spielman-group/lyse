@@ -29,4 +29,3 @@ lyse |version|
    Source Code <https://github.com/labscript-suite/lyse>
    PyPI <https://pypi.org/project/lyse/>
    Anaconda Cloud <https://anaconda.org/labscript-suite/lyse>
-   BitBucket Archive <http://bitbucket-archive.labscriptsuite.org/#!/labscript_suite/lyse>
