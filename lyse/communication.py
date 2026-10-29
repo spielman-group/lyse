@@ -52,7 +52,8 @@ class LyseServer(ZMQServer):
         df = rangeindex_to_multiindex(df, inplace=True)
         if filter_kwargs is not None:
             df = df.filter(**filter_kwargs)
-        return df
+        # Typed here, not as each row changes, since only a client needs it:
+        return df.infer_objects()
 
     @inmain_decorator(wait_for_return=True)
     def _copy_dataframe(self, where=None):

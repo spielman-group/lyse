@@ -300,6 +300,7 @@ class Lyse(LabscriptGuiApplication):
                             sequence_df[col] = pandas.to_numeric(sequence_df[col])
                         except (ValueError, TypeError):
                             pass
+                sequence_df = sequence_df.infer_objects()
                 sequence_df.to_pickle(os.path.join(save_path, filename))
         else:
             self.error_dialog('Dataframe is empty')
