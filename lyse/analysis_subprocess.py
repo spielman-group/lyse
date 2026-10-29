@@ -48,7 +48,9 @@ from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils import dedent
 from labscript_utils.file_utils import warn_legacy_file
 from labscript_utils.labconfig import (
+    LabConfig,
     backup_legacy_config,
+    get_default_appconfig_file,
     load_appconfig,
     save_appconfig,
 )
@@ -69,9 +71,12 @@ if (
 ):
     multiprocessing.set_start_method('spawn')
 
-# read labconfig once for plot window locations
-autoload_config_file = lyse.utils.LABCONFIG.get('lyse', 'autoload_config_file')
-config_dir = os.path.dirname(autoload_config_file)
+# Window settings live beside lyse's autoload configuration file, else beside its default one.
+try:
+    config_file = lyse.utils.LABCONFIG.get('lyse', 'autoload_config_file')
+except (LabConfig.NoOptionError, LabConfig.NoSectionError):
+    config_file = get_default_appconfig_file(lyse.utils.LABCONFIG, 'lyse', 'lyse.toml')
+config_dir = os.path.dirname(config_file)
 
 class PlotWindowCloseEvent(QtGui.QCloseEvent):
     def __init__(self, force, *args, **kwargs):

@@ -129,7 +129,7 @@ lyse's own output box shows what is printed before the routine is built, such as
 Saved settings
 ~~~~~~~~~~~~~~
 
-lyse keeps each routine's control values, window geometry and dock layout in a settings file of its own. The file is identified by the routine folder's full path, so folders with the same name in different places do not share settings. It is called ``lyse-routine-<name>-<hash>.toml``, where ``<name>`` is the folder's name without ``.lyse``, and lives in the folder of lyse's autoloaded configuration file.
+lyse keeps each routine's control values, window geometry and dock layout in a settings file of its own. The file is identified by the routine folder's full path, so folders with the same name in different places do not share settings. It is called ``lyse-routine-<name>-<hash>.toml``, where ``<name>`` is the folder's name without ``.lyse``, and lives in the folder of lyse's autoloaded configuration file, or of its default one if it autoloads none.
 
 lyse restores the controls when the routine registers them, and the geometry and layout once the routine is built. If the routine is active in its box, lyse then shows the window, with its Output dock shown whatever the saved layout says. You may hide the dock for the session. lyse saves the controls, geometry and layout before each analysis, with the same values that ``self.values`` holds, and when the worker quits. It does not save at every change, so an edit made after the last save may be lost if the worker is killed. A worker whose routine failed to load saves nothing, so the settings it could not use are kept.
 
