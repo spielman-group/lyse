@@ -113,9 +113,6 @@ class Lyse(LabscriptGuiApplication):
         self.process_tree = ProcessTree.instance()
         self.process_tree.zlock_client.set_process_name(APPLICATION_NAME)
 
-        self.server = lyse.communication.LyseServer(self)
-        self.logger.info(f'Started lyse server on port {self.server.port}')
-
         self.qapplication = qapplication
         loader = UiLoader()
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui'), LyseMainWindow(self))
@@ -139,6 +136,11 @@ class Lyse(LabscriptGuiApplication):
         self.filebox = lyse.filebox.FileBox(self, self.ui.verticalLayout_filebox, self.exp_config,
                                to_singleshot, from_singleshot, to_multishot, from_multishot)
         self.logger.info('Boxes loaded')
+
+        # Only now, since the server puts submitted shots in the filebox's queue. Until
+        # then the port is unbound, and a client's request times out rather than failing.
+        self.server = lyse.communication.LyseServer(self)
+        self.logger.info(f'Started lyse server on port {self.server.port}')
 
         self.last_save_config_file = None
         self.last_save_data = None
