@@ -25,8 +25,12 @@ from qtutils import inmain_decorator
 
 # Lyse imports
 from lyse.dataframe_utilities import rangeindex_to_multiindex
+from lyse.utils import LYSE_PORT
 
 class LyseServer(ZMQServer):
+
+    server = 'lyse'
+    default_port = LYSE_PORT
 
     def __init__(self, app, *args, **kwargs):
         self.app = app

@@ -17,6 +17,7 @@ LyseClient.add_shot queues a shot, each through a real lyse server."""
 import concurrent.futures
 import os
 import queue
+import socket
 import types
 import unittest
 from unittest import mock
@@ -63,9 +64,13 @@ qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['tes
 def a_server(df):
     """A lyse server on a free port, reading df and its queue of incoming shots
     from a stand-in for the application."""
+    # Without a port, the server would take lyse's own from the labconfig.
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
     return LyseServer(types.SimpleNamespace(filebox=types.SimpleNamespace(
         shots_model=types.SimpleNamespace(dataframe=df), incoming_queue=queue.Queue())),
-        bind_address='tcp://127.0.0.1')
+        port, bind_address='tcp://127.0.0.1')
 
 
 def in_thread(f, **kwargs):

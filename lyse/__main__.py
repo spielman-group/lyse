@@ -113,9 +113,8 @@ class Lyse(LabscriptGuiApplication):
         self.process_tree = ProcessTree.instance()
         self.process_tree.zlock_client.set_process_name(APPLICATION_NAME)
 
-        self.port = int(self.exp_config.get('ports', 'lyse'))
-        self.server = lyse.communication.LyseServer(self, self.port)
-        self.logger.info(f'Started lyse server on port {self.port}')
+        self.server = lyse.communication.LyseServer(self)
+        self.logger.info(f'Started lyse server on port {self.server.port}')
 
         self.qapplication = qapplication
         loader = UiLoader()
