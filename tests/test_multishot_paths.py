@@ -171,7 +171,7 @@ class FailedPassTests(unittest.TestCase):
         )
         box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
         for _ in range(2):
-            box.from_multishot.put(['error', None, {}])  # every pass fails
+            box.from_multishot.put(['error', 100.0, {}])  # every pass fails, its routines all run
         with self.assertRaises(Stop):
             lyse.filebox.FileBox.analysis_loop(box)
         self.assertEqual(box.to_multishot.qsize(), 1)

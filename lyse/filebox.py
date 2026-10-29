@@ -989,7 +989,7 @@ class FileBox:
         paths, self.analysed_since_multishot = self.analysed_since_multishot, []
         self.to_multishot.put(paths)
         while True:
-            signal, _, updated_data = self.from_multishot.get()
+            signal, status_percent, updated_data = self.from_multishot.get()
             for file in updated_data:
                 self.shots_model.update_row(file, updated_row_data=updated_data[file])
             if signal == 'done':
@@ -998,7 +998,8 @@ class FileBox:
             elif signal == 'error':
                 # Put them back, so that the next pass has them too:
                 self.analysed_since_multishot[:0] = paths
-                # Paused, the routines after the failed one did not run, and all run on resuming:
-                if not self.analysis_paused:
+                # Unless the routines after the failed one did not run, as when analysis is
+                # paused, in which case all run on resuming:
+                if status_percent is not None:
                     self.multishot_required = False
                 return False

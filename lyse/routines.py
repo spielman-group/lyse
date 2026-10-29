@@ -277,7 +277,7 @@ class RoutineBox:
         for routine in self.routines:
             routine.set_status('clear')
         remaining = self.todo()
-        error = False
+        error = stopped = False
         updated_data = {}
         while remaining:
             self.logger.debug(f'{remaining} routines left to do')
@@ -299,6 +299,7 @@ class RoutineBox:
                     error = True
                     # The multishot routines after a failed one still run, unless analysis is paused:
                     if not self.multishot or self.app.filebox.analysis_paused:
+                        stopped = True
                         break
             # Race conditions here, but it's only for reporting percent done
             # so it doesn't matter if it's wrong briefly:
@@ -312,7 +313,9 @@ class RoutineBox:
                 status_percent = 100.0
             self.to_filebox.put(['progress', status_percent, updated_data])
         if error:
-            self.to_filebox.put(['error', None, updated_data])
+            # Decided here, not by the filebox, which would read the pause state later:
+            # None if the routines after the failed one did not run.
+            self.to_filebox.put(['error', None if stopped else 100.0, updated_data])
         else:
             self.to_filebox.put(['done', 100.0, {}])
         self.logger.debug(f'completed analysis of {filepath}')
