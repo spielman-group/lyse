@@ -52,8 +52,6 @@ changes for users and scripts.
 
 ### Not ported
 
-- 9cff0f3, no multishot pass while analysis is paused: in upstream's form the
-  Run multishot button does nothing while paused, until analysis resumes.
 - 0625332, a command-line shot path only if it is an HDF5 file: lyse no longer
   takes a shot path from the command line, by Ian's decision in step 2.4. That
   removal is offered upstream on `UpstreamBugFixes` (a643d08, from
@@ -117,19 +115,60 @@ in `71972c6..0469ac3`. Suite: 51 passed.
 | 33c10aa | The `lyse.paths` tests run two multishot routines; the second runs after the first fails. |
 | 0469ac3 | The incoming loop's comment: runmanager submits a shot once BLACS has run it. |
 
-### Against upstream
+## Second upstream stage
 
-`git diff 4c6ae2b` (upstream's `master` when the stage was built) of the files
-the stage touched, in lines changed, before and after it with its review fixes:
-`filebox.py` 883 and 207, `routines.py` 621 and 527, `widgets.py` 112 and 107,
-`__main__.py` 432 and 429, `analysis_subprocess.py` 636 and 634.
-`ShotsTableModel` is upstream's. In `DataFrameModel` and the routine box's
-analysis, what differs is A to F, `lyse.paths` and the review's loading fix,
-with `super()` and a few docstrings and comments of the style pass. The rest
-predates the stage: the style pass, labscript-utils' `TableView` and file
-dialogs, GUI routines, Abort, and two earlier ports in the fork's form, the
-incoming loop's warning as a lambda where upstream has `_shot_warning`, and its
-log line without upstream's `isEnabledFor` guard.
+Upstream's `4c6ae2b..55c3154`: 19 commits, none of them merges, picked with `-x`
+in upstream's merge order onto `3f9699a`, each fork change its own commit.
+`master` is fast-forwarded to `55c3154`. Range: `3f9699a..e546531`; the commit
+after it records the stage. Suite: 52 passed.
+
+| Commit | Upstream or fork | What |
+| --- | --- | --- |
+| None | 4a00ada | Already in: the qtutils 4.4.1 and zprocess 3.0.1 floors (4c7346b, 8d9ef86). |
+| 9e9e154 | a90eb3d | The new screenshot and introduction. The introduction is upstream's; the fork's facts come back in 3ceb216. |
+| c760915 | 83ad998 | The API reference is the routine API; `conf.py` cleaned up. Conflicts to upstream's side. |
+| 5ee886a | Fork | The Qt inventory is PyQt6's, the suite's binding, as before. |
+| 6ec4e60 | 157899b | The examples and the README corrected; the 2014 LaTeX manual, which the fork had updated (e4296a8), goes. |
+| e6b7753 | afeceee | Narrow routine box columns. The fork has no sort role (03c8825), so its `setSortRole` stays out. |
+| None | c7f5146 | Already in, in the fork's form: the subprocess's `configure_qapplication` calls `setup_application`. |
+| 10db051 | dfda62c | The import-order comment and the matplotlib 3.5 floor. The fork already used qtagg, set for classic workers only. |
+| 14472e1 | 73548b5 | Screenshots retaken. |
+| 1a5761b | 15cfe9a | Tooltips. |
+| bf3a755 | 71dc091 | The licence's placeholders. |
+| c550f56 | 9854a61 | `Plot`, `plots`, `delay_event` and `figure_to_clipboard` in the lyse namespace; the fork's `paths` and lazy `Routine` beside them. |
+| None | 7fca1f2 | Already in, in the fork's form: labscript-utils' `exec_qapplication` runs the 500 ms timer and the Ctrl-C handler. |
+| 93b67fb | d93be1b | Auto-raise buttons in place of the style sheets. The add button keeps the fork's menu. |
+| 3866fa8 | ef12bfd | The Pause toggle; shorter labels. |
+| 1cb675f | b5bd394 | Run and Re-run selected beside what they act on. |
+| 80ca0fd | b34fcb4 | Run starts a multishot pass while paused. Its condition is combined with the fork's `multishot_failed`, so a pass that has just failed does not run again at once. A pass due on its own waits while paused, which is 9cff0f3's behaviour. |
+| c094edb | f1502d2 | Columns to the right of the Shots toolbar. |
+| d21a34a | afc0f72 | The qtutils 4.4.3 floor. |
+| 3b385d1 | aef1528 | Screenshots retaken; the introduction names the controls. |
+| 3ceb216 | Fork | The fork's facts in upstream's new text: runmanager sends the shots, `lyse.paths` and a failed pass's shots offered again, GUI routines and their output. Other docs name the new labels. |
+| a872d44 | Fork | Test: while paused, only Run starts a multishot pass. |
+| e546531 | Fork | `NEWS.md`. |
+
+Outside lyse: labscript-utils' upstream 8f07c1a starts the 500 ms timer in
+`setup_application`, before the port check, so that SIGTERM ends a second copy
+showing the port-in-use dialog; the fork's starts in `exec_qapplication`, after
+it. The environment has qtutils 4.4.1, below the 4.4.3 floor; the suite passes
+with it, but 4.4.3 draws the output box dark under a style sheet and its scroll
+bar grooves not black.
+
+## Against upstream
+
+`git diff 55c3154` (upstream's `master`) of the files the shots table and second
+upstream stages touched, in lines changed: `filebox.py` 208, `routines.py` 527,
+`widgets.py` 107, `__main__.py` 425, `analysis_subprocess.py` 634, `__init__.py`
+517. `filebox.ui`, `main.ui` and `plot_window.ui` are upstream's;
+`routinebox.ui` differs by the add button's menu. `ShotsTableModel` is
+upstream's. In `DataFrameModel` and the routine box's analysis, what differs is
+A to F, `lyse.paths`, the review's loading fix and `multishot_failed`, with
+`super()` and a few docstrings and comments of the style pass. The rest predates
+these stages: the style pass, labscript-utils' `TableView`, file dialogs and
+`exec_qapplication`, GUI routines, Abort, and two earlier ports in the fork's
+form, the incoming loop's warning as a lambda where upstream has
+`_shot_warning`, and its log line without upstream's `isEnabledFor` guard.
 
 ## Compatibility audit
 
