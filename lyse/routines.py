@@ -260,12 +260,13 @@ class RoutineBox:
     def analysis_loop(self):
         while True:
             filepath = self.from_filebox.get()
+            paths = None
             if self.multishot:
-                assert filepath is None
-                # TODO: get the filepath of the output h5 file: 
-                # filepath = self.filechooserentry.get_text()
+                # A multishot routine box is given the shot files analysed
+                # since its last pass, rather than a shot file:
+                filepath, paths = None, filepath
             self.logger.info('got a file to process: %s', filepath)
-            self.do_analysis(filepath)
+            self.do_analysis(filepath, paths)
     
     def _start_next_routine(self):
         """Set the status of the first enabled routine that has not run to working, and
@@ -303,15 +304,15 @@ class RoutineBox:
             status_percent = 100.0
         return self._start_next_routine(), status_percent
 
-    def do_analysis(self, filepath):
-        """Run all analysis routines once on the given filepath,
-        which is a shot file if we are a singleshot routine box"""
+    def do_analysis(self, filepath, paths):
+        """Run all analysis routines once, on filepath (singleshot box) or, for a
+        multishot box, on paths: the shot files since its last pass (lyse.paths)."""
         error = False
         updated_data = {}
         routine = self.start_analysis()
         while routine is not None:
             self.logger.info('running analysis routine %s', routine.shortname)
-            success, updated_data = routine.do_analysis(filepath)
+            success, updated_data = routine.do_analysis(filepath, paths)
             routine, status_percent = self.end_routine(routine, success)
             if not success:
                 self.logger.debug('failure')
