@@ -239,8 +239,9 @@ dataframe for its jobs through the same selection `lyse.data()` uses. Their
 port them (below).
 
 **G. Plugin workers** (14). The capability is labscript-utils', for plugins in
-general, modelled on BLACS's tab workers (`blacs/tab_base_classes.py`), whose
-code splits into a shared part and BLACS's own:
+general, in a new module `labscript_utils.workers`, modelled on BLACS's tab
+workers (`blacs/tab_base_classes.py`), whose code splits into a shared part and
+BLACS's own:
 
 - Shared, the worker side: `Worker(Process)` with `init()`, `shutdown()` and
   job methods; its `run`, which sets up logging, the excepthook and the zlock
@@ -249,22 +250,38 @@ code splits into a shared part and BLACS's own:
   job, the method found, then success, message and results; and its quit: the
   `'quit'` message, the interrupt of a running job, `shutdown()`,
   `kill_lock.exit_when_released` and the heartbeat's parent death.
-- Shared, the parent side, a mixin: `create_worker(name, WorkerClass,
-  workerargs)`, the class or its import path, through `ProcessTree.instance()`
-  with the host's output box; sending a job and reading its two replies; ending
-  the workers, with `'quit'` and then a kill after `WORKER_QUIT_TIMEOUT`; and a
-  restart as an end, then a create.
+- Shared, the parent side, a mixin, `WorkersMixin`: `create_worker(name,
+  WorkerClass, workerargs)`, the class or its import path, through
+  `ProcessTree.instance()` with the host's output box; sending a job and
+  reading its two replies; `end_workers()`, with `'quit'` and then a kill after
+  `WORKER_QUIT_TIMEOUT`; and `restart_worker(name)`, an end, then a create.
+  The `WORKER_*_TIMEOUT` constants move into the module.
 - BLACS's own, which stays in `Tab` and its `Worker` subclass: the state
   machine (`define_state`, the event queue, `queue_work` yielded from a state),
   the connection table's workerargs, remote process clients, the tab's display
   of its workers, and `_transition_to_buffered`'s path conversion.
 
-What plugins need first: the shared worker base and the mixin, with a job
-call that returns a `concurrent.futures.Future`, resolved by a reader thread
-per worker, in place of the state machine; workers started when created, not
-at their first job; their output in the host's output box, whose port lyse
-puts in the setup dict; and every worker ended from the plugin's `close()`.
-Moving BLACS's `Tab` onto the shared parts is a later step.
+What plugins need first: the shared worker base and `WorkersMixin`, with
+`submit_job(worker_name, method_name, *args, **kwargs)`, which returns a
+`concurrent.futures.Future` resolved by a reader thread per worker, in place of
+the state machine; workers started by `create_worker` itself, where `Tab` starts
+them at its first state; their output in the host's output box, whose port lyse
+puts in the setup dict; and `end_workers()` from the plugin's `close()`. The
+shared code keeps what BLACS's `DESIGN_TAB_STATE_MACHINE.md` fixes (R8–R11, F3,
+F4, F14): `shutdown()` called at most once and never interrupted, the quit
+skipping it once a shutdown job has started; a job that starts after a quit
+stopped at once; a workerarg refused only for a name `Worker` or zprocess's
+`Process` uses; the `'quit'` message; the job tuple `(funcname, args, kwargs)`
+checked for pickling before it is sent; two replies per job; the timeouts,
+`exit_when_released` and `on_parent_death`. Its `run` takes the app's name, for
+`setup_logging` and for the logger's name, which is also the zlock process name,
+where BLACS's says `'BLACS.<device>_<worker>.worker'`. BLACS's tab pass is
+finished (blacs `Development` `6ff09fb`), so it can be cut now; the clean-up
+tests of blacs's `tests/test_state_machine.py`, which drive real workers, move
+with it. Moving `Tab` onto it is a later step; lyse's routine workers, whose
+protocol is one reply to `[task, data]`, stay apart for now and share only the
+timeout constants; `labscript_optimization.worker.Worker`, a thread that returns
+futures, retires once the optimizer's session runs in a plugin worker.
 
 | Requirement | Part |
 | --- | --- |
