@@ -52,9 +52,9 @@ labscript-agents and labscript-optimization become such plugins. Items marked
    for that shot, and the next shot's analysis starts. An option, *stop a shot
    at its first failure*, chooses whether the shot's later single-shot routines
    run after one fails. **Q:** off or on by default?
-8. lyse records how each routine ended for each shot it ran on: success, error
+8. lyse records how each routine ended for each shot it ran on: done, error
    (an exception, or `sys.exit` with a failure status), aborted, or not run
-   (skipped by the option of 7). **Q:** in the shot file and the dataframe both
+   (skipped by the option of 7), the words of the routine's status icon. **Q:** in the shot file and the dataframe both
    (the design below), or one of them? And for a multishot routine, recorded
    on every shot of its pass?
 9. A shot on which any routine failed shows as failed in the shots table. A
@@ -67,10 +67,10 @@ labscript-agents and labscript-optimization become such plugins. Items marked
     succeeded and the shot is a default shot or a repeat, the plugin deletes
     the shot file, under the suite's file lock. The shot's row stays in the
     table with its results, so a run of repeated shots still leaves its record,
-    such as atom numbers. A default shot is recognised by an attribute that
-    runmanager writes in it (below); a repeat by its `run repeat` attribute, 1
-    or more, which BLACS writes with the `_rep` suffix. **Q:** is `run repeat`
-    enough for repeats, or should BLACS also write a separate flag?
+    such as atom numbers. A default shot is recognised by the `sequence_index`
+    of −1 that runmanager already writes in it, and a repeat by the `run
+    repeat` of 1 or more that BLACS writes in it as it adds the `_rep` suffix.
+    **Q:** these existing attributes are enough, so no new flag is needed?
 11. The plugin is on or off by its labconfig flag (4).
 12. A row whose file is gone, deleted by the plugin or otherwise, is kept and
     shown as deleted in the status column. It is never analysed again: Re-run
@@ -95,13 +95,17 @@ labscript-agents and labscript-optimization become such plugins. Items marked
 **A. Remote interface** (1–3). `LyseServer` (`communication.py`) gains a
 `handle_<command>` per command, and `LyseClient` (`client.py`) the matching
 method, as runmanager's server and client do (labscript-style rule 11). Each
-handler calls the code path the button uses, on the GUI thread through
-`inmain`. A box is named `'singleshot'` or `'multishot'`. Proposed commands:
-`get_routines`, `add_routines`, `remove_routines`, `set_routines_active`,
-`set_routine_order`, `restart_routines`; `get_analysis_paused`,
-`set_analysis_paused`, `abort`, `run_multishot`, `rerun_shots`, `rerun_failed`,
-`remove_shots`, `get_shot_status`, `get_stop_on_failure`,
-`set_stop_on_failure`; `add_shot` and `get_dataframe` stay.
+handler calls the code the button calls, on the GUI thread through `inmain`:
+`lyse.routines.add_routines`, `RoutineBox.remove_selection`,
+`AnalysisRoutine.restart`, `FileBox.on_abort_clicked`,
+`on_run_multishot_analysis_clicked` and the rest. A box is named
+`'singleshot'` or `'multishot'`, as the app's `singleshot_routinebox` and
+`multishot_routinebox`. Proposed commands, in runmanager's forms: `get_routines`,
+`add_routines`, `remove_routines`, `set_routines_active`, `set_routine_order`,
+`restart_routines`; `get_analysis_paused`, `set_analysis_paused`, `abort`,
+`run_multishot`, `rerun_shots`, `rerun_failed`, `remove_shots`, `shot_status`,
+`get_stop_on_failure`, `set_stop_on_failure`; `add_shot` and `get_dataframe`
+stay.
 
 **B. Plugin host** (4, 6, 11). `lyse/plugins/__init__.py` builds a
 `labscript_utils.plugins.PluginManager` exactly as `blacs/plugins/__init__.py`
@@ -124,23 +128,27 @@ through `inmain`. A handler's exception is logged and analysis goes on
 (`fire_event` does that now).
 
 **D. Outcomes and failures** (7–9). The routine box returns each routine's
-outcome with its results. With the option off it runs every routine; the
-filebox no longer pauses on a failure. The shots model keeps a failed flag per
+outcome with its results. With the option off it runs every routine. The
+option replaces the filebox's automatic `pause_analysis()` on a single-shot
+error, which goes; Pause stays a button. The shots model keeps a failed flag per
 shot, drawn in the status column; Re-run failed marks those shots not done.
 After a shot's single-shot routines lyse writes their outcomes into the shot
-file in one open, as attributes of a `results/lyse` group, one per routine, so
-the dataframe shows them as `('lyse', <routine>)` columns, live and on reload.
+file in one open, as attributes of a `results/lyse` group, one per routine,
+`'done'`, `'error'`, `'aborted'` or `'not run'`, so the dataframe shows them as
+`('lyse', <routine>)` columns, live and on reload. A routine's results group is
+its name, so lyse refuses a routine named `lyse`.
 A multishot routine's outcome goes on each shot of its pass the same way.
 A row whose file is gone has the shots model's present deleted state, which
 already keeps it out of analysis and Re-run selected. Re-run failed and a
 failed pass's offer of its shots skip such a row too, and Load dataframe marks
 a row whose file is missing as deleted (12).
 
-**E. The first plugin** (10–11). `lyse/plugins/delete_warmup_shots/`, after the
-BLACS plugin `delete_repeated_shots`: on `analysis_done`, if every outcome is a
-success and the shot is a default or a repeat, it queues the file for a thread
-that deletes it under `Lock(path_to_agnostic(path))` and marks its row
-deleted, without the warning (12).
+**E. The first plugin** (10–11). `lyse/plugins/delete_default_and_repeated_shots/`,
+after BLACS's `delete_repeated_shots`: on `analysis_done`, if every outcome is
+`'done'` and the shot's `sequence_index` is −1 or its `run repeat` 1 or more,
+it queues the file for a thread that deletes it under
+`Lock(path_to_agnostic(path))` and marks its row deleted, without the warning
+(12).
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
 a plugin under the `lyse.plugins` entry point and handles `analysis_done`.
@@ -155,14 +163,15 @@ through the shots model's `update_rows`. The packages' owners port them.
 | 4, 6 | B |
 | 5 | C |
 | 7–9, 12 | D |
-| 10–11 | E, with runmanager's attribute |
+| 10–11 | E |
 | 13 | F, in labscript-agents and labscript-optimization |
 
 ## Needed elsewhere
 
-- **runmanager:** write a root attribute `default_shot = True` in every default
-  shot's file (the file whose `sequence_index` is −1); other shots need none.
-  lyse reads it into the dataframe, as it reads `run repeat`.
+- **runmanager:** nothing; a default shot's `sequence_index` of −1 marks it.
+- **labscript-utils:** **Q:** a function that deletes a shot file under its
+  file lock, which E and BLACS's `delete_repeated_shots` both call, rather than
+  a copy of BLACS's deletion code in E.
 - **labscript-utils:** document the `[lyse/plugins]` section beside
   `[blacs/plugins]` (`docs/source/labconfig.rst`, `example.toml`).
 - **labscript-agents, labscript-optimization:** their plugins (F), once A–C
