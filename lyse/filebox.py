@@ -352,7 +352,7 @@ class DataFrameModel(QtCore.QObject):
         selected_rows = sorted(selected_rows)
         if not selected_rows:
             return
-        if confirm and not lyse.utils.gui.question_dialog(self.app, "Remove %d shots?" % len(selected_rows)):
+        if confirm and not self.app.question_dialog(f"Remove {len(selected_rows)} shots?"):
             return
         # Remove from DataFrame first:
         self.dataframe = self.dataframe.drop(selected_rows)
