@@ -1175,7 +1175,10 @@ class FileBox:
                 self.multishot_required = False
                 return True
             elif signal == 'error':
-                # Analysis was paused when a routine failed, so the routines after it did
-                # not run. All the routines run again when analysis is resumed.
-                return
-            
+                # Put them back, so that the next pass has them too:
+                self.analysed_since_multishot[:0] = paths
+                # Unless the routines after the failed one did not run, as when analysis is
+                # paused, in which case all run on resuming:
+                if status_percent is not None:
+                    self.multishot_required = False
+                return False

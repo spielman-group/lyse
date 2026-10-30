@@ -311,7 +311,7 @@ class RoutineBox:
     def do_analysis(self, filepath, paths):
         """Run all analysis routines once, on filepath (singleshot box) or, for a
         multishot box, on paths: the shot files since its last pass (lyse.paths)."""
-        stopped = False
+        error = stopped = False
         routine = self.start_analysis()
         while routine is not None:
             self.logger.info('running analysis routine %s', routine.shortname)
@@ -321,11 +321,13 @@ class RoutineBox:
                 self.logger.debug('success')
             else:
                 self.logger.debug('failure')
+                error = True
                 stopped = status_percent is None
             self.to_filebox.put(['progress', status_percent, updated_data])
-        # 'error' if a routine failed and the routines after it did not run:
-        if stopped:
-            self.to_filebox.put(['error', None, {}])
+        # 'error' if a routine failed, so that the filebox offers the pass's shots
+        # again, with no status if the routines after it did not run:
+        if error:
+            self.to_filebox.put(['error', None if stopped else 100.0, {}])
         else:
             self.to_filebox.put(['done', 100.0, {}])
         self.logger.debug('completed analysis of %s', filepath)
