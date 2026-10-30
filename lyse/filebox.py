@@ -462,21 +462,24 @@ class DataFrameModel(QtCore.QObject):
             return
         if confirm and not self.app.question_dialog(f"Remove {len(selected_rows)} shots?"):
             return
-        # Remove from DataFrame first:
+        # The view reads the dataframe as it draws, so it changes with the lists inside
+        # one notification: a row removal for one block, else a reset, since a removal
+        # per block would copy the dataframe once per block.
+        first, last = selected_rows[0], selected_rows[-1]
+        contiguous = last - first + 1 == len(selected_rows)
+        if contiguous:
+            self._model.beginRemoveRows(QtCore.QModelIndex(), first, last)
+        else:
+            self._model.beginResetModel()
         self.dataframe = self.dataframe.drop(selected_rows)
         self.dataframe.index = pandas.Index(range(len(self.dataframe)))
-        # Remove each contiguous block of rows from the Qt model, starting with the last
-        # block:
-        block_end = len(selected_rows)
-        for i in reversed(range(len(selected_rows))):
-            if i == 0 or selected_rows[i - 1] != selected_rows[i] - 1:
-                first, last = selected_rows[i], selected_rows[block_end - 1]
-                self._model.beginRemoveRows(QtCore.QModelIndex(), first, last)
-                del self.filepaths[first:last + 1]
-                del self.status_percent[first:last + 1]
-                del self.deleted_off_disk[first:last + 1]
-                self._model.endRemoveRows()
-                block_end = i
+        removed = set(selected_rows)
+        for values in [self.filepaths, self.status_percent, self.deleted_off_disk]:
+            values[:] = [value for row, value in enumerate(values) if row not in removed]
+        if contiguous:
+            self._model.endRemoveRows()
+        else:
+            self._model.endResetModel()
         self.row_number_by_filepath = {filepath: row for row, filepath in enumerate(self.filepaths)}
 
     def mark_selection_not_done(self):
