@@ -66,8 +66,11 @@ class ShotsTableTests(unittest.TestCase):
         for removed in [{2, 3, 4}, {1, 4, 5}]:
             with self.subTest(removed=removed):
                 shots = self.shots_table(range(8))
-                for n in [0, 6]:
+                done = {0, 1, 2, 3, 4, 6}
+                for n in done:
                     shots.set_status_percent(f'{n}.h5', 100)
+                # Analysis has moved past the rows to be removed:
+                self.assertEqual(shots.get_first_incomplete(), '5.h5')
                 x = shots.column_indices['x', '']
                 shots.set_columns_visible({**shots.columns_visible, x: False})
                 checks = []
@@ -88,8 +91,8 @@ class ShotsTableTests(unittest.TestCase):
                 kept = [n for n in range(8) if n not in removed]
                 self.assertTrue(checks and all(checks))
                 self.assertEqual(shots.filepaths, [f'{n}.h5' for n in kept])
-                self.assertEqual(shots.status_percent, [100 if n in [0, 6] else 0 for n in kept])
-                self.assertEqual(shots.get_first_incomplete(), f'{kept[1]}.h5')
+                self.assertEqual(shots.status_percent, [100 if n in done else 0 for n in kept])
+                self.assertEqual(shots.get_first_incomplete(), f'{min(set(kept) - done)}.h5')
                 shots.update_rows({'7.h5': {('fit', 'y'): 'seven'}})
                 index = shots._model.index(len(kept) - 1, shots.column_indices['fit', 'y'])
                 self.assertEqual(shots._model.data(index), 'seven')
