@@ -192,6 +192,8 @@ class RoutineBox:
             return
         name_item = self.model.item(index.row(), self.COL_NAME)
         routine_filepath = name_item.data(self.ROLE_FULLPATH)
+        if os.path.splitext(routine_filepath)[1] == lyse.utils.GUI_ROUTINE_SUFFIX:
+            routine_filepath = os.path.join(routine_filepath, 'lyse_routine.py')
         try:
             open_file(routine_filepath, 'text_editor', self.exp_config)
         except Exception as e:
