@@ -11,30 +11,133 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The FileBox's dataframe, recording the results a routine hands back."""
+"""The shots table: shots added, removed and updated, as the view and
+lyse.data() read them from the one dataframe."""
+import concurrent.futures
+import socket
 import types
 import unittest
 
+import pandas
+from qtutils.qt import QtCore, QtWidgets
+
+import lyse
 import lyse.filebox
+from lyse.communication import LyseServer
+
+qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
 
 
-class ResultsForARemovedShotTests(unittest.TestCase):
+def rows(numbers, x=True):
+    """The dataframe rows of the shots with these run numbers."""
+    columns = {('filepath', ''): [f'{n}.h5' for n in numbers], ('run number', ''): list(numbers)}
+    if x:
+        columns['x', ''] = [float(n) for n in numbers]
+    return pandas.DataFrame(columns)
 
-    def test_results_for_a_shot_with_no_row_are_reported_and_the_list_stays_live(self):
-        """A shot removed while its routine ran has no row to take its results,
-        and a result not saved to the file is kept nowhere else."""
-        output, signals_blocked = [], []
-        model = types.SimpleNamespace(
-            row_number_by_filepath={},
-            app=types.SimpleNamespace(output_box=types.SimpleNamespace(
-                output=lambda text, red=False: output.append(text))),
-            _model=types.SimpleNamespace(blockSignals=signals_blocked.append),
+
+class ShotsTableTests(unittest.TestCase):
+
+    def shots_table(self, numbers):
+        self.output = []
+        app = types.SimpleNamespace(
+            qapplication=qapplication,
+            output_box=types.SimpleNamespace(output=lambda text, red=False: self.output.append(text)),
+            filebox=types.SimpleNamespace(add_shots_start_time=None,
+                                          set_add_shots_progress=lambda *args: None),
         )
-        lyse.filebox.DataFrameModel.update_row(
-            model, 'removed.h5', updated_row_data={('routine', 'N'): 3})
-        self.assertTrue(any('removed.h5' in text for text in output))
-        # Left blocked, the model would stop telling the view about new rows:
-        self.assertNotEqual(signals_blocked[-1:], [True])
+        self.view = QtWidgets.QTableView()
+        self.view.show()
+        self.addCleanup(self.view.hide)
+        exp_config = types.SimpleNamespace(getboolean=lambda *args: False)
+        shots = lyse.filebox.DataFrameModel(app, self.view, exp_config)
+        shots.add_files([f'{n}.h5' for n in numbers], rows(numbers))
+        return shots
+
+    def remove(self, shots, numbers):
+        selection = self.view.selectionModel()
+        for n in numbers:
+            selection.select(shots._model.index(shots.row_number_by_filepath[f'{n}.h5'], 0),
+                             QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
+        shots.remove_selection(confirm=False)
+
+    def test_removed_shots_leave_the_rest_whole(self):
+        # One block, removed as rows, and two, removed with a model reset:
+        for removed in [{2, 3, 4}, {1, 4, 5}]:
+            with self.subTest(removed=removed):
+                shots = self.shots_table(range(8))
+                for n in [0, 6]:
+                    shots.set_status_percent(f'{n}.h5', 100)
+                x = shots.column_indices['x', '']
+                shots.set_columns_visible({**shots.columns_visible, x: False})
+                checks = []
+
+                def check(*args):
+                    model = shots._model
+                    try:
+                        column = [model.data(model.index(row, shots.COL_FILEPATH))
+                                  for row in range(model.rowCount())]
+                    except IndexError:
+                        column = None
+                    checks.append(column == shots.filepaths)
+                for signal in [shots._model.rowsAboutToBeRemoved, shots._model.rowsRemoved,
+                               shots._model.modelAboutToBeReset, shots._model.modelReset]:
+                    signal.connect(check)
+                self.remove(shots, removed)
+
+                kept = [n for n in range(8) if n not in removed]
+                self.assertTrue(checks and all(checks))
+                self.assertEqual(shots.filepaths, [f'{n}.h5' for n in kept])
+                self.assertEqual(shots.status_percent, [100 if n in [0, 6] else 0 for n in kept])
+                self.assertEqual(shots.get_first_incomplete(), f'{kept[1]}.h5')
+                shots.update_rows({'7.h5': {('fit', 'y'): 'seven'}})
+                index = shots._model.index(len(kept) - 1, shots.column_indices['fit', 'y'])
+                self.assertEqual(shots._model.data(index), 'seven')
+                self.assertTrue(self.view.isColumnHidden(x))
+                # A result for a removed shot, if not saved to its file, is kept nowhere:
+                shots.update_rows({f'{min(removed)}.h5': {('fit', 'y'): 'lost'}})
+                self.assertTrue(any(f'{min(removed)}.h5' in text for text in self.output))
+
+    def test_a_hidden_column_stays_hidden_as_columns_come_and_go(self):
+        shots = self.shots_table(range(3))
+        shots.set_columns_visible({**shots.columns_visible, shots.column_indices['x', '']: False})
+        shots.update_rows({'0.h5': {('fit', 'y'): 1}})
+        y = shots.column_indices['fit', 'y']
+        self.assertEqual(shots._model.headerData(y, QtCore.Qt.Horizontal), 'fit\ny')
+        self.assertTrue(self.view.isColumnHidden(shots.column_indices['x', '']))
+        # Once every shot is gone, shots without x remove its column:
+        self.remove(shots, range(3))
+        shots.add_files(['3.h5'], rows([3], x=False))
+        shots.add_files(['4.h5'], rows([4]))
+        self.assertTrue(self.view.isColumnHidden(shots.column_indices['x', '']))
+
+    def test_a_shot_submitted_again_has_one_row(self):
+        # The incoming loop drops a batch's own duplicates before adding it.
+        shots = self.shots_table([0])
+        shots.add_files(['0.h5'], rows([0]))
+        self.assertEqual(shots.filepaths, ['0.h5'])
+        self.assertEqual(len(shots.dataframe), 1)
+
+    def test_lyse_data_returns_whole_frames_while_shots_come_and_go(self):
+        shots = self.shots_table(range(8))
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        server = LyseServer(types.SimpleNamespace(filebox=types.SimpleNamespace(shots_model=shots)),
+                            port, bind_address='tcp://127.0.0.1')
+        self.addCleanup(server.shutdown)
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            call = pool.submit(lambda: [lyse.data(port=port) for _ in range(20)])
+            n = 8
+            while not call.done():
+                shots.add_files([f'{n}.h5'], rows([n]))
+                self.remove(shots, [n - 8])
+                n += 1
+                qapplication.processEvents()
+        for frame in call.result():
+            self.assertEqual(len(frame), 8)
+            self.assertEqual(list(frame['x']), list(frame['run number']))
+            self.assertEqual(list(frame['filepath']), [f'{n}.h5' for n in frame['run number']])
 
 
 if __name__ == '__main__':

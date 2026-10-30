@@ -68,7 +68,7 @@ class LysePathsTests(unittest.TestCase):
         self.addCleanup(setattr, lyse.figure_manager, 'figuremanager', saved)
         self.filebox = types.SimpleNamespace(
             analysed_since_multishot=[], multishot_required=True, analysis_paused=False,
-            shots_model=types.SimpleNamespace(update_row=lambda *a, **k: None,
+            shots_model=types.SimpleNamespace(update_rows=lambda *a: None,
                                               set_status_percent=lambda *a: None),
         )
         self.filebox.to_singleshot, self.filebox.from_singleshot = self.routine_box(multishot=False)
@@ -100,7 +100,8 @@ class LysePathsTests(unittest.TestCase):
         box = types.SimpleNamespace(multishot=multishot, routines=[routine],
                                     app=types.SimpleNamespace(filebox=self.filebox),
                                     to_filebox=queue.Queue(), logger=logging.getLogger('test'))
-        box.todo = types.MethodType(lyse.routines.RoutineBox.todo, box)
+        for name in ['_start_next_routine', 'start_analysis', 'end_routine']:
+            setattr(box, name, types.MethodType(getattr(lyse.routines.RoutineBox, name), box))
         box.do_analysis = types.MethodType(lyse.routines.RoutineBox.do_analysis, box)
         loop = types.MethodType(lyse.routines.RoutineBox.analysis_loop, box)
         return runs_on_put(loop, box, 'from_filebox'), box.to_filebox

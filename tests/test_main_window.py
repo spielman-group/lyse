@@ -11,18 +11,21 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The lyse main window: a theme change, and saving the dataframe."""
+"""The lyse main window: a theme change, and saving and loading the dataframe."""
 import glob
 import os
+import queue
 import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 import numpy
 import pandas
 from qtutils.qt import QtGui, QtWidgets
 
+import lyse.filebox
 from lyse.dataframe_utilities import flat_dict_to_hierarchical_dataframe, flatten_dict
 
 
@@ -142,6 +145,31 @@ class MainWindowTests(unittest.TestCase):
             })) for script in ('a.py', 'b.py')], ignore_index=True)
             self.assertEqual([os.path.basename(path) for path in self.save(folder, df)],
                              ['dataframe_20260922T100000_a.pkl', 'dataframe_20260922T100000_b.pkl'])
+
+    def test_a_saved_dataframe_loads_as_the_same_shots(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engaged = pandas.Timestamp('2026-09-22 10:00:00', tz='UTC')
+            df = pandas.concat([flat_dict_to_hierarchical_dataframe(flatten_dict({
+                'sequence': engaged,
+                'labscript': 'experiment.py',
+                'run time': engaged + pandas.Timedelta(seconds=n),
+                'filepath': os.path.join(folder, f'{n}.h5'),
+                'fit': {'atoms': 100.0 + n},
+            })) for n in range(3)], ignore_index=True)
+            (saved,) = self.save(folder, df)
+            app = types.SimpleNamespace(
+                qapplication=self.qapplication, ui=None,
+                exp_config=types.SimpleNamespace(get=lambda *args: folder),
+                filebox=types.SimpleNamespace(add_shots_start_time=None, incoming_queue=queue.Queue(),
+                                              set_add_shots_progress=lambda *args: None))
+            app.filebox.shots_model = lyse.filebox.DataFrameModel(
+                app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
+            with mock.patch.object(self.main.file_dialogs, 'open_file', return_value=saved):
+                self.main.Lyse.on_load_dataframe_triggered(app)
+            shots = app.filebox.shots_model
+            self.assertEqual(shots.filepaths, list(df['filepath']))
+            self.assertEqual(shots.status_percent, [100] * 3)
+            self.assertEqual(list(shots.dataframe['fit', 'atoms']), [100.0, 101.0, 102.0])
 
     def save(self, folder, df):
         """Save df as lyse does, beside its shots, and return the files written."""
