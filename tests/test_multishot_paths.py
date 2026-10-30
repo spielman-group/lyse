@@ -190,7 +190,7 @@ class FailedPassTests(unittest.TestCase):
         def wait():
             waits.append(None)
             if len(waits) == 2:
-                lyse.filebox.FileBox.on_run_multishot_analysis_clicked(box)
+                lyse.filebox.FileBox.run_multishot(box)
             if len(waits) > 2:
                 raise Stop
 

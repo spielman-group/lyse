@@ -13,6 +13,8 @@
 """Code required for interprocess communication
 """
 
+import os
+
 # 3rd party imports:
 import pandas
 
@@ -22,10 +24,12 @@ import labscript_utils.shared_drive as shared_drive
 
 # qt imports
 from qtutils import inmain_decorator
+from qtutils.qt import QtCore
 
 # Lyse imports
+import lyse.routines
 from lyse.dataframe_utilities import rangeindex_to_multiindex
-from lyse.utils import LYSE_PORT
+from lyse.utils import GUI_ROUTINE_SUFFIX, LYSE_PORT
 
 # The columns that rangeindex_to_multiindex() indexes the rows by, with and without
 # integer indexing:
@@ -40,8 +44,81 @@ class LyseServer(ZMQServer):
         self.app = app
         super().__init__(*args, **kwargs)
 
-    def handle_add_shot(self, filepath):
-        self.app.filebox.incoming_queue.put(shared_drive.path_to_local(filepath))
+    def _box(self, box):
+        boxes = {'singleshot': self.app.singleshot_routinebox, 'multishot': self.app.multishot_routinebox}
+        if box not in boxes:
+            raise ValueError(f"No routine box {box!r}: it is 'singleshot' or 'multishot'")
+        return boxes[box]
+
+    @inmain_decorator()
+    def handle_get_routines(self, box):
+        routines = []
+        for routine in self._box(box).routines:
+            status = ('working' if routine.working else 'done' if routine.done
+                      else 'error' if routine.error else None)
+            routines.append({'filepath': routine.filepath, 'active': routine.enabled(), 'status': status})
+        return routines
+
+    @inmain_decorator()
+    def handle_add_routines(self, box, filepaths, active=True):
+        for filepath in filepaths:
+            if not (os.path.isfile(filepath) and filepath.endswith('.py')
+                    or os.path.isdir(filepath) and filepath.endswith(GUI_ROUTINE_SUFFIX)):
+                raise ValueError(
+                    f'Not a routine: {filepath} is neither a .py file nor a {GUI_ROUTINE_SUFFIX} folder')
+        checked = QtCore.Qt.CheckState.Checked if active else QtCore.Qt.CheckState.Unchecked
+        lyse.routines.add_routines([(self._box(box), [(filepath, checked) for filepath in filepaths], False)])
+
+    @inmain_decorator()
+    def handle_remove_routines(self, box, filepaths):
+        self._box(box).remove_routines(filepaths)
+
+    @inmain_decorator()
+    def handle_set_routines_active(self, box, filepaths, active):
+        self._box(box).set_routines_active(filepaths, active)
+
+    @inmain_decorator()
+    def handle_reorder_routines(self, box, filepaths):
+        self._box(box).reorder_routines(filepaths)
+
+    @inmain_decorator()
+    def handle_restart_routines(self, box, filepaths):
+        self._box(box).restart_routines(filepaths)
+
+    def handle_get_analysis_paused(self):
+        return self.app.filebox.analysis_paused
+
+    def handle_set_analysis_paused(self, paused):
+        self.app.filebox.set_analysis_paused(paused)
+
+    @inmain_decorator()
+    def handle_abort(self):
+        self.app.filebox.abort()
+
+    @inmain_decorator()
+    def handle_run_multishot(self):
+        self.app.filebox.run_multishot()
+
+    @inmain_decorator()
+    def handle_rerun_shots(self, filepaths):
+        self.app.filebox.rerun_shots([shared_drive.path_to_local(path) for path in filepaths])
+
+    @inmain_decorator()
+    def handle_remove_shots(self, filepaths):
+        self.app.filebox.shots_model.remove_shots([shared_drive.path_to_local(path) for path in filepaths])
+
+    @inmain_decorator()
+    def handle_save_dataframe(self, folder=None):
+        return self.app.save_dataframe(folder)
+
+    @inmain_decorator()
+    def handle_load_dataframe(self, filepath):
+        self.app.load_dataframe(filepath)
+
+    def handle_add_shot(self, filepath, source='remote'):
+        if source not in ('remote', 'runmanager'):
+            raise ValueError(f"A shot's source is 'remote' or 'runmanager', not {source!r}")
+        self.app.filebox.incoming_queue.put((shared_drive.path_to_local(filepath), source))
 
     def handle_get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None, columns=None):
         df = rangeindex_to_multiindex(self._copy_dataframe(n_sequences, where, columns), inplace=True)

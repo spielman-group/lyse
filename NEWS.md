@@ -1,5 +1,12 @@
 ## Unreleased
 
+- lyse can be controlled remotely, as runmanager can: `LyseClient` lists, adds,
+  removes, activates, reorders and restarts the routines of either box, pauses and
+  resumes analysis, aborts, runs the multishot routines, re-runs and removes shots,
+  and saves and loads the dataframe, each as its button does.
+  `LyseClient.add_shot` takes the shot's source, `'remote'` unless runmanager
+  sends it.
+
 - The buttons sit by what they act on: **Run** by the multishot routines, and
   **Re-run selected** (formerly Mark as not done) in the shots' toolbar. **Pause** is
   a toggle. **Run** runs the multishot routines at once even

@@ -261,7 +261,7 @@ class Lyse(LabscriptGuiApplication):
         if 'lastfileboxfolder' in save_data:
             self.filebox.last_opened_shots_folder = save_data['lastfileboxfolder']
         if 'analysis_paused' in save_data and save_data['analysis_paused']:
-            self.filebox.pause_analysis()
+            self.filebox.set_analysis_paused(True)
         if restore_window_geometry:
             self.restore_geometry(save_data)
         self.configuration_loaded(save_target)
@@ -285,37 +285,45 @@ class Lyse(LabscriptGuiApplication):
         QtWidgets.QShortcut('Shift+Del', self.ui, lambda: self.delete_items(False))
 
     def on_save_dataframe_triggered(self, choose_folder=True):
-        df = self.filebox.shots_model.dataframe.copy()
-        if len(df) > 0:
+        folder = None
+        if choose_folder:
             default = self.exp_config.get('paths', 'experiment_shot_storage')
-            if choose_folder:
-                save_path = file_dialogs.choose_folder(
-                    self.ui, 'Select a Folder for the Dataframes', default
-                )
-                if not save_path:
-                    # User cancelled
-                    return
-            # A sequence is its engage time and labscript: two labscripts
-            # engaged in the same second are two sequences, saved apart.
-            for sequence, labscript in dict.fromkeys(zip(df['sequence'], df['labscript'])):
-                rows = (df['sequence'] == sequence) & (df['labscript'] == labscript)
-                sequence_df = pandas.DataFrame(df[rows], columns=df.columns).dropna(axis=1, how='all')
-                filename = f'dataframe_{sequence.to_pydatetime().strftime("%Y%m%dT%H%M%S")}_{labscript[:-3]}.pkl'
-                if not choose_folder:
-                    save_path = os.path.dirname(sequence_df['filepath'].iloc[0])
-                for col in sequence_df.columns :
-                    if sequence_df[col].dtype == object:
-                        # Convert only all-numeric columns: image attributes
-                        # arrive as bytes (ValueError), and array-valued
-                        # results cannot be converted at all (TypeError).
-                        try:
-                            sequence_df[col] = pandas.to_numeric(sequence_df[col])
-                        except (ValueError, TypeError):
-                            pass
-                sequence_df = sequence_df.infer_objects()
-                sequence_df.to_pickle(os.path.join(save_path, filename))
-        else:
-            self.error_dialog('Dataframe is empty')
+            folder = file_dialogs.choose_folder(self.ui, 'Select a Folder for the Dataframes', default)
+            if not folder:
+                # User cancelled
+                return
+        try:
+            self.save_dataframe(folder)
+        except ValueError as e:
+            self.error_dialog(str(e))
+
+    def save_dataframe(self, folder=None):
+        """Save the dataframe, one file per sequence, in folder, or else beside each
+        sequence's shots, and return the files written."""
+        df = self.filebox.shots_model.dataframe.copy()
+        if len(df) == 0:
+            raise ValueError('The dataframe is empty')
+        saved = []
+        # A sequence is its engage time and labscript: two labscripts
+        # engaged in the same second are two sequences, saved apart.
+        for sequence, labscript in dict.fromkeys(zip(df['sequence'], df['labscript'])):
+            rows = (df['sequence'] == sequence) & (df['labscript'] == labscript)
+            sequence_df = pandas.DataFrame(df[rows], columns=df.columns).dropna(axis=1, how='all')
+            filename = f'dataframe_{sequence.to_pydatetime().strftime("%Y%m%dT%H%M%S")}_{labscript[:-3]}.pkl'
+            save_path = folder or os.path.dirname(sequence_df['filepath'].iloc[0])
+            for col in sequence_df.columns :
+                if sequence_df[col].dtype == object:
+                    # Convert only all-numeric columns: image attributes
+                    # arrive as bytes (ValueError), and array-valued
+                    # results cannot be converted at all (TypeError).
+                    try:
+                        sequence_df[col] = pandas.to_numeric(sequence_df[col])
+                    except (ValueError, TypeError):
+                        pass
+            sequence_df = sequence_df.infer_objects()
+            sequence_df.to_pickle(os.path.join(save_path, filename))
+            saved.append(os.path.join(save_path, filename))
+        return saved
 
     def on_load_dataframe_triggered(self):
         default = os.path.join(self.exp_config.get('paths', 'experiment_shot_storage'), 'dataframe.pkl')
@@ -328,6 +336,10 @@ class Lyse(LabscriptGuiApplication):
         if not file:
             # User cancelled
             return
+        self.load_dataframe(file)
+
+    def load_dataframe(self, file):
+        """Add the shots of a saved dataframe, reading again those changed since it was saved."""
         df = pandas.read_pickle(file).sort_values("run time").reset_index(drop=True)
 
         # Check for changes in the shot files since the dataframe was exported
@@ -345,7 +357,7 @@ class Lyse(LabscriptGuiApplication):
         # Reload the files that changed since exporting
         for index in need_updating:
             filepath = filepaths.pop(index)
-            self.filebox.incoming_queue.put(filepath)
+            self.filebox.incoming_queue.put((filepath, 'dataframe'))
         df = df.drop(need_updating)
 
         self.filebox.shots_model.add_files(filepaths, df, done=True)

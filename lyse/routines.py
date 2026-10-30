@@ -51,13 +51,14 @@ class RoutineBox:
     def __init__(self, app, container, exp_config, filebox, from_filebox, to_filebox, output_box_port, multishot=False):
         self.app = app
         self.multishot = multishot
+        self.box_name = 'multishot' if multishot else 'singleshot'
         self.filebox = filebox
         self.exp_config = exp_config
         self.from_filebox = from_filebox
         self.to_filebox = to_filebox
         self.output_box_port = output_box_port
 
-        self.logger = logging.getLogger(f'lyse.RoutineBox.{"multishot" if multishot else "singleshot"}')
+        self.logger = logging.getLogger(f'lyse.RoutineBox.{self.box_name}')
         self.logger.info('starting')
 
         loader = UiLoader()
@@ -143,13 +144,12 @@ class RoutineBox:
             self.select_all_checkbox.stateChanged, self.on_select_all_state_changed)
         self.ui.treeView.customContextMenuRequested.connect(self.on_treeView_context_menu_requested)
         self.action_set_selected_active.triggered.connect(
-            lambda: self.on_set_selected_triggered(QtCore.Qt.Checked))
+            lambda: self.set_routines_active(self.selected_filepaths(), True))
         self.action_set_selected_inactive.triggered.connect(
-            lambda: self.on_set_selected_triggered(QtCore.Qt.Unchecked))
+            lambda: self.set_routines_active(self.selected_filepaths(), False))
         self.action_restart_selected.triggered.connect(
-            lambda: self.on_selected_routines_triggered(AnalysisRoutine.restart))
-        self.action_show_windows_selected.triggered.connect(
-            lambda: self.on_selected_routines_triggered(AnalysisRoutine.show_windows))
+            lambda: self.restart_routines(self.selected_filepaths()))
+        self.action_show_windows_selected.triggered.connect(self.on_show_windows_triggered)
         self.action_remove_selected.triggered.connect(self.on_remove_selection)
         tree = self.ui.treeView
         self.ui.toolButton_move_to_top.clicked.connect(lambda: tree.move_selected_rows('top'))
@@ -205,21 +205,47 @@ class RoutineBox:
         self.remove_selection()
 
     def remove_selection(self, confirm=True):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        if not selected_rows:
+        filepaths = self.selected_filepaths()
+        if not filepaths:
             return
-        if confirm and not self.app.question_dialog(
-                f"Remove {len(selected_rows)} routines?"):
+        if confirm and not self.app.question_dialog(f"Remove {len(filepaths)} routines?"):
             return
-        name_items = [self.model.item(row, self.COL_NAME) for row in selected_rows]
-        filepaths = [item.data(self.ROLE_FULLPATH) for item in name_items]
-        for routine in self.routines[:]:
-            if routine.filepath in filepaths:
-                routine.remove()
-                self.routines.remove(routine)
-                self.logger.info('removing routine for %s', routine.filepath)
+        self.remove_routines(filepaths)
+
+    def selected_filepaths(self):
+        rows = sorted({index.row() for index in self.ui.treeView.selectedIndexes()})
+        return [self.model.item(row, self.COL_NAME).data(self.ROLE_FULLPATH) for row in rows]
+
+    def _routines_named(self, filepaths):
+        """The routines with these file paths, in the box's order. Raise ValueError
+        naming any path that is not a routine of the box."""
+        unknown = set(filepaths) - {routine.filepath for routine in self.routines}
+        if unknown:
+            raise ValueError(f'Not a routine of the {self.box_name} box: {", ".join(sorted(unknown))}')
+        return [routine for routine in self.routines if routine.filepath in filepaths]
+
+    def remove_routines(self, filepaths):
+        for routine in self._routines_named(filepaths):
+            routine.remove()
+            self.routines.remove(routine)
+            self.logger.info('removing routine for %s', routine.filepath)
         self.update_select_all_checkstate()
+
+    def set_routines_active(self, filepaths, active):
+        state = QtCore.Qt.CheckState.Checked if active else QtCore.Qt.CheckState.Unchecked
+        for routine in self._routines_named(filepaths):
+            self.model.item(routine.get_row_index(), self.COL_ACTIVE).setCheckState(state)
+        self.update_select_all_checkstate()
+
+    def reorder_routines(self, filepaths):
+        """Put the box's routines in the order of filepaths, which names each once."""
+        if sorted(filepaths) != sorted(routine.filepath for routine in self.routines):
+            raise ValueError(f'The new order must name each routine of the {self.box_name} box once')
+        self.ui.treeView.reorder_rows([filepaths.index(routine.filepath) for routine in self.routines])
+
+    def restart_routines(self, filepaths):
+        for routine in self._routines_named(filepaths):
+            routine.restart()
 
     def on_model_item_changed(self, item):
         if item.column() == self.COL_ACTIVE:
@@ -244,22 +270,9 @@ class RoutineBox:
         menu.addAction(self.action_remove_selected)
         menu.exec(QtGui.QCursor.pos())
 
-    def on_set_selected_triggered(self, active):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        for row in selected_rows:
-            active_item = self.model.item(row, self.COL_ACTIVE)
-            active_item.setCheckState(active)
-        self.update_select_all_checkstate()
-
-    def on_selected_routines_triggered(self, method):
-        selected_indexes = self.ui.treeView.selectedIndexes()
-        selected_rows = set(index.row() for index in selected_indexes)
-        name_items = [self.model.item(row, self.COL_NAME) for row in selected_rows]
-        filepaths = [item.data(self.ROLE_FULLPATH) for item in name_items]
-        for routine in self.routines:
-            if routine.filepath in filepaths:
-                method(routine)
+    def on_show_windows_triggered(self):
+        for routine in self._routines_named(self.selected_filepaths()):
+            routine.show_windows()
         self.update_select_all_checkstate()
 
     def analysis_loop(self):
@@ -412,7 +425,9 @@ def add_routines(additions):
         box.routines.append(
             AnalysisRoutine(box.app, filepath, box.model, box.output_box_port, checked, worker))
     for box, added in orders:
-        box.ui.treeView.reorder_rows([added.index(routine.filepath) for routine in box.routines])
+        # Less any whose worker failed to start:
+        started = {routine.filepath for routine in box.routines}
+        box.reorder_routines([filepath for filepath in added if filepath in started])
     for box, _, _ in additions:
         box.update_select_all_checkstate()
 

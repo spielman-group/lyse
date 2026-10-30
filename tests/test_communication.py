@@ -156,7 +156,7 @@ class AddShotTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         path = os.path.join(shared_drive.prefix, 'shot.h5')
         LyseClient('localhost', server.port, 5).add_shot(shared_drive.path_to_agnostic(path))
-        self.assertEqual(server.app.filebox.incoming_queue.get(timeout=5), path)
+        self.assertEqual(server.app.filebox.incoming_queue.get(timeout=5), (path, 'remote'))
 
 
 if __name__ == '__main__':

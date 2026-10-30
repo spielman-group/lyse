@@ -12,14 +12,12 @@
 #                                                                   #
 #####################################################################
 """The lyse main window: a theme change, and saving and loading the dataframe."""
-import glob
 import os
 import queue
 import sys
 import tempfile
 import types
 import unittest
-from unittest import mock
 
 import numpy
 import pandas
@@ -170,21 +168,17 @@ class MainWindowTests(unittest.TestCase):
             shots = app.filebox.shots_model = lyse.filebox.DataFrameModel(
                 app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
             shots.add_files([df['filepath'][1]], df.iloc[[1]], done=True)
-            with mock.patch.object(self.main.file_dialogs, 'open_file', return_value=saved):
-                self.main.Lyse.on_load_dataframe_triggered(app)
+            self.main.Lyse.load_dataframe(app, saved)
             self.assertEqual(shots.filepaths, list(df['filepath'][1:]))
             self.assertEqual(shots.status_percent, [100] * 3)
             self.assertEqual(list(shots.dataframe['fit', 'atoms']), [101.0, 102.0, 103.0])
-            self.assertEqual(app.filebox.incoming_queue.get_nowait(), changed)
+            self.assertEqual(app.filebox.incoming_queue.get_nowait(), (changed, 'dataframe'))
 
     def save(self, folder, df):
         """Save df as lyse does, beside its shots, and return the files written."""
         app = types.SimpleNamespace(
-            filebox=types.SimpleNamespace(shots_model=types.SimpleNamespace(dataframe=df)),
-            exp_config=types.SimpleNamespace(get=lambda section, option: folder),
-        )
-        self.main.Lyse.on_save_dataframe_triggered(app, choose_folder=False)
-        return sorted(glob.glob(os.path.join(folder, '*.pkl')))
+            filebox=types.SimpleNamespace(shots_model=types.SimpleNamespace(dataframe=df)))
+        return sorted(self.main.Lyse.save_dataframe(app))
 
 
 if __name__ == '__main__':

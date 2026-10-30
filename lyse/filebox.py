@@ -457,11 +457,28 @@ class DataFrameModel(QtCore.QObject):
             selected_rows.update(range(selection_range.top(), selection_range.bottom() + 1))
         return sorted(selected_rows)
 
+    def selected_filepaths(self):
+        return [self.filepaths[row] for row in self._selected_rows()]
+
+    def _rows_named(self, filepaths):
+        """The sorted rows of these shots. Raise ValueError naming any that is not in
+        the table."""
+        unknown = set(filepaths) - self.row_number_by_filepath.keys()
+        if unknown:
+            raise ValueError(f'Not a shot in lyse: {", ".join(sorted(unknown))}')
+        return sorted(self.row_number_by_filepath[filepath] for filepath in filepaths)
+
     def remove_selection(self, confirm=True):
-        selected_rows = self._selected_rows()
-        if not selected_rows:
+        filepaths = self.selected_filepaths()
+        if not filepaths:
             return
-        if confirm and not self.app.question_dialog(f"Remove {len(selected_rows)} shots?"):
+        if confirm and not self.app.question_dialog(f"Remove {len(filepaths)} shots?"):
+            return
+        self.remove_shots(filepaths)
+
+    def remove_shots(self, filepaths):
+        selected_rows = self._rows_named(filepaths)
+        if not selected_rows:
             return
         # The view reads the dataframe as it draws, so it changes with the lists inside
         # one notification: a row removal for one block, else a reset, since a removal
@@ -489,8 +506,8 @@ class DataFrameModel(QtCore.QObject):
         if status_percent != 100:
             self._first_incomplete = min(self._first_incomplete, row)
 
-    def mark_selection_not_done(self):
-        selected_rows = self._selected_rows()
+    def mark_not_done(self, filepaths):
+        selected_rows = self._rows_named(filepaths)
         for row in selected_rows:
             if self.deleted_off_disk[row]:
                 # If the shot was previously not readable on disk, check to
@@ -886,9 +903,10 @@ class FileBox:
         self.ui.toolButton_remove_shots.clicked.connect(self.shots_model.on_remove_selection)
         self.ui.tableView.doubleLeftClicked.connect(self.shots_model.on_double_click)
         self.ui.pushButton_analysis_running.toggled.connect(self.on_analysis_running_toggled)
-        self.ui.pushButton_abort.clicked.connect(self.on_abort_clicked)
-        self.ui.pushButton_mark_as_not_done.clicked.connect(self.on_mark_selection_not_done_clicked)
-        self.app.multishot_routinebox.ui.toolButton_run_routines.clicked.connect(self.on_run_multishot_analysis_clicked)
+        self.ui.pushButton_abort.clicked.connect(self.abort)
+        self.ui.pushButton_mark_as_not_done.clicked.connect(
+            lambda: self.rerun_shots(self.shots_model.selected_filepaths()))
+        self.app.multishot_routinebox.ui.toolButton_run_routines.clicked.connect(self.run_multishot)
 
     def on_edit_columns_clicked(self):
         self.edit_columns_dialog.show()
@@ -914,10 +932,10 @@ class FileBox:
         # Save the containing folder for use next time we open the dialog box:
         self.last_opened_shots_folder = os.path.dirname(shot_files[0])
         for filepath in shot_files:
-            self.incoming_queue.put(filepath)
+            self.incoming_queue.put((filepath, 'dialog'))
 
-    def on_abort_clicked(self):
-        self.pause_analysis()
+    def abort(self):
+        self.set_analysis_paused(True)
         self.app.singleshot_routinebox.abort()
         self.app.multishot_routinebox.abort()
 
@@ -926,12 +944,12 @@ class FileBox:
         if not pressed:
             self.analysis_pending.set()
 
-    def on_mark_selection_not_done_clicked(self):
-        self.shots_model.mark_selection_not_done()
+    def rerun_shots(self, filepaths):
+        self.shots_model.mark_not_done(filepaths)
         # Let the analysis loop know to look for these shots:
         self.analysis_pending.set()
 
-    def on_run_multishot_analysis_clicked(self):
+    def run_multishot(self):
         self.multishot_required = True
         self.multishot_requested = True
         self.analysis_pending.set()
@@ -982,7 +1000,7 @@ class FileBox:
         while True:
             try:
                 filepaths = []
-                filepath = self.incoming_queue.get()
+                filepath, _ = self.incoming_queue.get()
                 filepaths.append(filepath)
                 if self.incoming_queue.qsize() == 0:
                     # Wait momentarily in case more arrive so we can batch process them:
@@ -991,7 +1009,7 @@ class FileBox:
                 batch_size = len(self.shots_model.dataframe) // 3 + 1
                 while True:
                     try:
-                        filepath = self.incoming_queue.get(False)
+                        filepath, _ = self.incoming_queue.get(False)
                     except queue.Empty:
                         break
                     else:
@@ -1104,13 +1122,13 @@ class FileBox:
                            'Original exception was:\n\n' + orig_exception)
                 # Raise the exception in a thread so we can keep running
                 zprocess.raise_exception_in_thread((RuntimeError, RuntimeError(message), tb))
-                self.pause_analysis()
+                self.set_analysis_paused(True)
 
 
     @inmain_decorator()
-    def pause_analysis(self):
-        # This automatically triggers the slot that sets self.analysis_paused
-        self.ui.pushButton_analysis_running.setChecked(True)
+    def set_analysis_paused(self, paused):
+        # Through the button, whose slot sets self.analysis_paused:
+        self.ui.pushButton_analysis_running.setChecked(paused)
 
     def do_singleshot_analysis(self, filepath):
         # A shot file deleted before analysis would make user code raise and fill the
@@ -1139,7 +1157,7 @@ class FileBox:
                     # no surprise there:
                     self.shots_model.mark_as_deleted_off_disk(filepath)
                 else:
-                    self.pause_analysis()
+                    self.set_analysis_paused(True)
                 return
             if signal == 'progress':
                 continue
