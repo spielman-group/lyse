@@ -492,7 +492,11 @@ class DataFrameModel(QtCore.QObject):
             try:
                 row_number = self.row_number_by_filepath[filepath]
             except KeyError:
-                # Row has been deleted, nothing to do here:
+                # The row has been deleted, so its results cannot be recorded, and
+                # a result not saved to the shot file is kept nowhere else:
+                if row_data:
+                    self.app.output_box.output(
+                        f'Warning: results not recorded for {filepath}, which has no row\n', red=True)
                 continue
             for (group, name), value in row_data.items():
                 for key, flat_value in flatten_dict({name: value}, keys=(group,)).items():
