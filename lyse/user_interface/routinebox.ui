@@ -55,6 +55,9 @@
           <property name="popupMode">
            <enum>QToolButton::InstantPopup</enum>
           </property>
+          <property name="autoRaise">
+           <bool>true</bool>
+          </property>
          </widget>
         </item>
         <item>
@@ -68,6 +71,9 @@
           <property name="icon">
            <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
             <normaloff>:/qtutils/fugue/minus.png</normaloff>:/qtutils/fugue/minus.png</iconset>
+          </property>
+          <property name="autoRaise">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
@@ -113,6 +119,9 @@
            <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
             <normaloff>:/qtutils/fugue/arrow-stop-090.png</normaloff>:/qtutils/fugue/arrow-stop-090.png</iconset>
           </property>
+          <property name="autoRaise">
+           <bool>true</bool>
+          </property>
          </widget>
         </item>
         <item>
@@ -126,6 +135,9 @@
           <property name="icon">
            <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
             <normaloff>:/qtutils/fugue/arrow-090.png</normaloff>:/qtutils/fugue/arrow-090.png</iconset>
+          </property>
+          <property name="autoRaise">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
@@ -141,6 +153,9 @@
            <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
             <normaloff>:/qtutils/fugue/arrow-270.png</normaloff>:/qtutils/fugue/arrow-270.png</iconset>
           </property>
+          <property name="autoRaise">
+           <bool>true</bool>
+          </property>
          </widget>
         </item>
         <item>
@@ -154,6 +169,9 @@
           <property name="icon">
            <iconset resource="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc">
             <normaloff>:/qtutils/fugue/arrow-stop-270.png</normaloff>:/qtutils/fugue/arrow-stop-270.png</iconset>
+          </property>
+          <property name="autoRaise">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
