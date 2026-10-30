@@ -167,7 +167,8 @@ class FailedPassTests(unittest.TestCase):
         incomplete = ['1.h5']
         box = types.SimpleNamespace(
             analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None),
-            analysis_paused=False, multishot_required=False, analysed_since_multishot=[],
+            analysis_paused=False, multishot_required=False, multishot_requested=False,
+            analysed_since_multishot=[],
             to_multishot=queue.Queue(), from_multishot=queue.Queue(),
             shots_model=types.SimpleNamespace(
                 get_first_incomplete=lambda: incomplete.pop() if incomplete else None),
@@ -180,6 +181,29 @@ class FailedPassTests(unittest.TestCase):
             lyse.filebox.FileBox.analysis_loop(box)
         self.assertEqual(box.to_multishot.qsize(), 1)
         self.assertFalse(box.analysis_paused)
+
+    def test_while_paused_only_the_run_button_starts_a_pass(self):
+        """A pass outstanding at the pause waits for resuming, but Run starts it now."""
+        waits = []
+
+        def wait():
+            waits.append(None)
+            if len(waits) == 2:
+                lyse.filebox.FileBox.on_run_multishot_analysis_clicked(box)
+            if len(waits) > 2:
+                raise Stop
+
+        box = types.SimpleNamespace(
+            analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None, set=lambda: None),
+            analysis_paused=True, multishot_required=True, multishot_requested=False,
+            analysed_since_multishot=[], to_multishot=queue.Queue(), from_multishot=queue.Queue(),
+        )
+        box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
+        for _ in range(2):
+            box.from_multishot.put(['done', 100.0, {}])
+        with self.assertRaises(Stop):
+            lyse.filebox.FileBox.analysis_loop(box)
+        self.assertEqual(box.to_multishot.qsize(), 1)
 
 
 if __name__ == '__main__':
