@@ -1015,7 +1015,7 @@ class FileBox:
                     try:
                         dataframe = get_dataframe_from_shot(filepath, warn=lambda message:
                             self.app.output_box.output(f'Warning: {message}\n', red=True))
-                        # BLACS submits a shot once it has run it, so it is added then:
+                        # runmanager submits a shot once BLACS has run it, so it is added then:
                         if dataframe['run time'].isna().values.all():
                             self.app.output_box.output(
                                 f'Warning: Ignoring shot file that has not been run {filepath}\n', red=True)
