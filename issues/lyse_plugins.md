@@ -97,7 +97,18 @@ labscript-agents and labscript-optimization become such plugins.
     engaged; labscript-optimization reads the shot's cost and feeds its
     session. Each keeps its own window, with its own on/off control there.
     This is a full port: nothing of their GUI-routine forms remains, no
-    `lyse.Routine` subclass and no `.lyse` folder in their examples.
+    `lyse.Routine` subclass and no `.lyse` folder in their examples. Each keeps
+    its window and its call points in lyse's process and does its work in a
+    worker of its own (14).
+
+### Plugin workers
+
+14. Any plugin can run its work in worker processes of its own, as a BLACS
+    device tab does, so that a crash or slow work stays out of lyse. The plugin
+    starts its workers, sends them jobs, restarts and ends them; sending a job
+    does not block the sender, and the job's result reaches the plugin when the
+    worker has done it. lyse ends a plugin's workers when it closes the plugin.
+    The first plugin (10) needs no worker and has none.
 
 ## Architecture
 
@@ -142,9 +153,11 @@ routine boxes. At start-up lyse builds its boxes, whose threads wait for shots,
 then instantiates the plugins, restores their data from the configuration it
 autoloads, sets up the contexts and calls `plugin_setup_complete`, and only then
 starts its server, so no call precedes setup. Loading a configuration later
-restores plugin data again, as BLACS does. At quit, after the save prompt, lyse
-fires no more calls, closes the plugins, then ends the workers. Plugin data is
-saved in lyse's configuration. Nothing new is needed in labscript-utils.
+restores plugin data again, as BLACS does. Plugins start their workers (G) in
+`plugin_setup_complete`, before the server. At quit, after the save prompt, lyse
+fires no more calls, closes the plugins, each ending its own workers, then ends
+the routines' workers. Plugin data is saved in lyse's configuration. Nothing new
+is needed in labscript-utils.
 
 **C. Call points and a shot's attempt** (5, 7). An *attempt* of a shot begins
 when the analysis loop takes it, a new shot or one a re-run marked not done. Its
@@ -206,19 +219,52 @@ deleted.
 forgets one from any other source, so a shot added again by hand is no longer
 its. On `analysis_done`, for a noted shot whose outcomes are all `'done'` and
 whose `sequence_index` is −1 or `run repeat` 1 or more, it queues the path for
-its thread. That thread, under the shot's file lock, checks again that the row
-is present, still noted and done, and that the file's `results/lyse` attributes
-are all `'done'`, so the outcomes were recorded; only then does it delete the
-file, with labscript-utils' shared delete function, and mark the row deleted,
-without the warning.
+its thread. That thread, holding the shot's file lock,
+`Lock(path_to_agnostic(path))`, checks again that the row is present, still
+noted and done, and that the file's `results/lyse` attributes are all `'done'`,
+so the outcomes were recorded; only then does it call
+`labscript_utils.h5_lock.delete_shot_file(path)`, which takes the lock again, as
+zlock allows within a thread, and deletes the file, and mark the row deleted,
+without the warning. An `OSError` from it is reported in the output box.
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
-a plugin under the `lyse.plugins` entry point and handles `analysis_done`.
-They run in lyse's process, as BLACS's plugins run in BLACS's, so their slow
-work stays on their own threads, as now. They read the dataframe through the
-same selection `lyse.data()` uses, and labscript-optimization adds its columns
-through the shots model's `update_rows`. Their `lyse.Routine` subclasses and
-`.lyse` example folders go. The packages' owners port them (below).
+a plugin under the `lyse.plugins` entry point and handles `analysis_done`. Each
+keeps its window and its handlers in lyse's process and runs its work in a
+worker (G): labscript-agents its MCP server, labscript-optimization its session.
+`analysis_done` sends the worker a job with the shot and returns at once; the
+job's result, such as the optimizer's columns, comes back to the plugin, which
+adds them through the shots model's `update_rows`. The plugin reads the
+dataframe for its jobs through the same selection `lyse.data()` uses. Their
+`lyse.Routine` subclasses and `.lyse` example folders go. The packages' owners
+port them (below).
+
+**G. Plugin workers** (14). The capability is labscript-utils', for plugins in
+general, modelled on BLACS's tab workers (`blacs/tab_base_classes.py`), whose
+code splits into a shared part and BLACS's own:
+
+- Shared, the worker side: `Worker(Process)` with `init()`, `shutdown()` and
+  job methods; its `run`, which sets up logging, the excepthook and the zlock
+  name and makes each workerarg an attribute; its `mainloop`, which runs jobs
+  in the main thread, receives on a thread of its own and replies twice per
+  job, the method found, then success, message and results; and its quit: the
+  `'quit'` message, the interrupt of a running job, `shutdown()`,
+  `kill_lock.exit_when_released` and the heartbeat's parent death.
+- Shared, the parent side, a mixin: `create_worker(name, WorkerClass,
+  workerargs)`, the class or its import path, through `ProcessTree.instance()`
+  with the host's output box; sending a job and reading its two replies; ending
+  the workers, with `'quit'` and then a kill after `WORKER_QUIT_TIMEOUT`; and a
+  restart as an end, then a create.
+- BLACS's own, which stays in `Tab` and its `Worker` subclass: the state
+  machine (`define_state`, the event queue, `queue_work` yielded from a state),
+  the connection table's workerargs, remote process clients, the tab's display
+  of its workers, and `_transition_to_buffered`'s path conversion.
+
+What plugins need first: the shared worker base and the mixin, with a job
+call that returns a `concurrent.futures.Future`, resolved by a reader thread
+per worker, in place of the state machine; workers started when created, not
+at their first job; their output in the host's output box, whose port lyse
+puts in the setup dict; and every worker ended from the plugin's `close()`.
+Moving BLACS's `Tab` onto the shared parts is a later step.
 
 | Requirement | Part |
 | --- | --- |
@@ -228,22 +274,27 @@ through the shots model's `update_rows`. Their `lyse.Routine` subclasses and
 | 7–9, 12 | C, D |
 | 10–11 | E |
 | 13 | F, in labscript-agents and labscript-optimization |
+| 14 | G, in labscript-utils |
 
 ## Needed elsewhere
 
-- **runmanager:** its analysis submission passes `add_shot(path, source='runmanager')`.
-- **labscript-utils:** a function that deletes a shot file under its file
-  lock, which E and BLACS's `delete_repeated_shots` both call; and the
-  `[lyse/plugins]` section documented beside `[blacs/plugins]`
-  (`docs/source/labconfig.rst`, `example.toml`).
-- **BLACS:** its `delete_repeated_shots` stays, calling the shared function.
-- **labscript-agents**, once A–C exist: its plugin (F); ToolSpec bindings for
-  the new lyse commands; its docs' line that it has no control of lyse goes;
-  the clean-up that ran when its worker exited runs in the plugin's `close()`.
-- **labscript-optimization**, once A–C exist: its plugin (F); a field in its
+- **runmanager:** its analysis submission passes `add_shot(path,
+  source='runmanager')`.
+- **labscript-utils:** done on its `LysePlugins` branch:
+  `labscript_utils.h5_lock.delete_shot_file(path)` (`d65444a`), which E and
+  BLACS's `delete_repeated_shots` both call, and the `[lyse/plugins]` section
+  documented beside `[blacs/plugins]`, with `delete_default_and_repeated_shots`
+  off by default (`8560863`). To do: the plugin workers (G).
+- **BLACS:** its `delete_repeated_shots` stays, calling `delete_shot_file`. Later,
+  its `Tab` and `Worker` move onto the shared worker parts (G).
+- **labscript-agents**, once A–C and G exist: its plugin (F); ToolSpec bindings for the
+  new lyse commands; its docs' line that it has no control of lyse goes; its MCP
+  server in its plugin's worker, with the clean-up that ran when its lyse worker
+  exited in that worker's `shutdown()`.
+- **labscript-optimization**, once A–C and G exist: its plugin (F); a field in its
   window holding its configuration file's path, chosen with a file picker and
   saved and restored with the plugin's save data in lyse's configuration, so
-  nothing is relative to a routine folder; the hand-over to its session made
-  from `analysis_done` without blocking, in place of the 2 s wait, with a late
-  reply delivered when it comes; the clean-up that ran when its worker exited
-  runs in `close()`.
+  nothing is relative to a routine folder; its session in its plugin's worker;
+  the hand-over from `analysis_done` a job sent without blocking, in place of
+  the 2 s wait, its late reply delivered as the job's result; the clean-up that
+  ran when its lyse worker exited in that worker's `shutdown()`.
