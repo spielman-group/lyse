@@ -1,5 +1,13 @@
 ## Unreleased
 
+- A failing routine no longer stops analysis: the routines after it run, analysis
+  is not paused, and the next shot is analysed. The option *Stop a shot at its first
+  failure* skips a shot's later single-shot routines once one fails. How each
+  routine ended, `'done'`, `'error'`, `'aborted'` or `'not run'`, is written into
+  the shot file's `results/lyse` group and shown as `('lyse', <routine>)` columns.
+  **Re-run failed** analyses all failed, stopped and aborted shots again. A worker
+  that dies during an analysis ends it as an error, where lyse used to wait for it.
+
 - Each shot's status shows the state of its analysis: not done, awaiting the
   multishot routines, done, failed, or deleted. A shot whose single-shot routines
   have run awaits the next multishot pass, and its analysis ends with that pass. A
@@ -44,7 +52,7 @@
 
 - A multishot routine that raises an exception no longer pauses analysis, and the
   multishot routines after it still run. The next pass offers its shots again in
-  `lyse.paths`. A singleshot routine's exception pauses analysis as before.
+  `lyse.paths`.
 
 - The dataframe holds the attributes of the groups under a shot's `data` group, as
   it does those under `results`; where both have a group of one name, a results

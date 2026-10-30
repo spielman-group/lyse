@@ -104,6 +104,8 @@ class RemoteTests(unittest.TestCase):
         self.assertTrue(self.app.filebox.ui.pushButton_analysis_running.isChecked())
         self.call('rerun_shots', ['0.h5'])
         self.assertEqual(self.call('shot_status', ['0.h5', '1.h5']), {'0.h5': 'not done', '1.h5': 'done'})
+        self.call('set_stop_on_failure', True)
+        self.assertTrue(self.app.filebox.ui.checkBox_stop_on_failure.isChecked())
         self.call('remove_shots', ['1.h5'])
         self.assertEqual(shots.filepaths, ['0.h5'])
         with self.assertRaisesRegex(ValueError, '2.h5'):

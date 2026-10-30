@@ -290,6 +290,7 @@ class Lyse(LabscriptGuiApplication):
         save_data['lastfileboxfolder'] = self.filebox.last_opened_shots_folder
 
         save_data['analysis_paused'] = self.filebox.analysis_paused
+        save_data['stop_on_failure'] = self.filebox.stop_on_failure
         save_data['plugins'] = lyse.plugins.manager.get_save_data()
         save_data.update(self.geometry_save_data())
         return save_data
@@ -312,6 +313,8 @@ class Lyse(LabscriptGuiApplication):
             self.filebox.last_opened_shots_folder = save_data['lastfileboxfolder']
         if 'analysis_paused' in save_data and save_data['analysis_paused']:
             self.filebox.set_analysis_paused(True)
+        if 'stop_on_failure' in save_data:
+            self.filebox.set_stop_on_failure(save_data['stop_on_failure'])
         lyse.plugins.manager.restore_save_data(save_data.get('plugins', {}))
         if restore_window_geometry:
             self.restore_geometry(save_data)
@@ -415,6 +418,13 @@ class Lyse(LabscriptGuiApplication):
         # A shot already in the table keeps its row, which add_files does not replace:
         added = [filepath for filepath in filepaths if filepath not in shots.row_number_by_filepath]
         shots.add_files(filepaths, df, ['dataframe'] * len(filepaths), done=True)
+        # A row takes its state from its loaded outcomes, done if it has none:
+        if 'lyse' in df.columns.get_level_values(0):
+            for filepath, outcomes in zip(df['filepath'], df['lyse'].to_dict('records')):
+                state = lyse.filebox.outcome_state(
+                    {name: outcome for name, outcome in outcomes.items() if isinstance(outcome, str)})
+                if filepath in added and state != 'done':
+                    shots.end_attempt(filepath, state)
         for filepath in added:
             if not os.path.isfile(filepath):
                 shots.mark_deleted(filepath, warn=False)

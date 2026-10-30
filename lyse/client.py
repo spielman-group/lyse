@@ -92,6 +92,19 @@ class LyseClient(ZMQClient):
         or ``'deleted'``. Unlike runmanager's, it is keyed by path, not shot ID."""
         return self.request('shot_status', filepaths)
 
+    def rerun_failed(self):
+        """Analyse again, in order, every shot whose analysis failed, stopped or was
+        aborted, or whose multishot pass failed, as Re-run failed does."""
+        self.request('rerun_failed')
+
+    def get_stop_on_failure(self):
+        """Return whether a shot's later single-shot routines are skipped after one fails."""
+        return self.request('get_stop_on_failure')
+
+    def set_stop_on_failure(self, stop):
+        """Set whether a shot's later single-shot routines are skipped after one fails."""
+        self.request('set_stop_on_failure', stop)
+
     def remove_shots(self, filepaths):
         """Remove shots from lyse's dataframe. Their files are kept."""
         self.request('remove_shots', filepaths)

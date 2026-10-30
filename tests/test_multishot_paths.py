@@ -22,6 +22,7 @@ import threading
 import types
 import unittest
 
+import labscript_utils.h5_lock, h5py
 import pandas
 from qtutils.qt import QtWidgets
 
@@ -74,18 +75,19 @@ class LysePathsTests(unittest.TestCase):
         self.events = []
         self.filebox = types.SimpleNamespace(
             multishot_required=True, multishot_requested=False, analysis_paused=False,
-            add_shots_start_time=None, set_add_shots_progress=lambda *args: None,
-            set_analysis_paused=lambda paused: None, _singleshot_outcomes={},
+            stop_on_failure=False, add_shots_start_time=None, set_add_shots_progress=lambda *args: None,
+            _singleshot_outcomes={}, _recorded_outcomes={}, outcomes_recorded={},
             fire_event=lambda *args: self.events.append(args),
         )
-        app = types.SimpleNamespace(
+        app = self.filebox.app = types.SimpleNamespace(
             filebox=self.filebox, output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None))
+        self.filebox.record_outcomes = types.MethodType(lyse.filebox.FileBox.record_outcomes, self.filebox)
         self.filebox.shots_model = lyse.filebox.DataFrameModel(
             app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
-        self.filebox.to_singleshot, self.filebox.from_singleshot, _ = self.routine_box(False, ['singleshot.py'])
-        self.filebox.to_multishot, self.filebox.from_multishot, multishot_box = self.routine_box(
+        self.filebox.to_singleshot, self.filebox.from_singleshot, _ = self.routine_box(
+            False, ['singleshot.py', 'later.py'])
+        self.filebox.to_multishot, self.filebox.from_multishot, app.multishot_routinebox = self.routine_box(
             True, ['first.py', 'second.py'])
-        self.filebox.app = types.SimpleNamespace(multishot_routinebox=multishot_box)
 
     def routine_box(self, multishot, names):
         """A routine box with a routine of each name: the filebox's pair of queues to and
@@ -107,12 +109,13 @@ class LysePathsTests(unittest.TestCase):
             worker.plots = {}
             worker.modulewatcher = types.SimpleNamespace(lock=threading.Lock())
             worker.to_parent = queue.Queue()
-            routine = types.SimpleNamespace(shortname=name, done=False, error=False, enabled=lambda: True,
+            routine = types.SimpleNamespace(shortname=name, name=os.path.splitext(name)[0], aborted=False,
+                                            done=False, error=False, enabled=lambda: True,
                                             from_worker=worker.to_parent, shutdown=None,
                                             worker=types.SimpleNamespace(poll=lambda: None))
             routine.to_worker = runs_on_put(worker.mainloop, worker, 'from_parent')
             routine.set_status = lambda status, routine=routine: routine.__dict__.update(
-                done=status == 'done', error=status == 'error')
+                done=status == 'done', error=status in ('error', 'aborted'))
             routine.do_analysis = types.MethodType(lyse.routines.AnalysisRoutine.do_analysis, routine)
             routine.send_analysis = types.MethodType(lyse.routines.AnalysisRoutine.send_analysis, routine)
             routines.append(routine)
@@ -127,7 +130,7 @@ class LysePathsTests(unittest.TestCase):
 
     def analyse(self, name):
         path = os.path.join(self.folder, name)
-        open(path, 'w').close()
+        h5py.File(path, 'w').close()
         self.filebox.shots_model.add_files([path], pandas.DataFrame({('filepath', ''): [path]}), ['remote'])
         lyse.filebox.FileBox.do_singleshot_analysis(self.filebox, path)
         return path
@@ -155,15 +158,16 @@ class LysePathsTests(unittest.TestCase):
         first = self.analyse('1.h5')
         open(os.path.join(self.folder, 'fail'), 'w').close()  # first.py fails, once
         self.multishot_pass()
-        # Its attempt has ended, and it awaits the next pass:
+        # Its attempt has ended, and it awaits the next pass, which Re-run failed takes:
         self.assertEqual(self.state(first), 'awaiting multishot')
+        self.assertEqual(self.filebox.shots_model.failed_filepaths(), [first])
         second = self.analyse('2.h5')
         self.multishot_pass()
         for name in ['first.py', 'second.py']:
             self.assertEqual(self.calls(name), [[first], [first, second]])
         self.assertEqual([event[2] for event in self.events if event[:2] == ('analysis_done', first)],
-                         [{'singleshot': 'done', 'first': 'error', 'second': 'done'},
-                          {'singleshot': 'done', 'first': 'done', 'second': 'done'}])
+                         [{'singleshot': 'done', 'later': 'done', 'first': 'error', 'second': 'done'},
+                          {'singleshot': 'done', 'later': 'done', 'first': 'done', 'second': 'done'}])
         self.assertEqual(self.state(first), 'done')
 
     def test_a_shot_is_received_then_awaits_its_pass_which_ends_its_attempt(self):
@@ -171,13 +175,29 @@ class LysePathsTests(unittest.TestCase):
         self.assertEqual(self.state(path), 'awaiting multishot')
         self.multishot_pass()
         self.assertEqual(self.state(path), 'done')
-        singleshot, multishot = {'singleshot': 'done'}, {'first': 'done', 'second': 'done'}
+        singleshot = {'singleshot': 'done', 'later': 'done'}
+        multishot = {'first': 'done', 'second': 'done'}
         self.assertEqual(self.events, [
             ('shot_received', path, 'remote'),
             ('singleshot_done', path, singleshot),
             ('multishot_done', [path], multishot),
             ('analysis_done', path, {**singleshot, **multishot}),
         ])
+
+    def test_a_failed_routine_is_recorded_and_the_rest_run_unless_the_shot_stops(self):
+        for stop, state, later in [(False, 'failed', 'done'), (True, 'stopped', 'not run')]:
+            with self.subTest(stop=stop):
+                self.filebox.stop_on_failure = stop
+                open(os.path.join(self.folder, 'fail'), 'w').close()  # singleshot.py fails, once
+                path = self.analyse(f'{stop}.h5')
+                self.multishot_pass()
+                self.assertEqual(self.state(path), state)
+                self.assertFalse(self.filebox.analysis_paused)
+                outcomes = {'singleshot': 'error', 'later': later, 'first': 'done', 'second': 'done'}
+                with h5py.File(path, 'r') as f:
+                    self.assertEqual(dict(f['results/lyse'].attrs), outcomes)
+                row = self.filebox.shots_model.row_number_by_filepath[path]
+                self.assertEqual(self.filebox.shots_model.dataframe['lyse'].iloc[row].to_dict(), outcomes)
 
     def test_a_rerun_during_an_attempt_waits_for_it_to_end(self):
         path = self.analyse('1.h5')
@@ -197,6 +217,16 @@ class LysePathsTests(unittest.TestCase):
     def test_a_singleshot_routine_sees_none(self):
         self.analyse('1.h5')
         self.assertEqual(self.calls('singleshot.py'), [None])
+
+
+class DeadWorkerTests(unittest.TestCase):
+
+    def test_a_worker_that_dies_during_an_analysis_ends_it_as_an_error(self):
+        def get(timeout):
+            raise TimeoutError
+        routine = types.SimpleNamespace(send_analysis=lambda *args: (False, types.SimpleNamespace(get=get)),
+                                        worker=types.SimpleNamespace(poll=lambda: 1))
+        self.assertEqual(lyse.routines.AnalysisRoutine.do_analysis(routine, '1.h5', None), (False, {}))
 
 
 class Stop(BaseException):

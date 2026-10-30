@@ -100,6 +100,16 @@ class LyseServer(ZMQServer):
         self.app.filebox.run_multishot()
 
     @inmain_decorator()
+    def handle_rerun_failed(self):
+        self.app.filebox.rerun_failed()
+
+    def handle_get_stop_on_failure(self):
+        return self.app.filebox.stop_on_failure
+
+    def handle_set_stop_on_failure(self, stop):
+        self.app.filebox.set_stop_on_failure(stop)
+
+    @inmain_decorator()
     def handle_rerun_shots(self, filepaths):
         self.app.filebox.rerun_shots([shared_drive.path_to_local(path) for path in filepaths])
 

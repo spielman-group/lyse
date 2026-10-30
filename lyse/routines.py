@@ -307,15 +307,17 @@ class RoutineBox:
     @inmain_decorator()
     def end_routine(self, routine, success):
         """Set the status of a routine that has run, and start the next enabled routine
-        that has not run. After a failure, start it only in the multishot routine box,
-        and only if analysis is not paused. Return the next routine, or None, and the
-        percentage of enabled routines that have run, or (None, None) if the routines
-        after the failed one are not run."""
+        that has not run. After a failure, start it only if analysis is not paused and,
+        in the single-shot routine box, the option to stop a shot at its first failure
+        is off. Return the next routine, or None, and the percentage of enabled routines
+        that have run, or (None, None) if the routines after the failed one are not
+        run."""
         if success:
             routine.set_status('done')
         else:
-            routine.set_status('error')
-            if not self.multishot or self.app.filebox.analysis_paused:
+            routine.set_status('aborted' if routine.aborted else 'error')
+            if (self.app.filebox.analysis_paused
+                    or not self.multishot and self.app.filebox.stop_on_failure):
                 return None, None
         enabled_routines = [r for r in self.routines if r.enabled()]
         if enabled_routines:
@@ -334,8 +336,7 @@ class RoutineBox:
         while routine is not None:
             self.logger.info('running analysis routine %s', routine.shortname)
             success, updated_data = routine.do_analysis(filepath, paths)
-            # Named as a classic script's results group is:
-            outcome = {os.path.splitext(routine.shortname)[0]: 'done' if success else 'error'}
+            outcome = {routine.name: 'done' if success else 'aborted' if routine.aborted else 'error'}
             routine, status_percent = self.end_routine(routine, success)
             if success:
                 self.logger.debug('success')
@@ -344,12 +345,13 @@ class RoutineBox:
                 error = True
                 stopped = status_percent is None
             self.to_filebox.put(['progress', status_percent, updated_data, outcome])
+        not_run = {r.name: 'not run' for r in self.routines if r.enabled() and not (r.done or r.error)}
         # 'error' if a routine failed, so that the filebox offers the pass's shots
         # again, with no status if the routines after it did not run:
         if error:
-            self.to_filebox.put(['error', None if stopped else 100.0, {}, {}])
+            self.to_filebox.put(['error', None if stopped else 100.0, {}, not_run])
         else:
-            self.to_filebox.put(['done', 100.0, {}, {}])
+            self.to_filebox.put(['done', 100.0, {}, not_run])
         self.logger.debug('completed analysis of %s', filepath)
 
     def abort(self):
@@ -460,6 +462,8 @@ class AnalysisRoutine:
         self.app = app
         self.filepath = filepath
         self.shortname = os.path.basename(self.filepath)
+        # Its outcomes' name, as a classic script's results group is named:
+        self.name = os.path.splitext(self.shortname)[0]
         self.model = model
         self.output_box_port = output_box_port
 
@@ -473,6 +477,8 @@ class AnalysisRoutine:
         self.working = False
         # Counts the runs, so that abort() can tell whether the one it interrupted goes on:
         self.run_number = 0
+        # Whether Abort was sent during the present run:
+        self.aborted = False
 
         self.logger = logging.getLogger(f'lyse.AnalysisRoutine.{self.shortname}')
 
@@ -515,7 +521,14 @@ class AnalysisRoutine:
         if from_worker is None:
             # Removed, or its worker died: nothing would answer.
             return False, {}
-        signal, data = from_worker.get()
+        while True:
+            try:
+                signal, data = from_worker.get(timeout=1)
+                break
+            except TimeoutError:
+                # A worker that died never replies:
+                if self.worker.poll() is not None:
+                    return False, {}
         if signal == 'error':
             return False, data
         elif signal == 'done':
@@ -528,6 +541,7 @@ class AnalysisRoutine:
         self.working = status == 'working'
         if self.working:
             self.run_number += 1
+            self.aborted = False
         index = self.get_row_index()
         if index is None:
             # Yelp, we've just been deleted. Nothing to do here.
@@ -543,6 +557,10 @@ class AnalysisRoutine:
             self.error = False
         elif status == 'error':
             status_item.setIcon(Icon(':/qtutils/fugue/exclamation'))
+            self.error = True
+            self.done = False
+        elif status == 'aborted':
+            status_item.setIcon(Icon(':/qtutils/fugue/cross-octagon'))
             self.error = True
             self.done = False
         elif status == 'clear':
@@ -574,6 +592,7 @@ class AnalysisRoutine:
         _ABORT_TIMEOUT seconds, restart its worker."""
         if not self.working or self.shutdown is not None:
             return
+        self.aborted = True
         # A worker that does not take the abort is replaced below.
         with contextlib.suppress(ProcessExited, zprocess.TimeoutError):
             self.to_worker.put(['abort', None], timeout=1)

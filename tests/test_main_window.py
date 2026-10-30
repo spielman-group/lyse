@@ -162,7 +162,10 @@ class MainWindowTests(unittest.TestCase):
                 'run time': engaged + pandas.Timedelta(seconds=n),
                 'filepath': os.path.join(folder, f'{n}.h5'),
                 'fit': {'atoms': 100.0 + n},
+                'lyse': {'fit': 'error' if n == 2 else 'done'},
             })) for n in range(4)], ignore_index=True)
+            # There, but not changed since saving:
+            open(df['filepath'][2], 'w').close()
             (saved,) = self.save(folder, df)
             changed = df['filepath'][0]
             open(changed, 'w').close()
@@ -179,8 +182,8 @@ class MainWindowTests(unittest.TestCase):
             shots.add_files([df['filepath'][1]], df.iloc[[1]], ['remote'], done=True)
             self.main.Lyse.load_dataframe(app, saved)
             self.assertEqual(shots.filepaths, list(df['filepath'][1:]))
-            # The two loaded, whose files are not there, are deleted:
-            self.assertEqual(shots.states, ['done', 'deleted', 'deleted'])
+            # A loaded row takes its state from its outcomes, unless its file is not there:
+            self.assertEqual(shots.states, ['done', 'failed', 'deleted'])
             self.assertEqual(list(shots.dataframe['fit', 'atoms']), [101.0, 102.0, 103.0])
             self.assertEqual(app.filebox.incoming_queue.get_nowait(), (changed, 'dataframe'))
 

@@ -75,7 +75,12 @@ STATE_TOOLTIPS = {
 
 def outcome_state(outcomes):
     """The state in which an attempt with these outcomes of its routines ends."""
-    return 'done' if all(outcome == 'done' for outcome in outcomes.values()) else 'failed'
+    outcomes = set(outcomes.values())
+    if 'aborted' in outcomes:
+        return 'aborted'
+    if 'not run' in outcomes:
+        return 'stopped'
+    return 'done' if outcomes <= {'done'} else 'failed'
 
 
 class EditColumns:
@@ -433,6 +438,8 @@ class DataFrameModel(QtCore.QObject):
         self._awaiting_since = {}
         self._awaiting_count = itertools.count()
         self._rerun_after_attempt = set()
+        # The shots a failed pass left awaiting the next:
+        self._pass_failed = set()
 
         # Column indices to names and vice versa for fast lookup:
         self.column_indices = {'__status': self.COL_STATUS, ('filepath', ''): self.COL_FILEPATH}
@@ -533,6 +540,7 @@ class DataFrameModel(QtCore.QObject):
         for filepath in filepaths:
             self._awaiting_since.pop(filepath, None)
             self._rerun_after_attempt.discard(filepath)
+            self._pass_failed.discard(filepath)
         if self.analysing in filepaths:
             self.analysing = None
         for values in [self.filepaths, self.status_percent, self.states]:
@@ -560,10 +568,20 @@ class DataFrameModel(QtCore.QObject):
             # A file once unreadable may be back, undeleted or after a network glitch:
             if self.states[row] == 'deleted' and not os.path.exists(filepath):
                 continue
-            if filepath == self.analysing or self.states[row] == 'awaiting multishot':
+            # A shot a failed pass left awaiting the next has no attempt under way:
+            awaiting = self.states[row] == 'awaiting multishot' and filepath not in self._pass_failed
+            if filepath == self.analysing or awaiting:
                 self._rerun_after_attempt.add(filepath)
             else:
+                self._awaiting_since.pop(filepath, None)
+                self._pass_failed.discard(filepath)
                 self._set_state(row, 'not done')
+
+    def failed_filepaths(self):
+        """The shots whose last attempt failed, stopped or was aborted, or whose last
+        multishot pass failed."""
+        return [filepath for filepath, state in zip(self.filepaths, self.states)
+                if state in ('failed', 'stopped', 'aborted') or filepath in self._pass_failed]
 
     @inmain_decorator()
     def start_attempt(self, filepath):
@@ -573,6 +591,7 @@ class DataFrameModel(QtCore.QObject):
     def await_multishot(self, filepath):
         """Leave a shot whose single-shot routines have run awaiting the next pass."""
         self.analysing = None
+        self._pass_failed.discard(filepath)
         if filepath in self.row_number_by_filepath:
             self._awaiting_since[filepath] = next(self._awaiting_count)
             self._set_state(self.row_number_by_filepath[filepath], 'awaiting multishot')
@@ -592,7 +611,10 @@ class DataFrameModel(QtCore.QObject):
         if filepath in self._rerun_after_attempt:
             self._rerun_after_attempt.discard(filepath)
             state = 'not done'
-        if state != 'awaiting multishot':
+        if state == 'awaiting multishot':
+            self._pass_failed.add(filepath)
+        else:
+            self._pass_failed.discard(filepath)
             self._awaiting_since.pop(filepath, None)
         self._set_state(self.row_number_by_filepath[filepath], state)
 
@@ -645,6 +667,7 @@ class DataFrameModel(QtCore.QObject):
         if row_number is None or self.states[row_number] == 'deleted':
             return
         self._awaiting_since.pop(filepath, None)
+        self._pass_failed.discard(filepath)
         self._set_state(row_number, 'deleted')
         if warn:
             self.app.output_box.output(f'Warning: Shot deleted from disk or no longer readable {filepath}\n', red=True)
@@ -948,8 +971,14 @@ class FileBox:
         # Whether the Run button was clicked, which runs the multishot routines even if
         # analysis is paused:
         self.multishot_requested = False
-        # The single-shot routines' outcomes of the shots awaiting multishot:
+        # Whether a shot's later single-shot routines are skipped after one fails:
+        self.stop_on_failure = False
+        # The single-shot routines' outcomes of the shots awaiting multishot, the names
+        # of the outcomes lyse last wrote for each shot, by phase, and whether every
+        # outcome of a shot's present attempt reached its file:
         self._singleshot_outcomes = {}
+        self._recorded_outcomes = {}
+        self.outcomes_recorded = {}
         # Set as lyse quits, after which no plugin is called and no analysis starts:
         self.quitting = False
 
@@ -980,6 +1009,8 @@ class FileBox:
         self.ui.tableView.doubleLeftClicked.connect(self.shots_model.on_double_click)
         self.ui.pushButton_analysis_running.toggled.connect(self.on_analysis_running_toggled)
         self.ui.pushButton_abort.clicked.connect(self.abort)
+        self.ui.checkBox_stop_on_failure.toggled.connect(self.on_stop_on_failure_toggled)
+        self.ui.toolButton_rerun_failed.clicked.connect(self.rerun_failed)
         self.ui.pushButton_mark_as_not_done.clicked.connect(
             lambda: self.rerun_shots(self.shots_model.selected_filepaths()))
         self.app.multishot_routinebox.ui.toolButton_run_routines.clicked.connect(self.run_multishot)
@@ -1019,6 +1050,17 @@ class FileBox:
         self.analysis_paused = pressed
         if not pressed:
             self.analysis_pending.set()
+
+    def on_stop_on_failure_toggled(self, checked):
+        self.stop_on_failure = checked
+
+    @inmain_decorator()
+    def set_stop_on_failure(self, stop):
+        # Through the checkbox, whose slot sets self.stop_on_failure:
+        self.ui.checkBox_stop_on_failure.setChecked(stop)
+
+    def rerun_failed(self):
+        self.rerun_shots(self.shots_model.failed_filepaths())
 
     def rerun_shots(self, filepaths):
         self.shots_model.mark_not_done(filepaths)
@@ -1243,13 +1285,15 @@ class FileBox:
             if signal not in ('done', 'error'):
                 raise ValueError(f'invalid signal {signal}')
             break
-        if signal == 'error':
-            if not os.path.exists(filepath):
-                # Do not pause if the file has been deleted. An error is
-                # no surprise there:
-                self.shots_model.mark_deleted(filepath)
-                return
-            self.set_analysis_paused(True)
+        if signal == 'error' and not os.path.exists(filepath):
+            # An error is no surprise once the file has gone:
+            self.shots_model.mark_deleted(filepath)
+            return
+        # A new attempt's outcomes replace all those lyse wrote for the shot before:
+        previous = self._recorded_outcomes.get(filepath, {})
+        replaced = previous.get('singleshot', set()) | previous.get('multishot', set())
+        self.outcomes_recorded[filepath] = self.record_outcomes(filepath, outcomes, replaced)
+        self._recorded_outcomes[filepath] = {'singleshot': set(outcomes), 'multishot': set()}
         self.fire_event('singleshot_done', filepath, outcomes)
         if any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
             self._singleshot_outcomes[filepath] = outcomes
@@ -1257,6 +1301,28 @@ class FileBox:
         else:
             self.shots_model.end_attempt(filepath, outcome_state(outcomes))
             self.fire_event('analysis_done', filepath, outcomes)
+
+    def record_outcomes(self, filepath, outcomes, replaced):
+        """Put outcomes in the shot's row and, under its file's lock, in its file's
+        results/lyse group, in place of the outcomes named in replaced, which lyse put
+        there before, and no others. Return whether the file was written; a failure is
+        reported, and the row keeps the outcomes."""
+        row_data = {('lyse', name): np.nan for name in replaced}
+        row_data.update({('lyse', name): outcome for name, outcome in outcomes.items()})
+        self.shots_model.update_rows({filepath: row_data})
+        try:
+            with h5py.File(filepath, 'a') as f:
+                group = f.require_group('results/lyse')
+                for name in replaced:
+                    if name in group.attrs:
+                        del group.attrs[name]
+                for name, outcome in outcomes.items():
+                    group.attrs[name] = outcome
+        except Exception as e:
+            self.app.output_box.output(
+                f'Warning: The routines\' outcomes were not written into {filepath}: {e}\n', red=True)
+            return False
+        return True
 
     def do_multishot_analysis(self):
         """Run a pass on the shots awaiting multishot, which ends their attempts. After
@@ -1279,6 +1345,11 @@ class FileBox:
             outcomes.update(outcome)
             if signal in ('done', 'error'):
                 break
+        for filepath in paths:
+            recorded = self._recorded_outcomes.setdefault(filepath, {'singleshot': set(), 'multishot': set()})
+            written = self.record_outcomes(filepath, outcomes, recorded['multishot'])
+            self.outcomes_recorded[filepath] = self.outcomes_recorded.get(filepath, True) and written
+            recorded['multishot'] = set(outcomes)
         self.fire_event('multishot_done', paths, outcomes)
         for filepath in paths:
             shot_outcomes = {**self._singleshot_outcomes.get(filepath, {}), **outcomes}

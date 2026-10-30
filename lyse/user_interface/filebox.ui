@@ -99,6 +99,16 @@
            </widget>
           </item>
           <item>
+           <widget class="QCheckBox" name="checkBox_stop_on_failure">
+            <property name="toolTip">
+             <string>After a single-shot routine fails, skip the shot's later single-shot routines</string>
+            </property>
+            <property name="text">
+             <string>Stop a shot at its first failure</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <layout class="QHBoxLayout" name="horizontalLayout_analysis_controls_plugins"/>
           </item>
          </layout>
@@ -178,6 +188,26 @@
             <property name="icon">
              <iconset>
               <normaloff>:/qtutils/fugue/arrow-curve-180.png</normaloff>:/qtutils/fugue/arrow-curve-180.png</iconset>
+            </property>
+            <property name="toolButtonStyle">
+             <enum>Qt::ToolButtonTextBesideIcon</enum>
+            </property>
+            <property name="autoRaise">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QToolButton" name="toolButton_rerun_failed">
+            <property name="toolTip">
+             <string>Analyse again every shot that failed, stopped or was aborted, or whose multishot pass failed</string>
+            </property>
+            <property name="text">
+             <string>Re-run failed</string>
+            </property>
+            <property name="icon">
+             <iconset>
+              <normaloff>:/qtutils/fugue/arrow-repeat.png</normaloff>:/qtutils/fugue/arrow-repeat.png</iconset>
             </property>
             <property name="toolButtonStyle">
              <enum>Qt::ToolButtonTextBesideIcon</enum>
