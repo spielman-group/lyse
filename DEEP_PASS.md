@@ -50,13 +50,6 @@ Range: `8c04e38..5d6a338`.
 `NEWS.md`'s Unreleased section, and the docs where they describe them, say what
 changes for users and scripts.
 
-### Designed, for Ian's review
-
-The large-table set: 4d30a1e, 10d9022, 79f9db9, b33f1c6, 8f4d140, 0bb3acd,
-ed71cc7, 4954e44, 4edeed4, 4394eb3. Requirements and architecture in
-`issues/shots_table_speed.md`, reviewed by the librarian: nothing in the suite
-does its model's job, and it needs nothing from another repo.
-
 ### Not ported
 
 - 9cff0f3, no multishot pass while analysis is paused: in upstream's form the
@@ -72,6 +65,56 @@ does its model's job, and it needs nothing from another repo.
 
 50335c6, 2bf63cb, 3723c9b, feb7540, f9e6e72, and 74e6127 through labscript-utils'
 `open_in_editor`, which now calls `programs.open_file`.
+
+## Shots table stage
+
+Upstream's large-table set, as `issues/shots_table_speed.md` designs it:
+upstream's commits picked with `-x` in upstream's merge order, each fork change
+its own commit. Range: `6d2ffd5..88c26db`; the commit after it records the
+stage. Suite: 51 passed. `tools/table_benchmark.py`: every case within its limits at 4,000 and
+50,000 shots; the longest stall, 0.16 s, removing half of 50,000.
+
+| Commit | Upstream or fork | What |
+| --- | --- | --- |
+| dfe629e | ed71cc7 | Views uneditable by edit triggers. The fork's header set-up (d2bc831) kept beside it. |
+| eccaadf | 0bb3acd | Removal in contiguous blocks. |
+| a36053a | Fork, D | The removal prompt is the app's dialog. |
+| bf57716 | 79f9db9 | `update_rows`: a routine's results in one call. The multishot loop keeps `status_percent`, which `lyse.paths` reads. |
+| f04faf7 | Fork, A | Results for a removed shot are reported. |
+| ef716d9 | 061ce1f | New columns made with `.loc`. |
+| e4fcf47 | b33f1c6 | A one-row update set with `.at`. |
+| 5a1d71f | 8f4d140 | No relayout after each routine. One conflict, the multishot line, as in 79f9db9. |
+| b31d6d9 | 4394eb3 | `start_analysis` and `end_routine`: fewer calls into the main thread. Lazy logging (4e593d4) kept. |
+| 05106d9 | Fork, C | `lyse.paths` through the routine box. |
+| 8a0fa0e | b35294c | An integer column made float for a float result. |
+| b36aedc | 4d30a1e | `ShotsTableModel` reads the table from the dataframe. Eleven of its twelve conflicts to upstream's side; the twelfth keeps `ROW_HEIGHT`, which a merged line uses, and `import subprocess` is back for upstream's viewer code until 74e6127. |
+| 6ec8738 | Fork, F | The dataframe and the lists change inside one notification: a row removal for one block, else a model reset. |
+| 3aa0578 | 10d9022 | The first shot not analysed is tracked. One conflict, F's lines beside it. |
+| 1e2550e | 4edeed4 | The adding progress bar shows after 0.5 s. |
+| 92988fc | 4954e44 | Duplicates checked with a set. |
+| 9bcc8f9 | 1beb61c | `Icon`. The fork's own icon lines kept; duplicate imports dropped. |
+| 3a6eccf | 6003d7c | A multishot error does not pause analysis. The fork's port goes; the docs keep the fork's introduction. |
+| eb19b65 | 9c52248 | The routine box decides whether a failed pass stopped. One conflict, C's signature. |
+| ee0b242 | Fork, B | A failed pass sends `error` with 100, so its shots are offered again. |
+| 4d50cc6 | 3a0888c | The suite's font. One `setup_application` call, in upstream's place. |
+| a26d0c7 | 2b5d616 | Fixed 20 px rows; 4d30a1e's resize to the first row goes. |
+| 896179a | 74e6127 | `programs.open_file`. The fork's `open_in_editor` imports go. |
+| eaa6b90 | Fork, D | File-opening errors are the app's dialog. |
+| 735d557 | Fork, E | A GUI routine opens as its `lyse_routine.py`. |
+| addefc6 | Fork | Tests 1 to 6 of the design, on the real model. |
+| 88c26db | Fork | The benchmark. |
+
+### Against upstream
+
+`git diff upstream/master` of the files the stage touched, in lines changed,
+before and after it: `filebox.py` 883 and 205, `routines.py` 621 and 527,
+`widgets.py` 112 and 107, `__main__.py` 432 and 429, `analysis_subprocess.py`
+636 and 634. `ShotsTableModel` is upstream's. In `DataFrameModel` and the
+routine box's analysis, what differs is A to F and `lyse.paths`, with `super()`
+and a few docstrings and comments of the style pass. The rest predates the stage: the style pass, labscript-utils'
+`TableView` and file dialogs, GUI routines, Abort, and two earlier ports in the
+fork's form, the incoming loop's warning as a lambda where upstream has
+`_shot_warning`, and its log line without upstream's `isEnabledFor` guard.
 
 ## Compatibility audit
 

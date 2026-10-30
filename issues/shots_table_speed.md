@@ -31,32 +31,29 @@ On `CodeHealth`, `git cherry-pick -x` each commit below, in the order upstream
 merged them into `master`. Every conflict is resolved to upstream's side, except
 the adaptations below, each its own commit with its reason. Starred commits are
 upstream commits the fork already ported in its own form into code that the set
-replaces; they are picked again so that the code is upstream's. A dry run of
-this sequence, in a scratch clone, gave the conflicts below. The suite then
-failed only where the tests stub `update_row` and call `todo()`; D and E were
-needed though no test reached them, since the dry run called `lyse.utils.gui`'s
-dialogs, which the fork no longer has, and opened a GUI routine's folder.
+replaces; they are picked again so that the code is upstream's. The table gives
+each commit's conflicts. `DEEP_PASS.md` lists the commits as built.
 
 | Upstream | How it goes in |
 | --- | --- |
 | ed71cc7 | As is. Its conflicts are neighbouring fork lines (d2bc831's header set-up), kept beside it. |
-| 0bb3acd | As is, but adaptation D. |
-| 79f9db9 | As is, then adaptation A. |
+| 0bb3acd | As is, then adaptation D. |
+| 79f9db9 | As is, then adaptation A. The multishot loop keeps `status_percent`, which `lyse.paths` reads. |
 | 061ce1f* | Picked again, clean. |
 | b33f1c6 | As is, clean. |
-| 8f4d140 | As is, clean. |
-| 4394eb3 | As is, then adaptation C. |
+| 8f4d140 | As is. One conflict, the multishot line, resolved as in 79f9db9. |
+| 4394eb3 | As is, with 4e593d4's lazy logging kept, then adaptation C. |
 | b35294c* | Picked again, clean. |
-| 4d30a1e | As is, then fix F. Its twelve conflicts are the style pass and the fork's forms of upstream commits merged after it (1beb61c's icons, 3a0888c's header fonts, 2b5d616's row height, 74e6127's file opening), each picked again in its place below. |
-| 10d9022 | As is, clean. |
+| 4d30a1e | As is, then fix F. Its twelve conflicts are the style pass and the fork's forms of upstream commits merged after it (1beb61c's icons, 3a0888c's header fonts, 2b5d616's row height, 74e6127's file opening), each picked again in its place below. All go to upstream's side but `ROW_HEIGHT`, which a merged line uses; `import subprocess` is back for upstream's viewer code. |
+| 10d9022 | As is. One conflict, F's lines beside it. |
 | 4edeed4 | As is. One conflict, an f-string. |
 | 4954e44 | As is. One conflict, an f-string. |
-| 1beb61c* | Picked again. Its two conflicts are the fork's own `Icon` lines. |
-| 6003d7c* | Picked again onto 4394eb3's `start_analysis` and `end_routine`. Its conflicts are the fork's port of it, which goes. |
-| 9c52248* | Picked again, clean, then adaptation B. |
-| 3a0888c* | Picked again. Its one conflict, in `__main__.py`, keeps the fork's import, which already has `setup_application`. |
+| 1beb61c* | Picked again. Its two conflicts are the fork's own `Icon` lines, kept; the duplicate imports go. |
+| 6003d7c* | Picked again onto 4394eb3's `start_analysis` and `end_routine`. Its conflicts are the fork's port of it, which goes; the docs keep the fork's introduction. |
+| 9c52248* | Picked again, then adaptation B. One conflict, C's signature. |
+| 3a0888c* | Picked again. Its one conflict, in `__main__.py`, keeps the fork's import, which already has `setup_application`; one call stays, in upstream's place. |
 | 2b5d616* | Picked again, clean. It removes the per-row resize that 4d30a1e adds, so it comes after it. |
-| 74e6127* | Picked again, then adaptations D and E. |
+| 74e6127* | Picked again, then adaptations D and E. Its conflicts are the fork's port through `open_in_editor`, which goes. |
 
 ### Adaptations and fixes
 
@@ -85,12 +82,13 @@ dialogs, which the fork no longer has, and opened a GUI routine's folder.
   rows from the dataframe and renumbers it before it sends the first block's
   removal, so while the blocks' notifications run, the model's lists and the
   dataframe disagree, and a redraw reads the wrong shot's data or past the end.
-  Each block, last first, instead leaves the dataframe and the lists together
-  between that block's `beginRemoveRows` and `endRemoveRows`. A selection of
-  more than a few hundred blocks is removed in one model reset instead, one
-  drop between `beginResetModel` and `endResetModel`, so that removal stays
-  linear in the shots; removal clears the selection either way. The cutoff is a
-  class constant, 200 blocks. Its own commit, offered upstream.
+  The dataframe and the lists instead change together inside one notification:
+  `beginRemoveRows` and `endRemoveRows` for a contiguous selection, else
+  `beginResetModel` and `endResetModel`. A removal per block, each with its own
+  drop, would copy the dataframe once per block: 200 blocks of 50,000 shots
+  stalled the GUI thread for 3 s. A reset clears the view's current index as
+  well as the selection; the view stays at the same rows. Its own commit,
+  offered upstream.
 - The tests that stub `update_row` and call `todo()` move to `update_rows` and
   `start_analysis`/`end_routine`.
 
@@ -113,18 +111,20 @@ dialogs, which the fork no longer has, and opened a GUI routine's folder.
 Offscreen, on the real `DataFrameModel` and its `ShotsTableModel`, as the
 behaviours users rely on (rule 13); each replaces a stub test or adds one:
 
-1. Removal, with the cutoff set low for the test: one block, two blocks below
-   the cutoff, and more blocks than it. At each removal notification the table's
-   filepath column matches the dataframe's. Afterwards the surviving shots and
-   their statuses are right, a reply updates the right rows, the next shot not
+1. Removal of one block, as rows, and of two, with a reset. At each removal
+   notification the table's filepath column matches the model's lists.
+   Afterwards the surviving shots and their statuses are right, a reply updates
+   the right rows, a reply for a removed shot is reported, the next shot not
    analysed is the right one, and column visibility is kept.
 2. A reply that adds a column shows it in the header; a hidden column stays
    hidden when columns are added, and when it is removed and added again.
-3. Save dataframe then Load dataframe gives the same rows and values.
+3. Save dataframe then Load dataframe gives the same rows and values, through
+   the main window's handlers.
 4. A failed multishot pass: the routines after it run, and the next pass's
    `lyse.paths` holds the failed pass's shots (the existing `lyse.paths` tests,
    on the real routine box).
-5. The same shot submitted twice, in one batch and in two, gives one row.
+5. A shot submitted again gives one row. The incoming loop drops a batch's own
+   duplicates before it adds the batch.
 6. `lyse.data()` from a client thread while shots are added and removed returns
    whole, consistent frames.
 
@@ -138,8 +138,7 @@ shots, each with 200 result columns. It times:
 - on a preloaded table, single-shot analysis of 1,000 shots in turn, each a
   one-row reply and a lookup of the next shot not analysed;
 - a multishot reply updating every row;
-- removing a contiguous half, every other row, and a selection one block below
-  F's cutoff;
+- removing a contiguous half, every other row, and 200 single rows;
 - marking all not done.
 
 For each case it reports the time and the longest stall of the GUI thread: the
@@ -150,5 +149,5 @@ stall longer than 0.5 s in any case with 50,000 shots, and none longer than
 
 ## Size
 
-About +400 −350 lines in `filebox.py`, `routines.py` and `widgets.py`, nearly
-all upstream's; the adaptations and F about 60 lines together.
++507 −336 lines in `filebox.py`, `routines.py` and `widgets.py`, nearly all
+upstream's; the adaptations and F about 50 lines together.

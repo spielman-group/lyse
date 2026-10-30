@@ -1,5 +1,9 @@
 ## Unreleased
 
+- The shots table reads each value from the dataframe as it draws it, so lyse stays
+  responsive with tens of thousands of shots. The progress bar of adding shots
+  shows only once adding has taken half a second.
+
 - An **Abort** button pauses analysis and interrupts the running routine with
   KeyboardInterrupt, as Ctrl-C would, so its files close and its worker carries on.
   A routine still running five seconds later has its worker restarted. Restarting,
