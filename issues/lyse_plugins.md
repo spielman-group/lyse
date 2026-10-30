@@ -228,8 +228,10 @@ through the shots model's `update_rows`. Their `lyse.Routine` subclasses and
 - **labscript-agents**, once A–C exist: its plugin (F); ToolSpec bindings for
   the new lyse commands; its docs' line that it has no control of lyse goes;
   the clean-up that ran when its worker exited runs in the plugin's `close()`.
-- **labscript-optimization**, once A–C exist: its plugin (F); its configuration
-  found relative to the plugin's folder, where it was relative to
-  `Routine.folder`; the hand-over to its session made from `analysis_done`
-  without blocking, in place of the 2 s wait, with a late reply delivered when
-  it comes; the clean-up that ran when its worker exited runs in `close()`.
+- **labscript-optimization**, once A–C exist: its plugin (F); a field in its
+  window holding its configuration file's path, chosen with a file picker and
+  saved and restored with the plugin's save data in lyse's configuration, so
+  nothing is relative to a routine folder; the hand-over to its session made
+  from `analysis_done` without blocking, in place of the 2 s wait, with a late
+  reply delivered when it comes; the clean-up that ran when its worker exited
+  runs in `close()`.
