@@ -115,6 +115,12 @@ in `71972c6..0469ac3`. Suite: 51 passed.
 | 33c10aa | The `lyse.paths` tests run two multishot routines; the second runs after the first fails. |
 | 0469ac3 | The incoming loop's comment: runmanager submits a shot once BLACS has run it. |
 
+Codex's re-check of `6d2ffd5..3f9699a` found one bug older than the stage, fixed
+after the second upstream stage in `c5238d3`: the next routine could start, and
+read the table through `lyse.data()`, before the previous routine's results
+reached it. The routine box now applies each routine's results, waiting for the
+GUI thread, before it ends the routine. Upstream has the same ordering.
+
 ## Second upstream stage
 
 Upstream's `4c6ae2b..55c3154`: 19 commits, none of them merges, picked with `-x`
@@ -158,17 +164,18 @@ bar grooves not black.
 ## Against upstream
 
 `git diff 55c3154` (upstream's `master`) of the files the shots table and second
-upstream stages touched, in lines changed: `filebox.py` 208, `routines.py` 527,
+upstream stages touched, in lines changed: `filebox.py` 214, `routines.py` 534,
 `widgets.py` 107, `__main__.py` 425, `analysis_subprocess.py` 634, `__init__.py`
 517. `filebox.ui`, `main.ui` and `plot_window.ui` are upstream's;
 `routinebox.ui` differs by the add button's menu. `ShotsTableModel` is
 upstream's. In `DataFrameModel` and the routine box's analysis, what differs is
-A to F, `lyse.paths`, the review's loading fix and `multishot_failed`, with
-`super()` and a few docstrings and comments of the style pass. The rest predates
-these stages: the style pass, labscript-utils' `TableView`, file dialogs and
-`exec_qapplication`, GUI routines, Abort, and two earlier ports in the fork's
-form, the incoming loop's warning as a lambda where upstream has
-`_shot_warning`, and its log line without upstream's `isEnabledFor` guard.
+A to F, `lyse.paths`, the review's loading fix, `multishot_failed` and the
+results applied by the routine box, with `super()` and a few docstrings and
+comments of the style pass. The rest predates these stages: the style pass,
+labscript-utils' `TableView`, file dialogs and `exec_qapplication`, GUI
+routines, Abort, and two earlier ports in the fork's form, the incoming loop's
+warning as a lambda where upstream has `_shot_warning`, and its log line without
+upstream's `isEnabledFor` guard.
 
 ## Compatibility audit
 
