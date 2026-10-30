@@ -67,8 +67,9 @@ labscript-agents and labscript-optimization become such plugins.
    multishot routine's is on every shot of its pass. Analysing a shot again
    replaces its record.
 9. The shots table shows each shot's state. A **Re-run failed** button, and its
-   remote command, analyses all failed, stopped and aborted shots again, in
-   order, without selecting them.
+   remote command, analyses all failed, stopped and aborted shots again, and
+   those waiting to retry a failed multishot pass, in order, without selecting
+   them.
 
 ### The first plugin
 
@@ -157,11 +158,12 @@ autoloads, sets up the contexts and calls `plugin_setup_complete`, and only then
 starts its server, so no call precedes setup. Loading a configuration later
 restores plugin data again, as BLACS does. Plugins start their workers (G) in
 `plugin_setup_complete`, before the server. At quit, after the save prompt, lyse
-fires no more calls, then calls the plugins' `close()` from a thread of its own
-while its GUI thread keeps serving, so that a `close()` may wait for its workers
-to end (G) and for its own threads, which may need the GUI thread; once they
-return, lyse ends the routines' workers. Plugin data is saved in lyse's
-configuration. Nothing new is needed in labscript-utils.
+fires no more calls, starts no more analysis, and ends the routines' workers,
+whose locks a pending deletion may wait on; then it calls the plugins' `close()`
+from a thread of its own while its GUI thread keeps serving, so that a `close()`
+may wait for its workers to end (G) and for its own threads, which may need the
+GUI thread. Plugin data is saved in lyse's configuration. Nothing new is needed
+in labscript-utils.
 
 **C. Call points and a shot's attempt** (5, 7). An *attempt* of a shot begins
 when the analysis loop takes it, a new shot or one a re-run set not done. Its
@@ -174,28 +176,30 @@ none is active, its attempt ends at once. A pass takes every shot awaiting
 multishot; at its end `multishot_done(paths, outcomes)` fires, and each shot it
 took ends its attempt. An attempt ends with `analysis_done(path, outcomes)` and
 sets the shot's state from all its outcomes: done, failed, stopped or aborted
-(7). A shot whose pass failed is left awaiting multishot instead, so that the
-next pass retries it, as `lyse.paths` does now, in a new attempt of its
-multishot phase. A shot whose file vanished while it awaited the pass ends its
-attempt there as deleted, and its path is not offered to the routines. A re-run
-asked for a shot whose attempt is under way takes effect when that attempt ends,
-which then sets the shot not done in place of its state. Shots that arrive
-during a pass join the queue for the next one. While paused, the shot being
-analysed finishes its single-shot phase, no attempt starts and a due pass waits,
-so its shots' `analysis_done` waits too. A shot removed during its attempt gets
-no further call. `shot_received(path, source)`, with `source` one of
-`'runmanager'`, `'remote'`, `'dialog'` and `'dataframe'`, fires on the GUI
-thread inside the shots model's `add_files`, once the row is in, so before the
-analysis loop, which asks the GUI thread for its next shot, can take it. Each
-path carries its source from where it was queued, the server or the add-shots
-dialog, through the incoming loop's merging to `add_files`. Load dataframe adds
-most of its rows itself, with `add_files(..., done=True)` on the GUI thread, and
-queues the files changed since saving; both pass `'dataframe'`, and the rows it
-adds keep their loaded results and take their state from their loaded outcomes,
-or deleted where the file is missing. The other calls fire on the analysis
-thread. A slow handler starts its own thread, and touches the window through
-`inmain`; a handler's exception is logged and analysis goes on (`fire_event`
-does that).
+(7). A shot whose pass failed is left awaiting multishot instead, with that
+pass's outcomes, so that the next pass retries it, as `lyse.paths` does now, in
+a new attempt of its multishot phase. Abort leaves a pending pass's shots
+awaiting it, and a pass it interrupts ends as a failed pass. A shot whose file
+vanished while it awaited the pass ends its attempt there as deleted, and its
+path is not offered to the routines. A re-run asked for a shot whose attempt is
+under way takes effect when that attempt ends, which then sets the shot not done
+in place of its state. Shots that arrive during a pass join the queue for the
+next one. While paused, the shot being analysed finishes its single-shot phase,
+no attempt starts and a due pass waits, so its shots' `analysis_done` waits too,
+unless Run, the button or the remote command, starts the pass. A shot removed
+during its attempt gets no further call. `shot_received(path, source)`, with
+`source` one of `'runmanager'`, `'remote'`, `'dialog'` and `'dataframe'`, fires
+on the GUI thread inside the shots model's `add_files`, once the row is in, so
+before the analysis loop, which asks the GUI thread for its next shot, can take
+it. Each path carries its source from where it was queued, the server or the
+add-shots dialog, through the incoming loop's merging to `add_files`. Load
+dataframe adds most of its rows itself, with `add_files(..., done=True)` on the
+GUI thread, and queues the files changed since saving; both pass `'dataframe'`,
+and the rows it adds keep their loaded results and take their state from their
+loaded outcomes, done if they have none, or deleted where the file is missing; a
+loaded shot never awaits multishot. The other calls fire on the analysis thread.
+A slow handler starts its own thread, and touches the window through `inmain`; a
+handler's exception is logged and analysis goes on (`fire_event` does that).
 
 **D. Outcomes and failures** (7–9, 12). `outcomes` maps each routine's name, as
 its results group is named, to `'done'`, `'error'`, `'aborted'` or `'not run'`.
@@ -209,24 +213,25 @@ keeps each shot's state: not done, awaiting multishot, done, failed, stopped,
 aborted or deleted, the last renaming `deleted_off_disk` and
 `ROLE_DELETED_OFF_DISK`. Awaiting multishot is the per-shot form of
 `FileBox.analysed_since_multishot`, which goes: a pass's paths, its
-`lyse.paths`, are the shots in that state, in table order. It draws the state in
+`lyse.paths`, are the shots in that state, in the order they came to it, as now,
+kept by a number each shot takes as it enters the state. It draws the state in
 the status column, where `status_percent` shows only the progress of the
 routines running. `get_first_incomplete` reads the state and takes only shots
-not done; Re-run failed sets failed, stopped and aborted shots not done. A
-routine's status icon gains `'aborted'` beside `'done'` and `'error'`, and shows
-none for `'not run'`. At the end of each phase lyse puts the outcomes in the
-shot's row, as `('lyse', <routine>)` columns, and writes them into the shot
-file, in one open under the h5 lock, as attributes of a `results/lyse` group,
-which the dataframe reads on reload. A routine may write the same group, as
-routines can any group. Before it writes a new attempt's single-shot outcomes,
-lyse removes the attributes and columns its previous outcomes put there for that
-shot, and no others, so a removed routine leaves no stale failure; a pass
-replaces the multishot outcomes it wrote before in the same way. A failed write,
-of a missing or read-only file, is reported in the output box; the row keeps the
-outcomes, and the shots model notes, in memory, whether every write of the
-shot's present attempt succeeded. A row whose file is gone has the deleted
-state, which keeps it out of analysis, Re-run selected, Re-run failed and every
-pass.
+not done; Re-run failed sets not done the failed, stopped and aborted shots, and
+those awaiting multishot whose last pass failed. A routine's status icon gains
+`'aborted'` beside `'done'` and `'error'`, and shows none for `'not run'`. At
+the end of each phase lyse puts the outcomes in the shot's row, as `('lyse',
+<routine>)` columns, and writes them into the shot file, in one open under the
+h5 lock, as attributes of a `results/lyse` group, which the dataframe reads on
+reload. A routine may write the same group, as routines can any group. Before it
+writes a new attempt's single-shot outcomes, lyse removes the attributes and
+columns its previous outcomes put there for that shot, and no others, so a
+removed routine leaves no stale failure; a pass replaces the multishot outcomes
+it wrote before in the same way. A failed write, of a missing or read-only file,
+is reported in the output box; the row keeps the outcomes, and the shots model
+notes, in memory, whether every write of the shot's present attempt succeeded. A
+row whose file is gone has the deleted state, which keeps it out of analysis,
+Re-run selected, Re-run failed and every pass.
 
 **E. The first plugin** (10–11).
 `lyse/plugins/delete_default_and_repeated_shots/`, after BLACS's
@@ -235,13 +240,14 @@ forgets one from any other source; `add_files` ignores a path already in the
 table, so adding it again changes nothing. On `analysis_done`, for a noted shot
 whose outcomes are all `'done'` and whose `sequence_index` is −1 or `run repeat`
 1 or more, it queues the path for its thread. That thread, holding the shot's
-file lock, `Lock(path_to_agnostic(path))`, checks again, on the GUI thread, that
-the row is present, still noted and done, and that every outcome write of its
-attempt succeeded; only then does it call
-`labscript_utils.h5_lock.delete_shot_file(path)`, which takes the lock again, as
-zlock allows within a thread, and deletes the file, and mark the row deleted,
-without the warning. An `OSError` from it is reported in the output box. Its
-`close()` lets the thread finish the deletions already queued.
+file lock, `Lock(path_to_agnostic(path))`, checks again, and claims the row, in
+one call on the GUI thread: the row is present, still noted and done, and every
+outcome write of its attempt succeeded, and it is then marked deleted, without
+the warning, so a re-run finds it deleted like any deleted row. Only then does
+it call `labscript_utils.h5_lock.delete_shot_file(path)`, which takes the lock
+again, as zlock allows within a thread, and deletes the file. An `OSError` from
+it is reported in the output box, and the row is done again. Its `close()` lets
+the thread finish the deletions already queued.
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
 a plugin under the `lyse.plugins` entry point and handles `analysis_done`. Each
@@ -287,17 +293,19 @@ One thread per worker takes its jobs in order, sends each and reads its replies,
 and completes its Future, at once with the error when the lookup fails; when the
 worker exits, ends or restarts, that thread fails the futures of its running and
 queued jobs. Other needs: workers started by `create_worker` itself, where `Tab`
-starts them at its first state; their output in the host's output box, whose
-port lyse puts in the setup dict; and `end_workers()` from the plugin's
-`close()`. The shared code keeps what BLACS's `DESIGN_TAB_STATE_MACHINE.md`
-fixes (R8–R11, F3, F4, F14): `shutdown()` called at most once and never
-interrupted, the quit skipping it once a shutdown job has started; a job that
-starts after a quit stopped at once; a workerarg refused only for a name
-`Worker` or zprocess's `Process` uses; the `'quit'` message; the job tuple
-`(funcname, args, kwargs)` checked for pickling before it is sent; two replies
-per job, or one for a missing method; the timeouts, `exit_when_released` and
-`on_parent_death`. Its `run` takes the app's name, for `setup_logging` and for
-the logger's name, which is also the zlock process name, where BLACS's says
+starts them at its first state, with `init()` queued as their first job, before
+any other; a failed `init()` fails its Future, which `create_worker` returns,
+and ends the worker, failing the jobs queued behind it; their output in the
+host's output box, whose port lyse puts in the setup dict; and `end_workers()`
+from the plugin's `close()`. The shared code keeps what BLACS's
+`DESIGN_TAB_STATE_MACHINE.md` fixes (R8–R11, F3, F4, F14): `shutdown()` called
+at most once and never interrupted, the quit skipping it once a shutdown job has
+started; a job that starts after a quit stopped at once; a workerarg refused
+only for a name `Worker` or zprocess's `Process` uses; the `'quit'` message; the
+job tuple `(funcname, args, kwargs)` checked for pickling before it is sent; two
+replies per job, or one for a missing method; the timeouts, `exit_when_released`
+and `on_parent_death`. Its `run` takes the app's name, for `setup_logging` and
+for the logger's name, which is also the zlock process name, where BLACS's says
 `'BLACS.<device>_<worker>.worker'`. BLACS's tab pass is finished (blacs
 `Development` `6ff09fb`), so it can be cut now; the clean-up tests of blacs's
 `tests/test_state_machine.py`, which drive real workers, move with it. Moving
