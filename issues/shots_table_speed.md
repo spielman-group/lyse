@@ -11,8 +11,8 @@ Upstream's large-table set, built from upstream's own commits: 4d30a1e, 10d9022,
 2. The code is upstream's wherever the fork does not truly differ.
 3. These behave as now: selecting rows; no cell is editable; column visibility,
    kept for a column removed and added again; column order, status and filepath
-   first and new columns appended; Save dataframe and Load dataframe; Mark as
-   not done, Run multishot analysis, pause and Abort.
+   first and new columns appended; Save dataframe and Load dataframe; Re-run
+   selected, the multishot Run button, Pause and Abort.
 4. `lyse.data()`, `where=`, `n_sequences`, `columns=` and `shot_id` behave as
    now: the server reads only the dataframe, which stays the one store.
 5. `lyse.paths` behaves as now: a failed pass's shots are offered to the next.

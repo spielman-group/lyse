@@ -5,9 +5,9 @@ Introduction
 
 Analysis routines can be either *single-shot* or *multi-shot*. This determines what data and functions are available to your code when it runs. A single-shot routine has access to the data from only one shot, and functions available for saving results only to the hdf5 file for that shot. A multi-shot routine has access to the entire dataset from all the runs that are currently loaded into **lyse**, and has functions available for saving results to an hdf5 file which does not belong to any of the shots---it's a file that exists only to save the "meta results".
 
-Actually things are far less magical than that. The only enforced difference between a single shot routine and a multi-shot routine is a single variable provided to your code when **lyse** runs it: a variable in the lyse namespace called path. If you have told **lyse** that your routine is a singleshot one, then this is the path to the hdf5 file of the shot being analysed. If you've told **lyse** that your routine is a multishot one, then path is None.
+Actually things are far less magical than that. The only enforced difference between a single shot routine and a multi-shot routine is which of two variables **lyse** provides to your code when it runs it: variables in the lyse namespace called path and paths. If you have told **lyse** that your routine is a singleshot one, then path is the path to the hdf5 file of the shot being analysed, and paths is None. If you've told **lyse** that your routine is a multishot one, then path is None, and paths is a list of the paths to the hdf5 files of the shots analysed since the last multishot pass, which may be none. A GUI routine gets the same two values as self.path and self.paths.
 
-Each routine runs in a subprocess of its own, which **lyse** starts when the routine is added and keeps running between shots. The routine runs with its own directory as the working directory and at the start of sys.path. Its global variables are cleared before each run, but modules that it imports stay imported, and lyse.routine_storage keeps the objects stored in it from one run to the next.
+Each routine runs in a subprocess of its own, which **lyse** starts when the routine is added and keeps running between shots. The routine runs with its own directory as the working directory and at the start of sys.path. Its global variables are cleared before each run, but modules that it imports stay imported, and lyse.routine_storage keeps the objects stored in it from one run to the next. A GUI routine instead loads once, as its subprocess starts, and adds nothing to sys.path (see :doc:`gui_routines`).
 
 The other differences listed above are conventions only (though **lyse**'s design is based around the assumption that you'll follow these conventions most of the time), and pertain to how you use the API that **lyse** provides, which will be different depending on what sort of analysis you're doing.
 
@@ -27,7 +27,7 @@ The details of the API are found in the :doc:`API reference<api/_autosummary/lys
 **lyse** GUI
 ~~~~~~~~~~~~~~~
 
-The **lyse** GUI uses the API to apply single and multi-shot routines to collections of shot files, added either manually by the user or automatically by BLACS after shot completion.
+The **lyse** GUI uses the API to apply single and multi-shot routines to collections of shot files, added either manually by the user or automatically by runmanager after shot completion.
 
 Here's a screenshot of **lyse**, with two single-shot and two multi-shot routines and a sequence of fifteen shots that have been analysed:
 
@@ -38,25 +38,25 @@ Here's a screenshot of **lyse**, with two single-shot and two multi-shot routine
 
     The **lyse** GUI. The numbers match the list below.
 
-#. Here's where single shot routines can be added and removed, with the plus and minus buttons. They will be executed in order on each shot (more on how that works shortly). They can be reordered with the arrow buttons, and enabled or disabled with the checkboxes on the left. The icon next to each routine shows whether it ran successfully on the last shot. The right-click menu restarts the subprocess of the selected routines.
+#. Here's where single shot routines can be added and removed, with the plus and minus buttons. They will be executed in order on each shot (more on how that works shortly). They can be reordered with the arrow buttons, and enabled or disabled with the checkboxes on the left. The icon next to each routine shows whether it ran successfully on the last shot. The plus button opens a menu with two entries: "Add classic scripts (.py)…" selects Python files, and "Add a GUI routine folder (.lyse)…" selects a folder (see :doc:`gui_routines`). The right-click menu restarts the subprocess of the selected routines and shows their windows.
 
-#. Here is where multi-shot routines can be added or removed, in the same way as single shot routines.
+#. Here is where multi-shot routines can be added or removed, in the same way as single shot routines. They are given the shots analysed since their last pass as lyse.paths, and choose for themselves where to save their results.
 
-#. *Pause* pauses analysis while it is pressed in. **lyse** by default will run all single-shot routines on a shot when it arrives (either from BLACS or having been manually added). After all the shots have been processed, only then will the multi-shot routines be executed. So if you load ten shots in quickly, the multi-shot routines won't run until they've all been processed by the single-shot routines. However most of the time there will be sufficient delay in between shots arriving that multi-shot routines will be executed pretty much every time a new shot arrives. If a single-shot routine raises an exception, analysis is paused, and the single-shot routines after it do not run on that shot. If a multi-shot routine raises an exception, the other multi-shot routines still run, and analysis is not paused.
+#. *Pause* pauses analysis while it is pressed in. **lyse** by default will run all single-shot routines on a shot when it arrives (either sent by runmanager or having been manually added). After all the shots have been processed, only then will the multi-shot routines be executed. So if you load ten shots in quickly, the multi-shot routines won't run until they've all been processed by the single-shot routines. However most of the time there will be sufficient delay in between shots arriving that multi-shot routines will be executed pretty much every time a new shot arrives. If a single-shot routine raises an exception, analysis is paused, and the single-shot routines after it do not run on that shot. If a multi-shot routine raises an exception, the other multi-shot routines still run, and analysis is not paused; the next pass offers the failed pass's shots again.
 
 #. *Abort* pauses analysis and interrupts the routines that are running.
 
 #. If you want to re-run single-shot analyses on some shots, select them and click *Re-run selected*. They'll then be processed in order.
 
-#. *Run* runs all the multi-shot routines at once, even if analysis is paused.
+#. *Run* runs all the multi-shot routines at once, even if analysis is paused. lyse.paths is then the shots analysed since the last multishot pass, which may be none.
 
 #. Adds shots with a file browser, and removes the selected shots.
 
 #. *Columns...* chooses which columns of the shots table are shown.
 
-#. Here is where shots appear, either having been sent by BLACS or having been added manually. There is a column for each global and each of the results (as saved by single-shot routines) present in the shots, and the icon in the first column shows whether all single-shot routines have run successfully on the shot. The data displayed here, including the columns that are hidden, represents the entirety of what is available to multi-shot routines via the API provided by **lyse**.
+#. Here is where shots appear, either having been sent by runmanager or having been added manually. There is a column for each global and each of the results (as saved by single-shot routines) present in the shots, and the icon in the first column shows whether all single-shot routines have run successfully on the shot. The data displayed here, including the columns that are hidden, represents the entirety of what is available to multi-shot routines via the API provided by **lyse**.
 
-#. This is where the output of routines is displayed, errors in red. If you're putting print statements in your analysis code, here is where to look to see them. Likewise if there's an exception and analysis stops, look here to see why.
+#. This is where **lyse**'s own messages and the output of classic scripts are displayed, errors in red. If you're putting print statements in your analysis code, here is where to look to see them. Likewise if there's an exception and analysis stops, look here to see why. A GUI routine shows its output in a window of its own, once it has been built, so this box shows only what it prints while loading, and any loading error.
 
 The *File* menu saves and loads the dataframe of the shots table, and saves and loads the configuration of **lyse**: its routines, whether analysis is paused, and the window layout.
 
