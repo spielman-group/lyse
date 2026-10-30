@@ -104,17 +104,32 @@ stage. Suite: 51 passed. `tools/table_benchmark.py`: every case within its limit
 | addefc6 | Fork | Tests 1 to 6 of the design, on the real model. |
 | 88c26db | Fork | The benchmark. |
 
+### Review
+
+Codex reviewed `6d2ffd5..71972c6`. Its five findings are fixed, one commit each,
+in `71972c6..0469ac3`. Suite: 51 passed.
+
+| Commit | What |
+| --- | --- |
+| 3c79faa | Load dataframe beside loaded shots: the loader leaves gaps in the frame's index, and `add_files` now drops a duplicate by label, not by position. The same code is in upstream, so the fix is offered there. |
+| cba7f60 | A benchmark case that raises ends its measurement, and the exception is raised again. |
+| 1676414 | The removal test moves analysis past the rows removed first, so it covers resetting the first-incomplete cursor. |
+| 33c10aa | The `lyse.paths` tests run two multishot routines; the second runs after the first fails. |
+| 0469ac3 | The incoming loop's comment: runmanager submits a shot once BLACS has run it. |
+
 ### Against upstream
 
-`git diff upstream/master` of the files the stage touched, in lines changed,
-before and after it: `filebox.py` 883 and 205, `routines.py` 621 and 527,
-`widgets.py` 112 and 107, `__main__.py` 432 and 429, `analysis_subprocess.py`
-636 and 634. `ShotsTableModel` is upstream's. In `DataFrameModel` and the
-routine box's analysis, what differs is A to F and `lyse.paths`, with `super()`
-and a few docstrings and comments of the style pass. The rest predates the stage: the style pass, labscript-utils'
-`TableView` and file dialogs, GUI routines, Abort, and two earlier ports in the
-fork's form, the incoming loop's warning as a lambda where upstream has
-`_shot_warning`, and its log line without upstream's `isEnabledFor` guard.
+`git diff 4c6ae2b` (upstream's `master` when the stage was built) of the files
+the stage touched, in lines changed, before and after it with its review fixes:
+`filebox.py` 883 and 207, `routines.py` 621 and 527, `widgets.py` 112 and 107,
+`__main__.py` 432 and 429, `analysis_subprocess.py` 636 and 634.
+`ShotsTableModel` is upstream's. In `DataFrameModel` and the routine box's
+analysis, what differs is A to F, `lyse.paths` and the review's loading fix,
+with `super()` and a few docstrings and comments of the style pass. The rest
+predates the stage: the style pass, labscript-utils' `TableView` and file
+dialogs, GUI routines, Abort, and two earlier ports in the fork's form, the
+incoming loop's warning as a lambda where upstream has `_shot_warning`, and its
+log line without upstream's `isEnabledFor` guard.
 
 ## Compatibility audit
 

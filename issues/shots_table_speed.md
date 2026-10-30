@@ -115,12 +115,14 @@ behaviours users rely on (rule 13); each replaces a stub test or adds one:
    notification the table's filepath column matches the model's lists.
    Afterwards the surviving shots and their statuses are right, a reply updates
    the right rows, a reply for a removed shot is reported, the next shot not
-   analysed is the right one, and column visibility is kept.
+   analysed is the right one when analysis had passed the rows removed, and
+   column visibility is kept.
 2. A reply that adds a column shows it in the header; a hidden column stays
    hidden when columns are added, and when it is removed and added again.
-3. Save dataframe then Load dataframe gives the same rows and values, through
-   the main window's handlers.
-4. A failed multishot pass: the routines after it run, and the next pass's
+3. Save dataframe then Load dataframe gives the same rows and values beside a
+   shot already loaded, with a shot changed since saving read again from its
+   file, through the main window's handlers.
+4. A failed multishot routine: the routines after it run, and the next pass's
    `lyse.paths` holds the failed pass's shots (the existing `lyse.paths` tests,
    on the real routine box).
 5. A shot submitted again gives one row. The incoming loop drops a batch's own
