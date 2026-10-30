@@ -146,7 +146,8 @@ class MainWindowTests(unittest.TestCase):
             self.assertEqual([os.path.basename(path) for path in self.save(folder, df)],
                              ['dataframe_20260922T100000_a.pkl', 'dataframe_20260922T100000_b.pkl'])
 
-    def test_a_saved_dataframe_loads_as_the_same_shots(self):
+    def test_a_saved_dataframe_loads_beside_the_shots_already_there(self):
+        """A shot changed since saving is read again from its file."""
         with tempfile.TemporaryDirectory() as folder:
             engaged = pandas.Timestamp('2026-09-22 10:00:00', tz='UTC')
             df = pandas.concat([flat_dict_to_hierarchical_dataframe(flatten_dict({
@@ -155,21 +156,26 @@ class MainWindowTests(unittest.TestCase):
                 'run time': engaged + pandas.Timedelta(seconds=n),
                 'filepath': os.path.join(folder, f'{n}.h5'),
                 'fit': {'atoms': 100.0 + n},
-            })) for n in range(3)], ignore_index=True)
+            })) for n in range(4)], ignore_index=True)
             (saved,) = self.save(folder, df)
+            changed = df['filepath'][0]
+            open(changed, 'w').close()
+            os.utime(changed, (os.path.getmtime(saved) + 1,) * 2)
             app = types.SimpleNamespace(
                 qapplication=self.qapplication, ui=None,
+                output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None),
                 exp_config=types.SimpleNamespace(get=lambda *args: folder),
                 filebox=types.SimpleNamespace(add_shots_start_time=None, incoming_queue=queue.Queue(),
                                               set_add_shots_progress=lambda *args: None))
-            app.filebox.shots_model = lyse.filebox.DataFrameModel(
+            shots = app.filebox.shots_model = lyse.filebox.DataFrameModel(
                 app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
+            shots.add_files([df['filepath'][1]], df.iloc[[1]], done=True)
             with mock.patch.object(self.main.file_dialogs, 'open_file', return_value=saved):
                 self.main.Lyse.on_load_dataframe_triggered(app)
-            shots = app.filebox.shots_model
-            self.assertEqual(shots.filepaths, list(df['filepath']))
+            self.assertEqual(shots.filepaths, list(df['filepath'][1:]))
             self.assertEqual(shots.status_percent, [100] * 3)
-            self.assertEqual(list(shots.dataframe['fit', 'atoms']), [100.0, 101.0, 102.0])
+            self.assertEqual(list(shots.dataframe['fit', 'atoms']), [101.0, 102.0, 103.0])
+            self.assertEqual(app.filebox.incoming_queue.get_nowait(), changed)
 
     def save(self, folder, df):
         """Save df as lyse does, beside its shots, and return the files written."""

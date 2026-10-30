@@ -767,7 +767,7 @@ class DataFrameModel(QtCore.QObject):
                 self.app.output_box.output('Warning: Ignoring duplicate shot %s\n' % filepath, red=True)
                 if new_row_data is not None:
                     df_row_index = np.where(new_row_data['filepath'].values == filepath)
-                    new_row_data = new_row_data.drop(df_row_index[0])
+                    new_row_data = new_row_data.drop(new_row_data.index[df_row_index[0]])
                     new_row_data.index = pandas.Index(range(len(new_row_data)))
             else:
                 to_add.append(filepath)
