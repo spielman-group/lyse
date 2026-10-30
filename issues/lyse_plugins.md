@@ -53,20 +53,20 @@ labscript-agents and labscript-optimization become such plugins.
    point of (5) still happens for that shot, and the next shot's analysis
    starts. An option, *stop a shot at its first failure*, chooses whether the
    shot's later single-shot routines run after one fails; it is off by default.
-   A shot's analysis ends in a state of its own: finished, every routine done;
-   failed, a routine did not end done but the rest ran; or stopped, its later
-   routines skipped after a failure, by the option or by Abort. Analysis takes
-   only shots not yet analysed, so it never takes a failed or stopped shot again
-   by itself.
+   A shot's analysis ends in a state of its own: done, every routine done;
+   failed, a routine did not end done but the rest ran; stopped, its later
+   routines skipped after a failure by the option; or aborted, by Abort.
+   Analysis takes only shots not done yet, so it never takes a failed, stopped
+   or aborted shot again by itself.
 8. lyse records how each routine ended on each shot: done, error (an exception,
    `sys.exit` with a failure status, or its worker dying), aborted (by Abort),
-   or not run, the words of the routine's status icon. The record is kept in
+   or not run, as the routine's status icon then shows. The record is kept in
    the shots table, and so in the dataframe, and written into the shot file; a
    multishot routine's is on every shot of its pass. Analysing a shot again
    replaces its record.
 9. The shots table shows each shot's state. A **Re-run failed** button, and its
-   remote command, analyses all failed and stopped shots again, in order,
-   without selecting them.
+   remote command, analyses all failed, stopped and aborted shots again, in
+   order, without selecting them.
 
 ### The first plugin
 
@@ -104,48 +104,56 @@ labscript-agents and labscript-optimization become such plugins.
 **A. Remote interface** (1–3). `LyseServer` (`communication.py`) gains a
 `handle_<command>` per command, and `LyseClient` (`client.py`) the matching
 method, as runmanager's do (labscript-style rule 11). Beneath the GUI handlers,
-which work on selections and dialogs, lie operations on explicit paths: the
-routine box's add (`lyse.routines.add_routines`), remove, set active, reorder,
-restart; the filebox's pause, Abort, Run, re-run, re-run failed and remove
-shots; the app's save and load dataframe. The GUI handlers and the server's
+which work on selections and dialogs, lie operations on explicit paths, split
+from those handlers as runmanager's `engage` is from `on_engage_clicked`: the
+routine box's `remove_routines`, `set_routines_active`, `reorder_routines`
+(taken from `lyse.routines.add_routines`, which already reorders by path) and
+`restart_routines`, beside the existing `add_routines`; the filebox's
+`set_analysis_paused`, `abort`, `run_multishot`, `rerun_shots` (from
+`mark_selection_not_done`), `rerun_failed` and `remove_shots` (from
+`remove_selection`); the app's `save_dataframe` and `load_dataframe`, where an
+empty dataframe raises in place of the dialog. The GUI handlers and the server's
 handlers both call them, the server's on the GUI thread through `inmain`. They
 raise `ValueError` naming an unknown box (`'singleshot'` or `'multishot'`) or
 path, and return what a caller needs to check. Commands, in runmanager's forms:
 `get_routines`, `add_routines`, `remove_routines`, `set_routines_active`,
-`set_routine_order`, `restart_routines`; `get_analysis_paused`,
+`reorder_routines`, `restart_routines`; `get_analysis_paused`,
 `set_analysis_paused`, `abort`, `run_multishot`, `rerun_shots`, `rerun_failed`,
 `get_stop_on_failure`, `set_stop_on_failure`; `add_shot`, `remove_shots`,
 `shot_status`, `get_dataframe`, `save_dataframe`, `load_dataframe`. `add_shot`
-and `get_dataframe` exist; `add_shot` gains the shot's source, `'remote'` unless
-the client names itself, as runmanager does.
+and `get_dataframe` exist; `add_shot` gains the shot's source, `'remote'` by
+default, which runmanager's submission sets to `'runmanager'`. `shot_status` is
+keyed by path, where runmanager's is keyed by shot ID.
 
 **B. Plugin host** (4, 6, 11). `lyse/plugins/__init__.py` builds a
 `labscript_utils.plugins.PluginManager` as `blacs/plugins/__init__.py` does:
 plugin folders in `lyse/plugins/`, installed packages through the entry point
-group `lyse.plugins`, flags in the labconfig's `[lyse/plugins]`. Two contexts
-take contributions: `menus`, a `MenuContext` over lyse's menu bar, and
-`areas`, where `{'context': 'areas', 'area': name, 'widget': widget}` adds the
-widget to the end of a named area, `'analysis_controls'` beside Pause and Abort
-or `'shots_toolbar'`. A plugin's window is its own widget, shown from a menu
-entry it contributes, and its geometry is part of the plugin's save data.
-`plugin_setup_complete` gets a dict: the app, the labconfig, the shots model
-and the two routine boxes. At start-up lyse builds its boxes, whose threads
-wait for shots, then instantiates the plugins, restores their data from the
-configuration it autoloads, sets up the contexts and calls
-`plugin_setup_complete`, and only then starts its server, so no call precedes
-setup. Loading a configuration later restores plugin data again, as BLACS
-does. At quit, after the save prompt, lyse fires no more calls, closes the
-plugins, then ends the workers. Plugin data is saved in lyse's configuration.
-Nothing new is needed in labscript-utils.
+group `lyse.plugins`, flags in the labconfig's `[lyse/plugins]`. Menu items come
+from `get_menu_contributions`, rendered by a `MenuContext` on which lyse
+registers its menu bar as the `'menubar'` location, as BLACS does. Widgets come
+from `get_ui_contributions` through a context lyse registers as `'areas'`, a
+class with `add(plugin_name, contribution, data)` after BLACS's notifications:
+`{'context': 'areas', 'area': name, 'widget': widget}` adds the widget to the
+end of a named area, `'analysis_controls'` beside Pause and Abort or
+`'shots_toolbar'`. A plugin's window is its own widget, shown from a menu item
+it contributes, and its geometry is part of its `get_save_data`. The setup dict,
+keyed as BLACS's is, holds the labconfig, the `ui`, the shots model and the two
+routine boxes. At start-up lyse builds its boxes, whose threads wait for shots,
+then instantiates the plugins, restores their data from the configuration it
+autoloads, sets up the contexts and calls `plugin_setup_complete`, and only then
+starts its server, so no call precedes setup. Loading a configuration later
+restores plugin data again, as BLACS does. At quit, after the save prompt, lyse
+fires no more calls, closes the plugins, then ends the workers. Plugin data is
+saved in lyse's configuration. Nothing new is needed in labscript-utils.
 
 **C. Call points and a shot's attempt** (5, 7). An *attempt* of a shot begins
 when the analysis loop takes it, a new shot or one a re-run marked not done. Its
 single-shot phase runs the active single-shot routines, all of them, or up to
 the first failure with the option on; the rest are not run. The phase ends the
-shot in a state of its own, finished, failed or stopped (7), so analysis, which
-takes only shots not yet analysed, moves to the next shot and never takes it
-again unasked. `singleshot_done(path, outcomes)` then fires and the shot joins
-the batch for the next multishot pass, failed or not; if no multishot routine is
+shot in a state of its own, done, failed, stopped or aborted (7), so analysis,
+which takes only shots not done, moves to the next shot and never takes it again
+unasked. `singleshot_done(path, outcomes)` then fires and the shot joins the
+batch for the next multishot pass, failed or not; if no multishot routine is
 active, `analysis_done(path, outcomes)` fires at once instead. A pass takes its
 batch and the shots a failed pass offers again, less rows whose file is gone; at
 its end `multishot_done(paths, outcomes)` fires, then `analysis_done` for each
@@ -156,11 +164,12 @@ waits, so its shots' `analysis_done` waits too. A shot removed during its
 attempt gets no further call. `shot_received(path, source)`, with `source` one
 of `'runmanager'`, `'remote'`, `'dialog'` and `'dataframe'`, fires on the GUI
 thread inside the shots model's `add_files`, once the row is in, so before the
-analysis loop, which asks the GUI thread for its next shot, can take it; the
-incoming queue carries each path's source. The other calls fire on the analysis
-thread. A slow handler starts its own thread, and touches the window through
-`inmain`; a handler's exception is logged and analysis goes on (`fire_event`
-does that).
+analysis loop, which asks the GUI thread for its next shot, can take it. Each
+path carries its source from the three places that queue shots, the server, the
+add-shots dialog and Load dataframe, through the incoming loop's merging to
+`add_files`. The other calls fire on the analysis thread. A slow handler starts
+its own thread, and touches the window through `inmain`; a handler's exception
+is logged and analysis goes on (`fire_event` does that).
 
 **D. Outcomes and failures** (7–9, 12). `outcomes` maps each routine's name, as
 its results group is named, to `'done'`, `'error'`, `'aborted'` or `'not run'`.
@@ -170,22 +179,26 @@ waits for a reply it checks every second that the worker is alive, so a dead
 worker's run ends as `'error'`; that closes the `KNOWN_ISSUES.md` hang. The
 option replaces the filebox's automatic `pause_analysis()` on a single-shot
 error, which goes; Pause stays a button, and Abort still pauses. The shots model
-keeps each shot's state, not analysed, finished, failed, stopped or deleted,
-beside its progress, draws it in the status column, and sets it from the shot's
-present outcomes; the analysis loop's `get_first_incomplete` takes only shots
-not analysed, and Re-run failed marks failed and stopped shots not analysed. At
-the end of each phase lyse puts the outcomes in the shot's row, as `('lyse',
-<routine>)` columns, and writes them into the shot file, in one open under the
-h5 lock, as attributes of a `results/lyse` group, which the dataframe reads on
-reload. A routine may write the same group, as routines can any group. A new
-attempt's single-shot phase clears the group and the row's outcomes before it
-writes its own, so a removed routine leaves no stale failure, and each pass of
-an attempt replaces the multishot outcomes it wrote before. A failed write, of a
-missing or read-only file, is reported in the output box; the row keeps the
-outcomes. A row whose file is gone has the shots model's present deleted state,
-which already keeps it out of analysis and Re-run selected; Re-run failed and a
-failed pass's offer skip it too, and Load dataframe marks a row whose file is
-missing as deleted.
+keeps each shot's state: not done, done, failed, stopped, aborted or deleted,
+the last renaming `deleted_off_disk` and `ROLE_DELETED_OFF_DISK`. The state is
+set from the shot's present outcomes and drawn in the status column; while the
+shot's routines run, `status_percent` shows only their progress, and no longer
+says whether the shot is analysed. The analysis loop's `get_first_incomplete`
+reads the state and takes only shots not done; Re-run failed sets failed,
+stopped and aborted shots not done. A routine's status icon gains `'aborted'`
+beside `'done'` and `'error'`, and shows none for `'not run'`. At the end of
+each phase lyse puts the outcomes in the shot's row, as `('lyse', <routine>)`
+columns, and writes them into the shot file, in one open under the h5 lock, as
+attributes of a `results/lyse` group, which the dataframe reads on reload. A
+routine may write the same group, as routines can any group. A new attempt's
+single-shot phase clears the group and the row's outcomes before it writes its
+own, so a removed routine leaves no stale failure, and each pass of an attempt
+replaces the multishot outcomes it wrote before. A failed write, of a missing or
+read-only file, is reported in the output box; the row keeps the outcomes. A row
+whose file is gone has the shots model's present deleted state, which already
+keeps it out of analysis and Re-run selected; Re-run failed and a failed pass's
+offer skip it too, and Load dataframe marks a row whose file is missing as
+deleted.
 
 **E. The first plugin** (10–11).
 `lyse/plugins/delete_default_and_repeated_shots/`, after BLACS's
@@ -194,10 +207,10 @@ forgets one from any other source, so a shot added again by hand is no longer
 its. On `analysis_done`, for a noted shot whose outcomes are all `'done'` and
 whose `sequence_index` is −1 or `run repeat` 1 or more, it queues the path for
 its thread. That thread, under the shot's file lock, checks again that the row
-is present, still noted and finished, and that the file's `results/lyse`
-attributes are all `'done'`, so the outcomes were recorded; only then does it
-delete the file, with labscript-utils' shared delete function, and mark the row
-deleted, without the warning.
+is present, still noted and done, and that the file's `results/lyse` attributes
+are all `'done'`, so the outcomes were recorded; only then does it delete the
+file, with labscript-utils' shared delete function, and mark the row deleted,
+without the warning.
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
 a plugin under the `lyse.plugins` entry point and handles `analysis_done`.
@@ -218,8 +231,7 @@ through the shots model's `update_rows`. Their `lyse.Routine` subclasses and
 
 ## Needed elsewhere
 
-- **runmanager:** its analysis submission names itself, `add_shot(path,
-  source='runmanager')`.
+- **runmanager:** its analysis submission passes `add_shot(path, source='runmanager')`.
 - **labscript-utils:** a function that deletes a shot file under its file
   lock, which E and BLACS's `delete_repeated_shots` both call; and the
   `[lyse/plugins]` section documented beside `[blacs/plugins]`
