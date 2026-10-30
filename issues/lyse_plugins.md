@@ -169,22 +169,22 @@ single-shot phase runs the active single-shot routines, all of them, or up to
 the first failure with the option on; the rest are not run.
 `singleshot_done(path, outcomes)` then fires. If a multishot routine is active,
 the shot then awaits multishot: the single-shot loop does not take it again, the
-first plugin does not delete it, and it joins the batch for the next pass,
-failed or not. If none is active, its attempt ends at once. A pass takes its
-batch and the shots a failed pass offers again; at its end
-`multishot_done(paths, outcomes)` fires, and each shot it took ends its attempt.
-A shot that a failed pass offers again begins a new attempt of its multishot
-phase, which the retry pass ends. An attempt ends with `analysis_done(path,
-outcomes)` and sets the shot's state from all its outcomes: done, failed,
-stopped or aborted (7). A shot whose file vanished while it awaited the pass
-ends its attempt there as deleted, and its path is not offered to the routines.
-A re-run asked for a shot whose attempt is under way takes effect when that
-attempt ends, which then sets the shot not done in place of its state. Shots
-that arrive during a pass join the queue for the next one. While paused, the
-shot being analysed finishes its single-shot phase, no attempt starts and a due
-pass waits, so its shots' `analysis_done` waits too. A shot removed during its
-attempt gets no further call. `shot_received(path, source)`, with `source` one
-of `'runmanager'`, `'remote'`, `'dialog'` and `'dataframe'`, fires on the GUI
+first plugin does not delete it, and the next pass takes it, failed or not. If
+none is active, its attempt ends at once. A pass takes every shot awaiting
+multishot; at its end `multishot_done(paths, outcomes)` fires, and each shot it
+took ends its attempt. An attempt ends with `analysis_done(path, outcomes)` and
+sets the shot's state from all its outcomes: done, failed, stopped or aborted
+(7). A shot whose pass failed is left awaiting multishot instead, so that the
+next pass retries it, as `lyse.paths` does now, in a new attempt of its
+multishot phase. A shot whose file vanished while it awaited the pass ends its
+attempt there as deleted, and its path is not offered to the routines. A re-run
+asked for a shot whose attempt is under way takes effect when that attempt ends,
+which then sets the shot not done in place of its state. Shots that arrive
+during a pass join the queue for the next one. While paused, the shot being
+analysed finishes its single-shot phase, no attempt starts and a due pass waits,
+so its shots' `analysis_done` waits too. A shot removed during its attempt gets
+no further call. `shot_received(path, source)`, with `source` one of
+`'runmanager'`, `'remote'`, `'dialog'` and `'dataframe'`, fires on the GUI
 thread inside the shots model's `add_files`, once the row is in, so before the
 analysis loop, which asks the GUI thread for its next shot, can take it. Each
 path carries its source from where it was queued, the server or the add-shots
@@ -207,23 +207,26 @@ option replaces the filebox's automatic `pause_analysis()` on a single-shot
 error, which goes; Pause stays a button, and Abort still pauses. The shots model
 keeps each shot's state: not done, awaiting multishot, done, failed, stopped,
 aborted or deleted, the last renaming `deleted_off_disk` and
-`ROLE_DELETED_OFF_DISK`. It draws the state in the status column, where
-`status_percent` shows only the progress of the routines running.
-`get_first_incomplete` reads the state and takes only shots not done; Re-run
-failed sets failed, stopped and aborted shots not done. A routine's status icon
-gains `'aborted'` beside `'done'` and `'error'`, and shows none for `'not run'`.
-At the end of each phase lyse puts the outcomes in the shot's row, as `('lyse',
-<routine>)` columns, and writes them into the shot file, in one open under the
-h5 lock, as attributes of a `results/lyse` group, which the dataframe reads on
-reload. A routine may write the same group, as routines can any group. Before it
-writes a new attempt's single-shot outcomes, lyse removes the attributes and
-columns its previous outcomes put there for that shot, and no others, so a
-removed routine leaves no stale failure; a pass replaces the multishot outcomes
-it wrote before in the same way. A failed write, of a missing or read-only file,
-is reported in the output box; the row keeps the outcomes, and the shots model
-notes, in memory, whether every write of the shot's present attempt succeeded. A
-row whose file is gone has the deleted state, which keeps it out of analysis,
-Re-run selected, Re-run failed and a failed pass's offer.
+`ROLE_DELETED_OFF_DISK`. Awaiting multishot is the per-shot form of
+`FileBox.analysed_since_multishot`, which goes: a pass's paths, its
+`lyse.paths`, are the shots in that state, in table order. It draws the state in
+the status column, where `status_percent` shows only the progress of the
+routines running. `get_first_incomplete` reads the state and takes only shots
+not done; Re-run failed sets failed, stopped and aborted shots not done. A
+routine's status icon gains `'aborted'` beside `'done'` and `'error'`, and shows
+none for `'not run'`. At the end of each phase lyse puts the outcomes in the
+shot's row, as `('lyse', <routine>)` columns, and writes them into the shot
+file, in one open under the h5 lock, as attributes of a `results/lyse` group,
+which the dataframe reads on reload. A routine may write the same group, as
+routines can any group. Before it writes a new attempt's single-shot outcomes,
+lyse removes the attributes and columns its previous outcomes put there for that
+shot, and no others, so a removed routine leaves no stale failure; a pass
+replaces the multishot outcomes it wrote before in the same way. A failed write,
+of a missing or read-only file, is reported in the output box; the row keeps the
+outcomes, and the shots model notes, in memory, whether every write of the
+shot's present attempt succeeded. A row whose file is gone has the deleted
+state, which keeps it out of analysis, Re-run selected, Re-run failed and every
+pass.
 
 **E. The first plugin** (10–11).
 `lyse/plugins/delete_default_and_repeated_shots/`, after BLACS's
