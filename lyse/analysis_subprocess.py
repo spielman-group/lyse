@@ -32,6 +32,8 @@ import time
 from pathlib import Path
 from types import ModuleType
 
+# Matplotlib uses the Qt binding that is already imported, so qtutils.qt must be imported
+# before any matplotlib backend:
 from qtutils.qt import QtCore, QtGui, QtWidgets
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 from qtutils.qt.QtCore import QByteArray, QSettings
