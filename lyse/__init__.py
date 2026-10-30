@@ -42,17 +42,22 @@ from lyse.client import LyseClient
 
 # Import this way so LYSE_DIR is exposed when someone does import lyse or from lyse import *
 from lyse.utils import LYSE_DIR
-from lyse.utils.worker import register_plot_class, delay_results_return
+from lyse.utils.worker import register_plot_class, delay_results_return, figure_to_clipboard
 
 __all__ = [
     # interacting with lyse internals
     'LYSE_DIR',
     'register_plot_class',
     'delay_results_return',
-    # lyse analysis API objects
-    'path',  # needed so old star imports know to pull `path` from the lazy loader here
-    'paths',  # likewise
-    'spinning_top',  # likewise
+    'figure_to_clipboard',
+    # lyse analysis API objects, which the lazy loader below reads from
+    # lyse.utils.worker so that star imports see the values set by the analysis
+    # subprocess
+    'path',
+    'paths',
+    'spinning_top',
+    'Plot',
+    'plots',
     'routine_storage',
     'data',
     'globals_diff',
@@ -76,11 +81,12 @@ if 'sphinx' in sys.modules:
     Automatically populated by the lyse GUI for a multishot routine.
     """
 
-# lazy import so we catch updated path from analysis subprocess
+# These names are read from lyse.utils.worker on each access, so that the values set by
+# the analysis subprocess are seen.
 def __getattr__(name):
-    if name in ('path', 'paths', 'spinning_top'):
-        from lyse.utils import worker
-        return getattr(worker, name)
+    if name in ('path', 'paths', 'spinning_top', 'Plot', 'plots', 'delay_event'):
+        import lyse.utils.worker
+        return getattr(lyse.utils.worker, name)
     # Lazy, so that import lyse stays free of Qt.
     elif name == 'Routine':
         from lyse.routine import Routine
