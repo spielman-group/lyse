@@ -183,7 +183,8 @@ class FailedPassTests(unittest.TestCase):
         self.assertFalse(box.analysis_paused)
 
     def test_while_paused_only_the_run_button_starts_a_pass(self):
-        """A pass outstanding at the pause waits for resuming, but Run starts it now."""
+        """A pass outstanding when analysis is paused during a shot waits for resuming,
+        but Run starts it now."""
         waits = []
 
         def wait():
@@ -193,10 +194,17 @@ class FailedPassTests(unittest.TestCase):
             if len(waits) > 2:
                 raise Stop
 
+        def singleshot(filepath):
+            box.analysis_paused = True  # the Pause button, pressed meanwhile
+
+        incomplete = ['1.h5']
         box = types.SimpleNamespace(
             analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None, set=lambda: None),
-            analysis_paused=True, multishot_required=True, multishot_requested=False,
+            analysis_paused=False, multishot_required=True, multishot_requested=False,
             analysed_since_multishot=[], to_multishot=queue.Queue(), from_multishot=queue.Queue(),
+            shots_model=types.SimpleNamespace(
+                get_first_incomplete=lambda: incomplete.pop() if incomplete else None),
+            do_singleshot_analysis=singleshot,
         )
         box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
         for _ in range(2):

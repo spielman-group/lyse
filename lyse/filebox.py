@@ -1081,7 +1081,8 @@ class FileBox:
                             self.multishot_required = True
                         if filepath is None:
                             break
-                        if self.multishot_required:
+                        # Analysis may have been paused during the shot:
+                        if self.multishot_required and (self.multishot_requested or not self.analysis_paused):
                             logger.info('doing multishot analysis')
                             multishot_failed = not self.do_multishot_analysis()
                     else:
