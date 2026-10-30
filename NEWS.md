@@ -1,9 +1,5 @@
 ## Unreleased
 
-- A routine reads, through `lyse.data()`, the results of the routines that ran
-  before it on the same shot or pass. Before, the next routine could start before
-  those results reached the shots table.
-
 - The buttons sit by what they act on: **Run** by the multishot routines, and
   **Re-run selected** (formerly Mark as not done) in the shots' toolbar. **Pause** is
   a toggle. **Run** runs the multishot routines at once even

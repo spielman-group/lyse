@@ -14,8 +14,6 @@
 """The shots table: shots added, removed and updated, as the view and
 lyse.data() read them from the one dataframe."""
 import concurrent.futures
-import logging
-import queue
 import socket
 import types
 import unittest
@@ -25,7 +23,6 @@ from qtutils.qt import QtCore, QtWidgets
 
 import lyse
 import lyse.filebox
-import lyse.routines
 from lyse.communication import LyseServer
 
 qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
@@ -56,16 +53,6 @@ class ShotsTableTests(unittest.TestCase):
         shots = lyse.filebox.DataFrameModel(app, self.view, exp_config)
         shots.add_files([f'{n}.h5' for n in numbers], rows(numbers))
         return shots
-
-    def lyse_server(self, shots):
-        """Serve lyse.data() from shots, and return its port."""
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1', 0))
-            port = probe.getsockname()[1]
-        server = LyseServer(types.SimpleNamespace(filebox=types.SimpleNamespace(shots_model=shots)),
-                            port, bind_address='tcp://127.0.0.1')
-        self.addCleanup(server.shutdown)
-        return port
 
     def remove(self, shots, numbers):
         selection = self.view.selectionModel()
@@ -136,7 +123,12 @@ class ShotsTableTests(unittest.TestCase):
 
     def test_lyse_data_returns_whole_frames_while_shots_come_and_go(self):
         shots = self.shots_table(range(8))
-        port = self.lyse_server(shots)
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        server = LyseServer(types.SimpleNamespace(filebox=types.SimpleNamespace(shots_model=shots)),
+                            port, bind_address='tcp://127.0.0.1')
+        self.addCleanup(server.shutdown)
         with concurrent.futures.ThreadPoolExecutor(1) as pool:
             call = pool.submit(lambda: [lyse.data(port=port) for _ in range(20)])
             n = 8
@@ -149,34 +141,6 @@ class ShotsTableTests(unittest.TestCase):
             self.assertEqual(len(frame), 8)
             self.assertEqual(list(frame['x']), list(frame['run number']))
             self.assertEqual(list(frame['filepath']), [f'{n}.h5' for n in frame['run number']])
-
-    def test_a_routine_reads_the_results_of_the_routines_before_it(self):
-        shots = self.shots_table([0])
-        port = self.lyse_server(shots)
-        seen = []
-
-        def routine(analysis):
-            routine = types.SimpleNamespace(shortname='', done=False, error=False,
-                                            enabled=lambda: True, do_analysis=analysis)
-            routine.set_status = lambda status: routine.__dict__.update(
-                done=status == 'done', error=status == 'error')
-            return routine
-
-        def second(filepath, paths):
-            seen.append(lyse.data(port=port)['first', 'y'].tolist())
-            return True, {}
-        box = types.SimpleNamespace(
-            multishot=True, to_filebox=queue.Queue(), logger=logging.getLogger('test'),
-            routines=[routine(lambda *args: (True, {'0.h5': {('first', 'y'): 42}})), routine(second)],
-            app=types.SimpleNamespace(filebox=types.SimpleNamespace(shots_model=shots, analysis_paused=False)))
-        for name in ['_start_next_routine', 'start_analysis', 'end_routine']:
-            setattr(box, name, types.MethodType(getattr(lyse.routines.RoutineBox, name), box))
-        with concurrent.futures.ThreadPoolExecutor(1) as pool:
-            call = pool.submit(lyse.routines.RoutineBox.do_analysis, box, None, ['0.h5'])
-            while not call.done():
-                qapplication.processEvents()
-        call.result()
-        self.assertEqual(seen, [[42]])
 
 
 if __name__ == '__main__':
