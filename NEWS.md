@@ -1,5 +1,15 @@
 ## Unreleased
 
+- The buttons sit by what they act on: **Run** by the multishot routines, and
+  **Re-run selected** (formerly Mark as not done) in the shots' toolbar. **Pause** is
+  a toggle. **Run** runs the multishot routines at once even
+  while analysis is paused; a pass that is due on its own waits until analysis
+  resumes.
+
+- `lyse.Plot`, `lyse.plots`, `lyse.delay_event` and `lyse.figure_to_clipboard` are
+  back in the lyse namespace, so a routine that subclasses `lyse.Plot` for
+  `register_plot_class` runs again.
+
 - The shots table reads each value from the dataframe as it draws it, so lyse stays
   responsive with tens of thousands of shots. The progress bar of adding shots
   shows only once adding has taken half a second.
