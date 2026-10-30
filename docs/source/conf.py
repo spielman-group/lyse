@@ -104,13 +104,13 @@ intersphinx_mapping = {
     'pyqtgraph': ('https://pyqtgraph.readthedocs.io/en/latest/', None),
     'matplotlib': ('https://matplotlib.org/stable/', None),
     'h5py': ('https://docs.h5py.org/en/stable/', None),
-    # An inventory of PyQt5, which has the same class and method names as PySide6.
-    # pyqt5-modified-objects.inv is made with
+    # An inventory of PyQt6, the suite's Qt binding.
+    # pyqt6-modified-objects.inv is made with
     # https://github.com/MSLNZ/msl-qt/blob/master/docs/create_pyqt_objects.py
     # (MIT License).
     'qt': (
-        'https://riverbankcomputing.com/static/Docs/PyQt5/',
-        'pyqt5-modified-objects.inv',
+        'https://www.riverbankcomputing.com/static/Docs/PyQt6/',
+        'pyqt6-modified-objects.inv',
     ),
 }
 
