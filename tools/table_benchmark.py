@@ -86,11 +86,14 @@ def measure(work):
 
     def run():
         start = time.perf_counter()
-        work()
+        try:
+            work()
+        except Exception as e:
+            errors.append(e)
         finished.append(time.perf_counter())
         durations.append(finished[0] - start)
 
-    durations = []
+    durations, errors = [], []
     timer = QtCore.QTimer()
     timer.setInterval(10)
     timer.timeout.connect(tick)
@@ -98,6 +101,8 @@ def measure(work):
     threading.Thread(target=run, daemon=True).start()
     loop.exec()
     timer.stop()
+    if errors:
+        raise errors[0]
     return durations[0], max(np.diff(ticks))
 
 
