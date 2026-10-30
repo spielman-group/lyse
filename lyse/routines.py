@@ -321,6 +321,9 @@ class RoutineBox:
         while routine is not None:
             self.logger.info('running analysis routine %s', routine.shortname)
             success, updated_data = routine.do_analysis(filepath, paths)
+            # Applied before the next routine starts, so that it reads them through lyse.data():
+            if updated_data:
+                self.app.filebox.shots_model.update_rows(updated_data)
             routine, status_percent = self.end_routine(routine, success)
             if success:
                 self.logger.debug('success')
@@ -328,13 +331,13 @@ class RoutineBox:
                 self.logger.debug('failure')
                 error = True
                 stopped = status_percent is None
-            self.to_filebox.put(['progress', status_percent, updated_data])
+            self.to_filebox.put(['progress', status_percent])
         # 'error' if a routine failed, so that the filebox offers the pass's shots
         # again, with no status if the routines after it did not run:
         if error:
-            self.to_filebox.put(['error', None if stopped else 100.0, {}])
+            self.to_filebox.put(['error', None if stopped else 100.0])
         else:
-            self.to_filebox.put(['done', 100.0, {}])
+            self.to_filebox.put(['done', 100.0])
         self.logger.debug('completed analysis of %s', filepath)
 
     def abort(self):

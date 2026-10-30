@@ -1121,9 +1121,7 @@ class FileBox:
         self.to_singleshot.put(filepath)
         previous_status_percent = None
         while True:
-            signal, status_percent, updated_data = self.from_singleshot.get()
-            if updated_data:
-                self.shots_model.update_rows(updated_data)
+            signal, status_percent = self.from_singleshot.get()
             # Update the status percent for the the row on which analysis is actually
             # running:
             if status_percent is not None and status_percent != previous_status_percent:
@@ -1149,9 +1147,7 @@ class FileBox:
         paths, self.analysed_since_multishot = self.analysed_since_multishot, []
         self.to_multishot.put(paths)
         while True:
-            signal, status_percent, updated_data = self.from_multishot.get()
-            if updated_data:
-                self.shots_model.update_rows(updated_data)
+            signal, status_percent = self.from_multishot.get()
             if signal == 'done':
                 self.multishot_required = False
                 return True
