@@ -70,6 +70,7 @@ class RoutineBox:
             self.ui.groupBox.setTitle('Multishot routines')
         else:
             self.ui.groupBox.setTitle('Singleshot routines')
+            self.ui.toolButton_run_routines.hide()
 
         self.model = QtGui.QStandardItemModel()
         self.header = HorizontalHeaderViewWithWidgets(self.model)
