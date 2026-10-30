@@ -1,5 +1,11 @@
 ## Unreleased
 
+- lyse takes plugins, written as BLACS's are, in the suite's one plugin language:
+  folders in `lyse/plugins/` and packages registered under the `lyse.plugins`
+  entry point, each loaded if its flag in the labconfig's `[lyse/plugins]`
+  section is true. A plugin can add menu items and widgets beside Pause and Abort
+  or in the shots' toolbar, and its data is saved with lyse's configuration.
+
 - lyse can be controlled remotely, as runmanager can: `LyseClient` lists, adds,
   removes, activates, reorders and restarts the routines of either box, pauses and
   resumes analysis, aborts, runs the multishot routines, re-runs and removes shots,

@@ -32,6 +32,7 @@ splash.show()
 
 splash.update_text('importing standard library modules')
 import sys
+import threading
 import time
 import queue
 
@@ -48,6 +49,7 @@ from labscript_utils.labconfig import (
     LabConfig,
     load_appconfig,
 )
+from labscript_utils.plugins import MenuContext
 from labscript_utils.setup_logging import setup_logging
 from labscript_utils.qtwidgets.application import (
     LabscriptGuiApplication,
@@ -67,12 +69,14 @@ PYQT_VERSION_STR = importlib.metadata.version(QT_ENV)
 # Imported for its side effect: the qtutils icons that .ui files refer to resolve only once
 # it is loaded.
 import qtutils.icons
+from qtutils.icons import Icon
 
 splash.update_text('importing core Lyse modules')
 import lyse.utils
 import lyse.routines
 import lyse.filebox
 import lyse.communication
+import lyse.plugins
 
 class LyseMainWindow(ThemedWindow, FirstPaintWindow, QtWidgets.QMainWindow):
     def __init__(self, app, *args, **kwargs):
@@ -139,6 +143,8 @@ class Lyse(LabscriptGuiApplication):
         self.filebox = lyse.filebox.FileBox(self, self.ui.verticalLayout_filebox, self.exp_config,
                                to_singleshot, from_singleshot, to_multishot, from_multishot)
         self.logger.info('Boxes loaded')
+
+        self.setup_plugins()
 
         # Only now, since the server puts submitted shots in the filebox's queue. Until
         # then the port is unbound, and a client's request times out rather than failing.
@@ -207,6 +213,41 @@ class Lyse(LabscriptGuiApplication):
         self.set_config_window_title(active_config_file)
         self.ui.show()
 
+    def setup_plugins(self):
+        """Set up the plugins, with their data from the configuration lyse autoloads,
+        before the server starts, so that nothing reaches a plugin first. The
+        configuration is loaded again once the window shows, as Load configuration
+        loads one, and plugins restore their data again then."""
+        manager = lyse.plugins.manager
+        self.plugins = manager.instantiate_plugins()
+        try:
+            saved = load_appconfig(self.exp_config.get('lyse', 'autoload_config_file'))
+        except (LabConfig.NoOptionError, LabConfig.NoSectionError):
+            saved = {}
+        except Exception:
+            # Reported when the configuration is loaded again.
+            self.logger.exception('Could not read the plugin data of the autoload configuration')
+            saved = {}
+        manager.restore_save_data(saved.get('lyse_state', {}).get('plugins', {}))
+        menus = MenuContext(logger=self.logger, icon_factory=Icon)
+        menus.register_location('menubar', self.ui.menuBar)
+        manager.register_context('menus', menus)
+        manager.register_context('areas', lyse.plugins.Areas({
+            'analysis_controls': self.filebox.ui.horizontalLayout_analysis_controls_plugins,
+            'shots_toolbar': self.filebox.ui.horizontalLayout_shots_toolbar_plugins,
+        }))
+        data = {
+            'exp_config': self.exp_config,
+            'ui': self.ui,
+            'plugins': self.plugins,
+            'shots_model': self.filebox.shots_model,
+            'singleshot_routinebox': self.singleshot_routinebox,
+            'multishot_routinebox': self.multishot_routinebox,
+        }
+        manager.setup_contexts(data)
+        menus.render()
+        manager.setup_complete(data)
+
     def terminate_all_workers(self):
         for routine in self.singleshot_routinebox.routines + self.multishot_routinebox.routines:
             routine.end_child()
@@ -222,6 +263,13 @@ class Lyse(LabscriptGuiApplication):
         if not self.offer_to_save_changes('Quit lyse', quitting=True):
             return False
         self.terminate_all_workers()
+        # Off the GUI thread, which keeps serving, since a plugin's close() may wait for
+        # threads of its own that need it:
+        closing = threading.Thread(target=lyse.plugins.manager.close_plugins)
+        closing.start()
+        while closing.is_alive():
+            self.qapplication.processEvents()
+            closing.join(0.02)
         return True
 
     def get_save_data(self):
@@ -241,6 +289,7 @@ class Lyse(LabscriptGuiApplication):
         save_data['lastfileboxfolder'] = self.filebox.last_opened_shots_folder
 
         save_data['analysis_paused'] = self.filebox.analysis_paused
+        save_data['plugins'] = lyse.plugins.manager.get_save_data()
         save_data.update(self.geometry_save_data())
         return save_data
 
@@ -262,6 +311,7 @@ class Lyse(LabscriptGuiApplication):
             self.filebox.last_opened_shots_folder = save_data['lastfileboxfolder']
         if 'analysis_paused' in save_data and save_data['analysis_paused']:
             self.filebox.set_analysis_paused(True)
+        lyse.plugins.manager.restore_save_data(save_data.get('plugins', {}))
         if restore_window_geometry:
             self.restore_geometry(save_data)
         self.configuration_loaded(save_target)

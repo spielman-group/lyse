@@ -98,6 +98,9 @@
             </property>
            </widget>
           </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_analysis_controls_plugins"/>
+          </item>
          </layout>
         </widget>
        </item>
@@ -183,6 +186,9 @@
              <bool>true</bool>
             </property>
            </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_shots_toolbar_plugins"/>
           </item>
           <item>
            <spacer name="horizontalSpacer_2">

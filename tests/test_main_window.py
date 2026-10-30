@@ -11,19 +11,27 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The lyse main window: a theme change, and saving and loading the dataframe."""
+"""The lyse main window: a theme change, its plugins, and saving and loading the
+dataframe."""
+import logging
 import os
 import queue
 import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 import numpy
 import pandas
+from labscript_utils.labconfig import save_appconfig
+from labscript_utils.qtwidgets.leftclick import TableView
+from qtutils import UiLoader
 from qtutils.qt import QtGui, QtWidgets
 
 import lyse.filebox
+import lyse.plugins
+import lyse.utils
 from lyse.dataframe_utilities import flat_dict_to_hierarchical_dataframe, flatten_dict
 
 
@@ -173,6 +181,43 @@ class MainWindowTests(unittest.TestCase):
             self.assertEqual(shots.status_percent, [100] * 3)
             self.assertEqual(list(shots.dataframe['fit', 'atoms']), [101.0, 102.0, 103.0])
             self.assertEqual(app.filebox.incoming_queue.get_nowait(), (changed, 'dataframe'))
+
+    def test_a_plugin_gets_its_saved_data_then_its_place_in_the_window(self):
+        events, widget = [], QtWidgets.QLabel('probe')
+
+        class Plugin(lyse.plugins.BasePlugin):
+            def restore_save_data(self, data):
+                events.append(('restored', data))
+
+            def get_ui_contributions(self):
+                return [{'context': 'areas', 'area': 'shots_toolbar', 'widget': widget}]
+
+            def get_menu_contributions(self):
+                return [{'location': 'menubar', 'path': 'Probe', 'name': 'Act', 'action': lambda: None}]
+
+            def plugin_setup_complete(self, data):
+                events.append(('set up', data['shots_model']))
+
+        module = types.ModuleType('probe')
+        module.Plugin = Plugin
+        loader = UiLoader()
+        loader.registerCustomWidget(TableView)
+        app = types.SimpleNamespace(
+            ui=loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui')),
+            filebox=types.SimpleNamespace(
+                ui=loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/filebox.ui')),
+                shots_model='shots'),
+            singleshot_routinebox=None, multishot_routinebox=None, logger=logging.getLogger('test'))
+        manager = lyse.plugins.manager
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.multiple(manager, modules={'probe': module}, plugins={}, contexts={}):
+            config = os.path.join(folder, 'lyse.toml')
+            save_appconfig(config, {'lyse_state': {'plugins': {'probe': {'n': 3}}}})
+            app.exp_config = types.SimpleNamespace(get=lambda *args: config)
+            self.main.Lyse.setup_plugins(app)
+        self.assertEqual(events, [('restored', {'n': 3}), ('set up', 'shots')])
+        self.assertIs(app.filebox.ui.horizontalLayout_shots_toolbar_plugins.itemAt(0).widget(), widget)
+        self.assertIn('Probe', [action.text() for action in app.ui.menuBar.actions()])
 
     def save(self, folder, df):
         """Save df as lyse does, beside its shots, and return the files written."""
