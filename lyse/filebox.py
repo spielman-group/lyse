@@ -438,8 +438,10 @@ class DataFrameModel(QtCore.QObject):
         self._awaiting_since = {}
         self._awaiting_count = itertools.count()
         self._rerun_after_attempt = set()
-        # The shots a failed pass left awaiting the next:
+        # The shots a failed pass left awaiting the next, and whether every outcome of a
+        # shot's present attempt reached its file:
         self._pass_failed = set()
+        self.outcomes_recorded = {}
 
         # Column indices to names and vice versa for fast lookup:
         self.column_indices = {'__status': self.COL_STATUS, ('filepath', ''): self.COL_FILEPATH}
@@ -973,12 +975,10 @@ class FileBox:
         self.multishot_requested = False
         # Whether a shot's later single-shot routines are skipped after one fails:
         self.stop_on_failure = False
-        # The single-shot routines' outcomes of the shots awaiting multishot, the names
-        # of the outcomes lyse last wrote for each shot, by phase, and whether every
-        # outcome of a shot's present attempt reached its file:
+        # The single-shot routines' outcomes of the shots awaiting multishot, and the
+        # names of the outcomes lyse last wrote for each shot, by phase:
         self._singleshot_outcomes = {}
         self._recorded_outcomes = {}
-        self.outcomes_recorded = {}
         # Set as lyse quits, after which no plugin is called and no analysis starts:
         self.quitting = False
 
@@ -1292,7 +1292,7 @@ class FileBox:
         # A new attempt's outcomes replace all those lyse wrote for the shot before:
         previous = self._recorded_outcomes.get(filepath, {})
         replaced = previous.get('singleshot', set()) | previous.get('multishot', set())
-        self.outcomes_recorded[filepath] = self.record_outcomes(filepath, outcomes, replaced)
+        self.shots_model.outcomes_recorded[filepath] = self.record_outcomes(filepath, outcomes, replaced)
         self._recorded_outcomes[filepath] = {'singleshot': set(outcomes), 'multishot': set()}
         self.fire_event('singleshot_done', filepath, outcomes)
         if any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
@@ -1348,7 +1348,8 @@ class FileBox:
         for filepath in paths:
             recorded = self._recorded_outcomes.setdefault(filepath, {'singleshot': set(), 'multishot': set()})
             written = self.record_outcomes(filepath, outcomes, recorded['multishot'])
-            self.outcomes_recorded[filepath] = self.outcomes_recorded.get(filepath, True) and written
+            recorded_before = self.shots_model.outcomes_recorded.get(filepath, True)
+            self.shots_model.outcomes_recorded[filepath] = recorded_before and written
             recorded['multishot'] = set(outcomes)
         self.fire_event('multishot_done', paths, outcomes)
         for filepath in paths:

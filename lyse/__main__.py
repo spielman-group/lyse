@@ -239,6 +239,7 @@ class Lyse(LabscriptGuiApplication):
         data = {
             'exp_config': self.exp_config,
             'ui': self.ui,
+            'output_box': self.output_box,
             'plugins': self.plugins,
             'shots_model': self.filebox.shots_model,
             'singleshot_routinebox': self.singleshot_routinebox,

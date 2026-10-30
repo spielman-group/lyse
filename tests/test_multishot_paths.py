@@ -76,7 +76,7 @@ class LysePathsTests(unittest.TestCase):
         self.filebox = types.SimpleNamespace(
             multishot_required=True, multishot_requested=False, analysis_paused=False,
             stop_on_failure=False, add_shots_start_time=None, set_add_shots_progress=lambda *args: None,
-            _singleshot_outcomes={}, _recorded_outcomes={}, outcomes_recorded={},
+            _singleshot_outcomes={}, _recorded_outcomes={},
             fire_event=lambda *args: self.events.append(args),
         )
         app = self.filebox.app = types.SimpleNamespace(

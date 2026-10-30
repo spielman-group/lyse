@@ -1,5 +1,9 @@
 ## Unreleased
 
+- A first plugin, `delete_default_and_repeated_shots`, off by default: once all
+  analysis of a default or repeated shot from runmanager has ended with every
+  routine done, it deletes the shot file and keeps its row, with its results.
+
 - A failing routine no longer stops analysis: the routines after it run, analysis
   is not paused, and the next shot is analysed. The option *Stop a shot at its first
   failure* skips a shot's later single-shot routines once one fails. How each

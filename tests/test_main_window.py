@@ -212,7 +212,8 @@ class MainWindowTests(unittest.TestCase):
             filebox=types.SimpleNamespace(
                 ui=loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/filebox.ui')),
                 shots_model='shots'),
-            singleshot_routinebox=None, multishot_routinebox=None, logger=logging.getLogger('test'))
+            output_box=None, singleshot_routinebox=None, multishot_routinebox=None,
+            logger=logging.getLogger('test'))
         manager = lyse.plugins.manager
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.multiple(manager, modules={'probe': module}, plugins={}, contexts={}):
