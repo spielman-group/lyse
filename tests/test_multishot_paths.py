@@ -30,7 +30,7 @@ import lyse.routines
 ROUTINE = """\
 import json, lyse, os
 calls = json.load(open('calls.json')) if os.path.exists('calls.json') else []
-json.dump(calls + [lyse.paths], open('calls.json', 'w'))
+json.dump(calls + [[os.path.basename(__file__), lyse.paths]], open('calls.json', 'w'))
 if os.path.exists('fail'):
     os.remove('fail')
     raise RuntimeError('this pass fails')
@@ -60,8 +60,6 @@ class LysePathsTests(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.folder = folder.name
-        with open(os.path.join(self.folder, 'routine.py'), 'w') as f:
-            f.write(ROUTINE)
         saved = lyse.figure_manager.figuremanager
         lyse.figure_manager.figuremanager = types.SimpleNamespace(
             reset=lambda: None, set_first_figure_current=lambda: None, figs={})
@@ -71,33 +69,38 @@ class LysePathsTests(unittest.TestCase):
             shots_model=types.SimpleNamespace(update_rows=lambda *a: None,
                                               set_status_percent=lambda *a: None),
         )
-        self.filebox.to_singleshot, self.filebox.from_singleshot = self.routine_box(multishot=False)
-        self.filebox.to_multishot, self.filebox.from_multishot = self.routine_box(multishot=True)
+        self.filebox.to_singleshot, self.filebox.from_singleshot = self.routine_box(False, ['singleshot.py'])
+        self.filebox.to_multishot, self.filebox.from_multishot = self.routine_box(True, ['first.py', 'second.py'])
 
-    def routine_box(self, multishot):
-        """A routine box with the one routine, as the filebox's pair of queues."""
-        path = os.path.join(self.folder, 'routine.py')
-        worker = object.__new__(lyse.analysis_subprocess.AnalysisWorker)
-        worker.filepath = path
-        worker.routine_module = types.ModuleType('routine')
-        worker.routine_module.__file__ = path
-        worker.routine_module_clean_dict = worker.routine_module.__dict__.copy()
-        worker.routine_source = None
-        worker.idle, worker.routine_running = threading.Event(), False
-        # In this thread, which runs_on_put needs; a real worker starts one per analysis.
-        worker.analyse = worker.analysis_task
-        worker.plots = {}
-        worker.modulewatcher = types.SimpleNamespace(lock=threading.Lock())
-        worker.to_parent = queue.Queue()
-        routine = types.SimpleNamespace(shortname='routine.py', done=False, error=False, enabled=lambda: True,
-                                        from_worker=worker.to_parent, shutdown=None,
-                                        worker=types.SimpleNamespace(poll=lambda: None))
-        routine.to_worker = runs_on_put(worker.mainloop, worker, 'from_parent')
-        routine.set_status = lambda status: routine.__dict__.update(
-            done=status == 'done', error=status == 'error')
-        routine.do_analysis = types.MethodType(lyse.routines.AnalysisRoutine.do_analysis, routine)
-        routine.send_analysis = types.MethodType(lyse.routines.AnalysisRoutine.send_analysis, routine)
-        box = types.SimpleNamespace(multishot=multishot, routines=[routine],
+    def routine_box(self, multishot, names):
+        """A routine box with a routine of each name, as the filebox's pair of queues."""
+        routines = []
+        for name in names:
+            path = os.path.join(self.folder, name)
+            with open(path, 'w') as f:
+                f.write(ROUTINE)
+            worker = object.__new__(lyse.analysis_subprocess.AnalysisWorker)
+            worker.filepath = path
+            worker.routine_module = types.ModuleType('routine')
+            worker.routine_module.__file__ = path
+            worker.routine_module_clean_dict = worker.routine_module.__dict__.copy()
+            worker.routine_source = None
+            worker.idle, worker.routine_running = threading.Event(), False
+            # In this thread, which runs_on_put needs; a real worker starts one per analysis.
+            worker.analyse = worker.analysis_task
+            worker.plots = {}
+            worker.modulewatcher = types.SimpleNamespace(lock=threading.Lock())
+            worker.to_parent = queue.Queue()
+            routine = types.SimpleNamespace(shortname=name, done=False, error=False, enabled=lambda: True,
+                                            from_worker=worker.to_parent, shutdown=None,
+                                            worker=types.SimpleNamespace(poll=lambda: None))
+            routine.to_worker = runs_on_put(worker.mainloop, worker, 'from_parent')
+            routine.set_status = lambda status, routine=routine: routine.__dict__.update(
+                done=status == 'done', error=status == 'error')
+            routine.do_analysis = types.MethodType(lyse.routines.AnalysisRoutine.do_analysis, routine)
+            routine.send_analysis = types.MethodType(lyse.routines.AnalysisRoutine.send_analysis, routine)
+            routines.append(routine)
+        box = types.SimpleNamespace(multishot=multishot, routines=routines,
                                     app=types.SimpleNamespace(filebox=self.filebox),
                                     to_filebox=queue.Queue(), logger=logging.getLogger('test'))
         for name in ['_start_next_routine', 'start_analysis', 'end_routine']:
@@ -115,31 +118,31 @@ class LysePathsTests(unittest.TestCase):
     def multishot_pass(self):
         lyse.filebox.FileBox.do_multishot_analysis(self.filebox)
 
-    def calls(self, multishot=True):
-        """What the routine saw as lyse.paths, run as a multishot routine or as
-        a singleshot one, which sees None."""
+    def calls(self, name):
+        """What the routine of this name saw as lyse.paths, each time it ran."""
         with open(os.path.join(self.folder, 'calls.json')) as f:
             calls = json.load(f)
-        return [c for c in calls if (c is not None) == multishot]
+        return [paths for routine, paths in calls if routine == name]
 
     def test_a_multishot_routine_sees_the_shots_analysed_since_its_last_pass(self):
         first = self.analyse('1.h5')
         self.multishot_pass()
         second, third = self.analyse('2.h5'), self.analyse('3.h5')
         self.multishot_pass()
-        self.assertEqual(self.calls(), [[first], [second, third]])
+        self.assertEqual(self.calls('first.py'), [[first], [second, third]])
 
-    def test_after_a_failed_pass_its_shots_are_offered_again(self):
+    def test_after_a_failed_routine_the_rest_run_and_its_shots_are_offered_again(self):
         first = self.analyse('1.h5')
-        open(os.path.join(self.folder, 'fail'), 'w').close()
+        open(os.path.join(self.folder, 'fail'), 'w').close()  # first.py fails, once
         self.multishot_pass()
         second = self.analyse('2.h5')
         self.multishot_pass()
-        self.assertEqual(self.calls(), [[first], [first, second]])
+        for name in ['first.py', 'second.py']:
+            self.assertEqual(self.calls(name), [[first], [first, second]])
 
     def test_a_singleshot_routine_sees_none(self):
         self.analyse('1.h5')
-        self.assertEqual(self.calls(multishot=False), [None])
+        self.assertEqual(self.calls('singleshot.py'), [None])
 
 
 class Stop(BaseException):
