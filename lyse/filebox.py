@@ -854,6 +854,9 @@ class FileBox:
 
         self.analysis_paused = False
         self.multishot_required = False
+        # Whether the Run button was clicked, which runs the multishot routines even if
+        # analysis is paused:
+        self.multishot_requested = False
         # Shot files analysed since the last multishot pass:
         self.analysed_since_multishot = []
 
@@ -930,6 +933,7 @@ class FileBox:
 
     def on_run_multishot_analysis_clicked(self):
         self.multishot_required = True
+        self.multishot_requested = True
         self.analysis_pending.set()
 
     def set_columns_visible(self, columns_visible):
@@ -1085,7 +1089,8 @@ class FileBox:
                         break
                 # A pass that has just failed runs again with the next shots, or
                 # on resuming if analysis is paused, rather than now:
-                if self.multishot_required and not multishot_failed:
+                if (self.multishot_required and not multishot_failed
+                        and (self.multishot_requested or not self.analysis_paused)):
                     logger.info('doing multishot analysis')
                     self.do_multishot_analysis()
             except Exception:
@@ -1140,6 +1145,7 @@ class FileBox:
             raise ValueError(f'invalid signal {signal}')
 
     def do_multishot_analysis(self):
+        self.multishot_requested = False
         paths, self.analysed_since_multishot = self.analysed_since_multishot, []
         self.to_multishot.put(paths)
         while True:
