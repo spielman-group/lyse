@@ -11,7 +11,8 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""lyse.paths: the shot files a multishot routine is run for."""
+"""lyse.paths, the shot files a multishot routine is run for, and the attempt of a
+shot: its states and the plugin calls of its analysis."""
 import json
 import logging
 import os
@@ -21,11 +22,16 @@ import threading
 import types
 import unittest
 
+import pandas
+from qtutils.qt import QtWidgets
+
 import lyse
 import lyse.analysis_subprocess
 import lyse.figure_manager
 import lyse.filebox
 import lyse.routines
+
+qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
 
 ROUTINE = """\
 import json, lyse, os
@@ -64,16 +70,26 @@ class LysePathsTests(unittest.TestCase):
         lyse.figure_manager.figuremanager = types.SimpleNamespace(
             reset=lambda: None, set_first_figure_current=lambda: None, figs={})
         self.addCleanup(setattr, lyse.figure_manager, 'figuremanager', saved)
+        # The plugin calls, as the filebox makes them:
+        self.events = []
         self.filebox = types.SimpleNamespace(
-            analysed_since_multishot=[], multishot_required=True, analysis_paused=False,
-            shots_model=types.SimpleNamespace(update_rows=lambda *a: None,
-                                              set_status_percent=lambda *a: None),
+            multishot_required=True, multishot_requested=False, analysis_paused=False,
+            add_shots_start_time=None, set_add_shots_progress=lambda *args: None,
+            set_analysis_paused=lambda paused: None, _singleshot_outcomes={},
+            fire_event=lambda *args: self.events.append(args),
         )
-        self.filebox.to_singleshot, self.filebox.from_singleshot = self.routine_box(False, ['singleshot.py'])
-        self.filebox.to_multishot, self.filebox.from_multishot = self.routine_box(True, ['first.py', 'second.py'])
+        app = types.SimpleNamespace(
+            filebox=self.filebox, output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None))
+        self.filebox.shots_model = lyse.filebox.DataFrameModel(
+            app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
+        self.filebox.to_singleshot, self.filebox.from_singleshot, _ = self.routine_box(False, ['singleshot.py'])
+        self.filebox.to_multishot, self.filebox.from_multishot, multishot_box = self.routine_box(
+            True, ['first.py', 'second.py'])
+        self.filebox.app = types.SimpleNamespace(multishot_routinebox=multishot_box)
 
     def routine_box(self, multishot, names):
-        """A routine box with a routine of each name, as the filebox's pair of queues."""
+        """A routine box with a routine of each name: the filebox's pair of queues to and
+        from it, and the box."""
         routines = []
         for name in names:
             path = os.path.join(self.folder, name)
@@ -107,13 +123,17 @@ class LysePathsTests(unittest.TestCase):
             setattr(box, name, types.MethodType(getattr(lyse.routines.RoutineBox, name), box))
         box.do_analysis = types.MethodType(lyse.routines.RoutineBox.do_analysis, box)
         loop = types.MethodType(lyse.routines.RoutineBox.analysis_loop, box)
-        return runs_on_put(loop, box, 'from_filebox'), box.to_filebox
+        return runs_on_put(loop, box, 'from_filebox'), box.to_filebox, box
 
     def analyse(self, name):
         path = os.path.join(self.folder, name)
         open(path, 'w').close()
+        self.filebox.shots_model.add_files([path], pandas.DataFrame({('filepath', ''): [path]}), ['remote'])
         lyse.filebox.FileBox.do_singleshot_analysis(self.filebox, path)
         return path
+
+    def state(self, path):
+        return self.filebox.shots_model.shot_states([path])[0]
 
     def multishot_pass(self):
         lyse.filebox.FileBox.do_multishot_analysis(self.filebox)
@@ -135,10 +155,44 @@ class LysePathsTests(unittest.TestCase):
         first = self.analyse('1.h5')
         open(os.path.join(self.folder, 'fail'), 'w').close()  # first.py fails, once
         self.multishot_pass()
+        # Its attempt has ended, and it awaits the next pass:
+        self.assertEqual(self.state(first), 'awaiting multishot')
         second = self.analyse('2.h5')
         self.multishot_pass()
         for name in ['first.py', 'second.py']:
             self.assertEqual(self.calls(name), [[first], [first, second]])
+        self.assertEqual([event[2] for event in self.events if event[:2] == ('analysis_done', first)],
+                         [{'singleshot': 'done', 'first': 'error', 'second': 'done'},
+                          {'singleshot': 'done', 'first': 'done', 'second': 'done'}])
+        self.assertEqual(self.state(first), 'done')
+
+    def test_a_shot_is_received_then_awaits_its_pass_which_ends_its_attempt(self):
+        path = self.analyse('1.h5')
+        self.assertEqual(self.state(path), 'awaiting multishot')
+        self.multishot_pass()
+        self.assertEqual(self.state(path), 'done')
+        singleshot, multishot = {'singleshot': 'done'}, {'first': 'done', 'second': 'done'}
+        self.assertEqual(self.events, [
+            ('shot_received', path, 'remote'),
+            ('singleshot_done', path, singleshot),
+            ('multishot_done', [path], multishot),
+            ('analysis_done', path, {**singleshot, **multishot}),
+        ])
+
+    def test_a_rerun_during_an_attempt_waits_for_it_to_end(self):
+        path = self.analyse('1.h5')
+        self.filebox.shots_model.mark_not_done([path])
+        self.assertEqual(self.state(path), 'awaiting multishot')
+        self.multishot_pass()
+        self.assertEqual(self.state(path), 'not done')
+
+    def test_a_shot_whose_file_goes_while_it_awaits_its_pass_is_not_offered(self):
+        path = self.analyse('1.h5')
+        os.remove(path)
+        self.multishot_pass()
+        self.assertEqual(self.calls('first.py'), [[]])
+        self.assertEqual(self.state(path), 'deleted')
+        self.assertIn(('analysis_done', path), [event[:2] for event in self.events])
 
     def test_a_singleshot_routine_sees_none(self):
         self.analyse('1.h5')
@@ -168,15 +222,16 @@ class FailedPassTests(unittest.TestCase):
         box = types.SimpleNamespace(
             analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None),
             analysis_paused=False, multishot_required=False, multishot_requested=False,
-            analysed_since_multishot=[],
+            quitting=False, _singleshot_outcomes={}, fire_event=lambda *args: None,
             to_multishot=queue.Queue(), from_multishot=queue.Queue(),
             shots_model=types.SimpleNamespace(
-                get_first_incomplete=lambda: incomplete.pop() if incomplete else None),
+                get_first_incomplete=lambda: incomplete.pop() if incomplete else None,
+                awaiting_multishot=lambda: []),
             do_singleshot_analysis=singleshot,
         )
         box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
         for _ in range(2):
-            box.from_multishot.put(['error', 100.0, {}])  # every pass fails, its routines all run
+            box.from_multishot.put(['error', 100.0, {}, {}])  # every pass fails, its routines all run
         with self.assertRaises(Stop):
             lyse.filebox.FileBox.analysis_loop(box)
         self.assertEqual(box.to_multishot.qsize(), 1)
@@ -201,14 +256,16 @@ class FailedPassTests(unittest.TestCase):
         box = types.SimpleNamespace(
             analysis_pending=types.SimpleNamespace(wait=wait, clear=lambda: None, set=lambda: None),
             analysis_paused=False, multishot_required=True, multishot_requested=False,
-            analysed_since_multishot=[], to_multishot=queue.Queue(), from_multishot=queue.Queue(),
+            quitting=False, _singleshot_outcomes={}, fire_event=lambda *args: None,
+            to_multishot=queue.Queue(), from_multishot=queue.Queue(),
             shots_model=types.SimpleNamespace(
-                get_first_incomplete=lambda: incomplete.pop() if incomplete else None),
+                get_first_incomplete=lambda: incomplete.pop() if incomplete else None,
+                awaiting_multishot=lambda: []),
             do_singleshot_analysis=singleshot,
         )
         box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
         for _ in range(2):
-            box.from_multishot.put(['done', 100.0, {}])
+            box.from_multishot.put(['done', 100.0, {}, {}])
         with self.assertRaises(Stop):
             lyse.filebox.FileBox.analysis_loop(box)
         self.assertEqual(box.to_multishot.qsize(), 1)

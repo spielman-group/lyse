@@ -43,7 +43,7 @@ class ShotsTableTests(unittest.TestCase):
         app = types.SimpleNamespace(
             qapplication=qapplication,
             output_box=types.SimpleNamespace(output=lambda text, red=False: self.output.append(text)),
-            filebox=types.SimpleNamespace(add_shots_start_time=None,
+            filebox=types.SimpleNamespace(add_shots_start_time=None, fire_event=lambda *args: None,
                                           set_add_shots_progress=lambda *args: None),
         )
         self.view = QtWidgets.QTableView()
@@ -51,7 +51,7 @@ class ShotsTableTests(unittest.TestCase):
         self.addCleanup(self.view.hide)
         exp_config = types.SimpleNamespace(getboolean=lambda *args: False)
         shots = lyse.filebox.DataFrameModel(app, self.view, exp_config)
-        shots.add_files([f'{n}.h5' for n in numbers], rows(numbers))
+        shots.add_files([f'{n}.h5' for n in numbers], rows(numbers), ['remote'] * len(numbers))
         return shots
 
     def remove(self, shots, numbers):
@@ -68,7 +68,7 @@ class ShotsTableTests(unittest.TestCase):
                 shots = self.shots_table(range(8))
                 done = {0, 1, 2, 3, 4, 6}
                 for n in done:
-                    shots.set_status_percent(f'{n}.h5', 100)
+                    shots.end_attempt(f'{n}.h5', 'done')
                 # Analysis has moved past the rows to be removed:
                 self.assertEqual(shots.get_first_incomplete(), '5.h5')
                 x = shots.column_indices['x', '']
@@ -91,7 +91,7 @@ class ShotsTableTests(unittest.TestCase):
                 kept = [n for n in range(8) if n not in removed]
                 self.assertTrue(checks and all(checks))
                 self.assertEqual(shots.filepaths, [f'{n}.h5' for n in kept])
-                self.assertEqual(shots.status_percent, [100 if n in done else 0 for n in kept])
+                self.assertEqual(shots.states, ['done' if n in done else 'not done' for n in kept])
                 self.assertEqual(shots.get_first_incomplete(), f'{min(set(kept) - done)}.h5')
                 shots.update_rows({'7.h5': {('fit', 'y'): 'seven'}})
                 index = shots._model.index(len(kept) - 1, shots.column_indices['fit', 'y'])
@@ -110,14 +110,14 @@ class ShotsTableTests(unittest.TestCase):
         self.assertTrue(self.view.isColumnHidden(shots.column_indices['x', '']))
         # Once every shot is gone, shots without x remove its column:
         self.remove(shots, range(3))
-        shots.add_files(['3.h5'], rows([3], x=False))
-        shots.add_files(['4.h5'], rows([4]))
+        shots.add_files(['3.h5'], rows([3], x=False), ['remote'])
+        shots.add_files(['4.h5'], rows([4]), ['remote'])
         self.assertTrue(self.view.isColumnHidden(shots.column_indices['x', '']))
 
     def test_a_shot_submitted_again_has_one_row(self):
         # The incoming loop drops a batch's own duplicates before adding it.
         shots = self.shots_table([0])
-        shots.add_files(['0.h5'], rows([0]))
+        shots.add_files(['0.h5'], rows([0]), ['remote'])
         self.assertEqual(shots.filepaths, ['0.h5'])
         self.assertEqual(len(shots.dataframe), 1)
 
@@ -133,7 +133,7 @@ class ShotsTableTests(unittest.TestCase):
             call = pool.submit(lambda: [lyse.data(port=port) for _ in range(20)])
             n = 8
             while not call.done():
-                shots.add_files([f'{n}.h5'], rows([n]))
+                shots.add_files([f'{n}.h5'], rows([n]), ['remote'])
                 self.remove(shots, [n - 8])
                 n += 1
                 qapplication.processEvents()

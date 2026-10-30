@@ -13,6 +13,7 @@
 """Lyse GUI dataframe filebox widget
 """
 
+import itertools
 import os
 import re
 import sys
@@ -48,6 +49,7 @@ from qtutils.icons import Icon
 # Lyse imports
 from lyse.dataframe_utilities import (concat_with_padding, get_dataframe_from_shot,
                                       flatten_dict, pad_columns)
+import lyse.plugins
 import lyse.utils
 import lyse.utils.gui
 import lyse.widgets
@@ -58,6 +60,22 @@ def natural_sort_key(path):
     parts = re.split(r'(\d+)', path)
     parts[1::2] = map(int, parts[1::2])
     return parts
+
+
+
+# The tooltip of a shot's status cell, by the state of its analysis:
+STATE_TOOLTIPS = {
+    'awaiting multishot': 'Its single-shot routines have run, and it awaits the multishot routines',
+    'failed': 'A routine did not end done; the others ran',
+    'stopped': 'Its routines stopped at the first that failed',
+    'aborted': 'Its analysis was aborted',
+    'deleted': 'Shot has been deleted off disk or is unreadable',
+}
+
+
+def outcome_state(outcomes):
+    """The state in which an attempt with these outcomes of its routines ends."""
+    return 'done' if all(outcome == 'done' for outcome in outcomes.values()) else 'failed'
 
 
 class EditColumns:
@@ -294,8 +312,14 @@ class ShotsTableModel(QtCore.QAbstractTableModel):
         # Positions of the columns in the dataframe, by column number:
         self._positions = {}
         self._status_icon = Icon(':qtutils/fugue/information')
-        self._tick_icon = Icon(':qtutils/fugue/tick')
-        self._deleted_icon = Icon(':qtutils/fugue/drive--minus')
+        self._state_icons = {
+            'done': Icon(':qtutils/fugue/tick'),
+            'awaiting multishot': Icon(':qtutils/fugue/hourglass'),
+            'failed': Icon(':qtutils/fugue/exclamation'),
+            'stopped': Icon(':qtutils/fugue/exclamation'),
+            'aborted': Icon(':qtutils/fugue/cross-octagon'),
+            'deleted': Icon(':qtutils/fugue/drive--minus'),
+        }
         self._alignment = QtCore.Qt.AlignCenter
 
     def dataframe_changed(self):
@@ -326,14 +350,16 @@ class ShotsTableModel(QtCore.QAbstractTableModel):
         shots = self.shots
         row = index.row()
         if index.column() == shots.COL_STATUS:
+            state = shots.states[row]
             if role == shots.ROLE_STATUS_PERCENT:
-                return shots.status_percent[row]
-            if role == shots.ROLE_DELETED_OFF_DISK:
-                return shots.deleted_off_disk[row]
+                # A progress bar only while the shot is not done:
+                return shots.status_percent[row] if state == 'not done' else 100
+            if role == shots.ROLE_STATE:
+                return state
             if role == self.DECORATION_ROLE:
-                return self._deleted_icon if shots.deleted_off_disk[row] else self._tick_icon
-            if role == self.TOOLTIP_ROLE and shots.deleted_off_disk[row]:
-                return "Shot has been deleted off disk or is unreadable"
+                return self._state_icons.get(state)
+            if role == self.TOOLTIP_ROLE:
+                return STATE_TOOLTIPS.get(state)
             return None
         if role == self.DISPLAY_ROLE:
             return format_value(self.value(row, index.column()))
@@ -366,7 +392,7 @@ class DataFrameModel(QtCore.QObject):
     COL_FILEPATH = 1
 
     ROLE_STATUS_PERCENT = QtCore.Qt.UserRole + 1
-    ROLE_DELETED_OFF_DISK = QtCore.Qt.UserRole + 2
+    ROLE_STATE = QtCore.Qt.UserRole + 2
 
     # In device-independent pixels:
     ROW_HEIGHT = 20
@@ -392,14 +418,21 @@ class DataFrameModel(QtCore.QObject):
         # How many levels the dataframe's multiindex has:
         self.nlevels = self.dataframe.columns.nlevels
 
-        # The file path, the percentage of single-shot analysis completed, and whether
-        # the file is missing from disk, of each shot by row:
+        # The file path, the percentage of its single-shot routines run while they run,
+        # and the state of its analysis, of each shot by row (see STATE_TOOLTIPS):
         self.filepaths = []
         self.status_percent = []
-        self.deleted_off_disk = []
+        self.states = []
         self.row_number_by_filepath = {}
-        # Every row before this one has been analysed:
+        # No row before this one is not done:
         self._first_incomplete = 0
+        # The shot whose single-shot routines are running, the order in which the shots
+        # awaiting multishot came to it, and the shots to set not done once their
+        # attempt ends:
+        self.analysing = None
+        self._awaiting_since = {}
+        self._awaiting_count = itertools.count()
+        self._rerun_after_attempt = set()
 
         # Column indices to names and vice versa for fast lookup:
         self.column_indices = {'__status': self.COL_STATUS, ('filepath', ''): self.COL_FILEPATH}
@@ -468,6 +501,11 @@ class DataFrameModel(QtCore.QObject):
             raise ValueError(f'Not a shot in lyse: {", ".join(sorted(unknown))}')
         return sorted(self.row_number_by_filepath[filepath] for filepath in filepaths)
 
+    def shot_states(self, filepaths):
+        """The state of each shot's analysis, in the order of filepaths."""
+        self._rows_named(filepaths)
+        return [self.states[self.row_number_by_filepath[filepath]] for filepath in filepaths]
+
     def remove_selection(self, confirm=True):
         filepaths = self.selected_filepaths()
         if not filepaths:
@@ -492,7 +530,12 @@ class DataFrameModel(QtCore.QObject):
         self.dataframe = self.dataframe.drop(selected_rows)
         self.dataframe.index = pandas.Index(range(len(self.dataframe)))
         removed = set(selected_rows)
-        for values in [self.filepaths, self.status_percent, self.deleted_off_disk]:
+        for filepath in filepaths:
+            self._awaiting_since.pop(filepath, None)
+            self._rerun_after_attempt.discard(filepath)
+        if self.analysing in filepaths:
+            self.analysing = None
+        for values in [self.filepaths, self.status_percent, self.states]:
             values[:] = [value for row, value in enumerate(values) if row not in removed]
         if contiguous:
             self._model.endRemoveRows()
@@ -501,27 +544,57 @@ class DataFrameModel(QtCore.QObject):
         self.row_number_by_filepath = {filepath: row for row, filepath in enumerate(self.filepaths)}
         self._first_incomplete = 0
 
-    def _set_status_percent(self, row, status_percent):
-        self.status_percent[row] = status_percent
-        if status_percent != 100:
+    def _set_state(self, row, state):
+        self.states[row] = state
+        if state == 'not done':
+            self.status_percent[row] = 0
             self._first_incomplete = min(self._first_incomplete, row)
+        index = self._model.index(row, self.COL_STATUS)
+        self._model.dataChanged.emit(index, index)
 
     def mark_not_done(self, filepaths):
-        selected_rows = self._rows_named(filepaths)
-        for row in selected_rows:
-            if self.deleted_off_disk[row]:
-                # If the shot was previously not readable on disk, check to
-                # see if it's readable now. It may have been undeleted or
-                # perhaps it being unreadable before was due to a network
-                # glitch or similar.
-                if not os.path.exists(self.filepaths[row]):
-                    continue
-                # Shot file is accesible again:
-                self.deleted_off_disk[row] = False
-            self._set_status_percent(row, 0)
-        if selected_rows:
-            self._model.dataChanged.emit(self._model.index(selected_rows[0], self.COL_STATUS),
-                                         self._model.index(selected_rows[-1], self.COL_STATUS))
+        """Set shots not done, so that they are analysed again; one whose attempt is
+        under way, once it ends."""
+        for row in self._rows_named(filepaths):
+            filepath = self.filepaths[row]
+            # A file once unreadable may be back, undeleted or after a network glitch:
+            if self.states[row] == 'deleted' and not os.path.exists(filepath):
+                continue
+            if filepath == self.analysing or self.states[row] == 'awaiting multishot':
+                self._rerun_after_attempt.add(filepath)
+            else:
+                self._set_state(row, 'not done')
+
+    @inmain_decorator()
+    def start_attempt(self, filepath):
+        self.analysing = filepath
+
+    @inmain_decorator()
+    def await_multishot(self, filepath):
+        """Leave a shot whose single-shot routines have run awaiting the next pass."""
+        self.analysing = None
+        if filepath in self.row_number_by_filepath:
+            self._awaiting_since[filepath] = next(self._awaiting_count)
+            self._set_state(self.row_number_by_filepath[filepath], 'awaiting multishot')
+
+    @inmain_decorator()
+    def awaiting_multishot(self):
+        """The shots awaiting multishot, in the order they came to it."""
+        return sorted(self._awaiting_since, key=self._awaiting_since.get)
+
+    @inmain_decorator()
+    def end_attempt(self, filepath, state):
+        """End a shot's attempt in state, which leaves it awaiting multishot after a
+        failed pass, or not done if a re-run was asked for during the attempt."""
+        self.analysing = None
+        if filepath not in self.row_number_by_filepath:
+            return
+        if filepath in self._rerun_after_attempt:
+            self._rerun_after_attempt.discard(filepath)
+            state = 'not done'
+        if state != 'awaiting multishot':
+            self._awaiting_since.pop(filepath, None)
+        self._set_state(self.row_number_by_filepath[filepath], state)
 
     def on_view_context_menu_requested(self, point):
         menu = QtWidgets.QMenu(self._view)
@@ -562,24 +635,19 @@ class DataFrameModel(QtCore.QObject):
             self.column_names = column_names
 
     @inmain_decorator()
-    def mark_as_deleted_off_disk(self, filepath):
-        # Confirm the shot hasn't been removed from lyse (we are in the main
-        # thread so there is no race condition in checking first)
-        try:
-            row_number = self.row_number_by_filepath[filepath]
-        except KeyError:
-            # Shot has been removed from FileBox, nothing to do here:
+    def mark_deleted(self, filepath, warn=True):
+        """Mark a shot whose file is gone, which ends any attempt of it and keeps it
+        out of analysis, warning that it vanished unless warn is False."""
+        if self.analysing == filepath:
+            self.analysing = None
+        # On the GUI thread, so the row cannot be removed between this check and its use:
+        row_number = self.row_number_by_filepath.get(filepath)
+        if row_number is None or self.states[row_number] == 'deleted':
             return
-        if self.deleted_off_disk[row_number]:
-            return
-        # Icon only displays if percent completion is 100. This is also
-        # important so that the shot is not picked up as analysis
-        # incomplete and analysis re-attempted on it.
-        self.deleted_off_disk[row_number] = True
-        self._set_status_percent(row_number, 100)
-        index = self._model.index(row_number, self.COL_STATUS)
-        self._model.dataChanged.emit(index, index)
-        self.app.output_box.output('Warning: Shot deleted from disk or no longer readable %s\n' % filepath, red=True)
+        self._awaiting_since.pop(filepath, None)
+        self._set_state(row_number, 'deleted')
+        if warn:
+            self.app.output_box.output(f'Warning: Shot deleted from disk or no longer readable {filepath}\n', red=True)
 
     @inmain_decorator()
     def infer_objects(self):
@@ -750,7 +818,7 @@ class DataFrameModel(QtCore.QObject):
         except KeyError:
             # Row has been deleted, nothing to do here:
             return
-        self._set_status_percent(row_number, status_percent)
+        self.status_percent[row_number] = status_percent
         index = self._model.index(row_number, self.COL_STATUS)
         self._model.dataChanged.emit(index, index)
 
@@ -772,12 +840,14 @@ class DataFrameModel(QtCore.QObject):
         return label + os.path.splitext(os.path.basename(self.filepaths[row]))[0]
 
     @inmain_decorator()
-    def add_files(self, filepaths, new_row_data, done=False):
+    def add_files(self, filepaths, new_row_data, sources, done=False):
         """Add files to the dataframe model. new_row_data is a dataframe
-        containing the new rows."""
+        containing the new rows, and sources says where each came from, as
+        shot_received tells the plugins."""
 
         to_add = []
         to_add_set = set()
+        source_by_filepath = dict(zip(filepaths, sources))
 
         for filepath in filepaths:
             if filepath in self.row_number_by_filepath or filepath in to_add_set:
@@ -811,13 +881,17 @@ class DataFrameModel(QtCore.QObject):
         self._model.beginInsertRows(QtCore.QModelIndex(), first_new_row, first_new_row + len(to_add) - 1)
         for row_number, filepath in enumerate(to_add, first_new_row):
             self.filepaths.append(filepath)
-            self.status_percent.append(100 if done else 0)
-            self.deleted_off_disk.append(False)
+            self.status_percent.append(0)
+            self.states.append('done' if done else 'not done')
             self.row_number_by_filepath[filepath] = row_number
         if not done:
             self._first_incomplete = min(self._first_incomplete, first_new_row)
         self._model.endInsertRows()
         self._resize_new_columns(new_column_numbers)
+        # On the GUI thread, from which the analysis loop takes its next shot, so before it
+        # can take one of these:
+        for filepath in to_add:
+            self.app.filebox.fire_event('shot_received', filepath, source_by_filepath[filepath])
 
         if not adding_shots:
             self.app.filebox.set_add_shots_progress(None, None, None)
@@ -826,8 +900,8 @@ class DataFrameModel(QtCore.QObject):
     def get_first_incomplete(self):
         """Returns the filepath of the first shot in the model that has not
         been analysed"""
-        while (self._first_incomplete < len(self.status_percent)
-               and self.status_percent[self._first_incomplete] == 100):
+        while (self._first_incomplete < len(self.states)
+               and self.states[self._first_incomplete] != 'not done'):
             self._first_incomplete += 1
         if self._first_incomplete < len(self.filepaths):
             return self.filepaths[self._first_incomplete]
@@ -874,8 +948,10 @@ class FileBox:
         # Whether the Run button was clicked, which runs the multishot routines even if
         # analysis is paused:
         self.multishot_requested = False
-        # Shot files analysed since the last multishot pass:
-        self.analysed_since_multishot = []
+        # The single-shot routines' outcomes of the shots awaiting multishot:
+        self._singleshot_outcomes = {}
+        # Set as lyse quits, after which no plugin is called and no analysis starts:
+        self.quitting = False
 
         # An Event to let the analysis thread know to check for shots that
         # need analysing, rather than using a time.sleep:
@@ -1000,8 +1076,11 @@ class FileBox:
         while True:
             try:
                 filepaths = []
-                filepath, _ = self.incoming_queue.get()
+                # The first source given for a path, which a later one does not replace:
+                sources = {}
+                filepath, source = self.incoming_queue.get()
                 filepaths.append(filepath)
+                sources.setdefault(filepath, source)
                 if self.incoming_queue.qsize() == 0:
                     # Wait momentarily in case more arrive so we can batch process them:
                     time.sleep(0.1)
@@ -1009,11 +1088,12 @@ class FileBox:
                 batch_size = len(self.shots_model.dataframe) // 3 + 1
                 while True:
                     try:
-                        filepath, _ = self.incoming_queue.get(False)
+                        filepath, source = self.incoming_queue.get(False)
                     except queue.Empty:
                         break
                     else:
                         filepaths.append(filepath)
+                        sources.setdefault(filepath, source)
                         if len(filepaths) >= batch_size:
                             break
                 logger.info('adding:\n%s', '\n'.join(filepaths))
@@ -1061,7 +1141,7 @@ class FileBox:
                 for i in reversed(indices_of_files_skipped):
                     del filepaths[i]
                 if filepaths:
-                    self.shots_model.add_files(filepaths, new_row_data)
+                    self.shots_model.add_files(filepaths, new_row_data, [sources[path] for path in filepaths])
                     # Let the analysis loop know to look for new shots:
                     self.analysis_pending.set()
                 if shots_remaining == 0:
@@ -1087,7 +1167,7 @@ class FileBox:
                 at_least_one_shot_analysed = False
                 multishot_failed = False
                 while True:
-                    if not self.analysis_paused:
+                    if not self.analysis_paused and not self.quitting:
                         filepath = self.shots_model.get_first_incomplete()
                         if filepath is not None:
                             logger.info('analysing: %s', filepath)
@@ -1130,55 +1210,89 @@ class FileBox:
         # Through the button, whose slot sets self.analysis_paused:
         self.ui.pushButton_analysis_running.setChecked(paused)
 
+    def fire_event(self, name, *args):
+        """Call the plugins' handlers of the event, unless lyse is quitting."""
+        if not self.quitting:
+            lyse.plugins.manager.fire_event(name, *args)
+
     def do_singleshot_analysis(self, filepath):
+        """Begin the shot's attempt: run its single-shot routines, then leave it
+        awaiting multishot, or, with no multishot routine active, end the attempt."""
         # A shot file deleted before analysis would make user code raise and fill the
         # output box with errors, so check first. It can still be deleted after this
         # check, which the 'error' branch below handles.
         if not os.path.exists(filepath):
-            self.shots_model.mark_as_deleted_off_disk(filepath)
+            self.shots_model.mark_deleted(filepath)
             return
+        self.shots_model.start_attempt(filepath)
         self.to_singleshot.put(filepath)
         previous_status_percent = None
+        outcomes = {}
         while True:
-            signal, status_percent, updated_data = self.from_singleshot.get()
+            signal, status_percent, updated_data, outcome = self.from_singleshot.get()
             if updated_data:
                 self.shots_model.update_rows(updated_data)
+            outcomes.update(outcome)
             # Update the status percent for the the row on which analysis is actually
             # running:
             if status_percent is not None and status_percent != previous_status_percent:
                 self.shots_model.set_status_percent(filepath, status_percent)
                 previous_status_percent = status_percent
-            if signal == 'done':
-                self.analysed_since_multishot.append(filepath)
-                return
-            if signal == 'error':
-                if not os.path.exists(filepath):
-                    # Do not pause if the file has been deleted. An error is
-                    # no surprise there:
-                    self.shots_model.mark_as_deleted_off_disk(filepath)
-                else:
-                    self.set_analysis_paused(True)
-                return
             if signal == 'progress':
                 continue
-            raise ValueError(f'invalid signal {signal}')
+            if signal not in ('done', 'error'):
+                raise ValueError(f'invalid signal {signal}')
+            break
+        if signal == 'error':
+            if not os.path.exists(filepath):
+                # Do not pause if the file has been deleted. An error is
+                # no surprise there:
+                self.shots_model.mark_deleted(filepath)
+                return
+            self.set_analysis_paused(True)
+        self.fire_event('singleshot_done', filepath, outcomes)
+        if any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
+            self._singleshot_outcomes[filepath] = outcomes
+            self.shots_model.await_multishot(filepath)
+        else:
+            self.shots_model.end_attempt(filepath, outcome_state(outcomes))
+            self.fire_event('analysis_done', filepath, outcomes)
 
     def do_multishot_analysis(self):
+        """Run a pass on the shots awaiting multishot, which ends their attempts. After
+        a failed pass they await the next one."""
         self.multishot_requested = False
-        paths, self.analysed_since_multishot = self.analysed_since_multishot, []
+        paths = []
+        for filepath in self.shots_model.awaiting_multishot():
+            if os.path.exists(filepath):
+                paths.append(filepath)
+            else:
+                # Its attempt ends here, and the routines are not given its path:
+                self.shots_model.mark_deleted(filepath)
+                self.fire_event('analysis_done', filepath, self._singleshot_outcomes.pop(filepath, {}))
         self.to_multishot.put(paths)
+        outcomes = {}
         while True:
-            signal, status_percent, updated_data = self.from_multishot.get()
+            signal, status_percent, updated_data, outcome = self.from_multishot.get()
             if updated_data:
                 self.shots_model.update_rows(updated_data)
+            outcomes.update(outcome)
+            if signal in ('done', 'error'):
+                break
+        self.fire_event('multishot_done', paths, outcomes)
+        for filepath in paths:
+            shot_outcomes = {**self._singleshot_outcomes.get(filepath, {}), **outcomes}
             if signal == 'done':
-                self.multishot_required = False
-                return True
-            elif signal == 'error':
-                # Put them back, so that the next pass has them too:
-                self.analysed_since_multishot[:0] = paths
-                # Unless the routines after the failed one did not run, as when analysis is
-                # paused, in which case all run on resuming:
-                if status_percent is not None:
-                    self.multishot_required = False
-                return False
+                del self._singleshot_outcomes[filepath]
+                self.shots_model.end_attempt(filepath, outcome_state(shot_outcomes))
+            else:
+                self.shots_model.end_attempt(filepath, 'awaiting multishot')
+            self.fire_event('analysis_done', filepath, shot_outcomes)
+        if signal == 'done':
+            self.multishot_required = False
+            return True
+        # Unless the routines after the failed one did not run, as when analysis is
+        # paused, in which case all run on resuming:
+        if status_percent is not None:
+            self.multishot_required = False
+        return False

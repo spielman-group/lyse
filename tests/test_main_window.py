@@ -172,13 +172,15 @@ class MainWindowTests(unittest.TestCase):
                 output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None),
                 exp_config=types.SimpleNamespace(get=lambda *args: folder),
                 filebox=types.SimpleNamespace(add_shots_start_time=None, incoming_queue=queue.Queue(),
+                                              fire_event=lambda *args: None,
                                               set_add_shots_progress=lambda *args: None))
             shots = app.filebox.shots_model = lyse.filebox.DataFrameModel(
                 app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
-            shots.add_files([df['filepath'][1]], df.iloc[[1]], done=True)
+            shots.add_files([df['filepath'][1]], df.iloc[[1]], ['remote'], done=True)
             self.main.Lyse.load_dataframe(app, saved)
             self.assertEqual(shots.filepaths, list(df['filepath'][1:]))
-            self.assertEqual(shots.status_percent, [100] * 3)
+            # The two loaded, whose files are not there, are deleted:
+            self.assertEqual(shots.states, ['done', 'deleted', 'deleted'])
             self.assertEqual(list(shots.dataframe['fit', 'atoms']), [101.0, 102.0, 103.0])
             self.assertEqual(app.filebox.incoming_queue.get_nowait(), (changed, 'dataframe'))
 

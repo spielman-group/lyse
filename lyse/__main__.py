@@ -262,6 +262,7 @@ class Lyse(LabscriptGuiApplication):
     def on_close_event(self):
         if not self.offer_to_save_changes('Quit lyse', quitting=True):
             return False
+        self.filebox.quitting = True
         self.terminate_all_workers()
         # Off the GUI thread, which keeps serving, since a plugin's close() may wait for
         # threads of its own that need it:
@@ -410,7 +411,13 @@ class Lyse(LabscriptGuiApplication):
             self.filebox.incoming_queue.put((filepath, 'dataframe'))
         df = df.drop(need_updating)
 
-        self.filebox.shots_model.add_files(filepaths, df, done=True)
+        shots = self.filebox.shots_model
+        # A shot already in the table keeps its row, which add_files does not replace:
+        added = [filepath for filepath in filepaths if filepath not in shots.row_number_by_filepath]
+        shots.add_files(filepaths, df, ['dataframe'] * len(filepaths), done=True)
+        for filepath in added:
+            if not os.path.isfile(filepath):
+                shots.mark_deleted(filepath, warn=False)
 
     def delete_items(self, confirm):
         """Delete items from whichever box has focus, optionally confirming first."""

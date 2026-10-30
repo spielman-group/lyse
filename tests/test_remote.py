@@ -97,12 +97,13 @@ class RemoteTests(unittest.TestCase):
 
     def test_a_client_pauses_analysis_and_reruns_and_removes_shots(self):
         shots = self.app.filebox.shots_model
-        shots.add_files(['0.h5', '1.h5'], pandas.DataFrame({('filepath', ''): ['0.h5', '1.h5']}), done=True)
+        shots.add_files(
+            ['0.h5', '1.h5'], pandas.DataFrame({('filepath', ''): ['0.h5', '1.h5']}), ['remote'] * 2, done=True)
         self.call('set_analysis_paused', True)
         self.assertTrue(self.call('get_analysis_paused'))
         self.assertTrue(self.app.filebox.ui.pushButton_analysis_running.isChecked())
         self.call('rerun_shots', ['0.h5'])
-        self.assertEqual(shots.status_percent, [0, 100])
+        self.assertEqual(self.call('shot_status', ['0.h5', '1.h5']), {'0.h5': 'not done', '1.h5': 'done'})
         self.call('remove_shots', ['1.h5'])
         self.assertEqual(shots.filepaths, ['0.h5'])
         with self.assertRaisesRegex(ValueError, '2.h5'):

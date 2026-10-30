@@ -86,6 +86,12 @@ class LyseClient(ZMQClient):
         """Analyse shots again, in order, as Re-run selected does."""
         self.request('rerun_shots', filepaths)
 
+    def shot_status(self, filepaths):
+        """Return the state of each shot's analysis, by path: ``'not done'``,
+        ``'awaiting multishot'``, ``'done'``, ``'failed'``, ``'stopped'``, ``'aborted'``
+        or ``'deleted'``. Unlike runmanager's, it is keyed by path, not shot ID."""
+        return self.request('shot_status', filepaths)
+
     def remove_shots(self, filepaths):
         """Remove shots from lyse's dataframe. Their files are kept."""
         self.request('remove_shots', filepaths)

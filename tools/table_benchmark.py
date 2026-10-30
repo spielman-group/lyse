@@ -58,7 +58,7 @@ def shots_table(df=None, done=False):
     app = types.SimpleNamespace(
         qapplication=qapplication,
         output_box=types.SimpleNamespace(output=lambda text, red=False: None),
-        filebox=types.SimpleNamespace(add_shots_start_time=None,
+        filebox=types.SimpleNamespace(add_shots_start_time=None, fire_event=lambda *args: None,
                                       set_add_shots_progress=lambda *args: None),
     )
     view = QtWidgets.QTableView()
@@ -66,7 +66,7 @@ def shots_table(df=None, done=False):
     view.show()
     shots = lyse.filebox.DataFrameModel(app, view, types.SimpleNamespace(getboolean=lambda *args: False))
     if df is not None:
-        shots.add_files(list(df['filepath']), df, done=done)
+        shots.add_files(list(df['filepath']), df, ['remote'] * len(df), done=done)
     qapplication.processEvents()
     return shots, view
 
@@ -114,7 +114,7 @@ def add(df):
         start = 0
         while start < len(df):
             batch = df.iloc[start:start + len(shots.dataframe) // 3 + 1].reset_index(drop=True)
-            shots.add_files(list(batch['filepath']), batch)
+            shots.add_files(list(batch['filepath']), batch, ['remote'] * len(batch))
             start += len(batch)
     result = measure(work)
     # A case that did nothing would look fast:
@@ -129,7 +129,7 @@ def singleshot(df):
         for i in range(N_SINGLESHOT):
             filepath = shots.get_first_incomplete()
             shots.update_rows({filepath: {('singleshot', f's{j}'): i + j for j in range(5)}})
-            shots.set_status_percent(filepath, 100)
+            shots.end_attempt(filepath, 'done')
     result = measure(work)
     assert shots.get_first_incomplete() == df['filepath'][N_SINGLESHOT]
     return result
@@ -158,8 +158,8 @@ def remove(df, rows):
 def mark_not_done(df):
     shots, view = shots_table(df, done=True)
     view.selectAll()
-    result = measure(lambda: inmain(shots.mark_selection_not_done))
-    assert not any(shots.status_percent)
+    result = measure(lambda: inmain(lambda: shots.mark_not_done(shots.selected_filepaths())))
+    assert set(shots.states) == {'not done'}
     return result
 
 

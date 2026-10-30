@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Each shot's status shows the state of its analysis: not done, awaiting the
+  multishot routines, done, failed, or deleted. A shot whose single-shot routines
+  have run awaits the next multishot pass, and its analysis ends with that pass. A
+  failed shot is not analysed again until it is re-run. lyse calls its plugins when a
+  shot is received, saying where it came from, when its single-shot routines end,
+  when a multishot pass ends, and when all analysis of a shot has ended, with how
+  each routine ended. `LyseClient.shot_status` returns the state of shots.
+
 - lyse takes plugins, written as BLACS's are, in the suite's one plugin language:
   folders in `lyse/plugins/` and packages registered under the `lyse.plugins`
   entry point, each loaded if its flag in the labconfig's `[lyse/plugins]`

@@ -104,6 +104,12 @@ class LyseServer(ZMQServer):
         self.app.filebox.rerun_shots([shared_drive.path_to_local(path) for path in filepaths])
 
     @inmain_decorator()
+    def handle_shot_status(self, filepaths):
+        states = self.app.filebox.shots_model.shot_states(
+            [shared_drive.path_to_local(path) for path in filepaths])
+        return dict(zip(filepaths, states))
+
+    @inmain_decorator()
     def handle_remove_shots(self, filepaths):
         self.app.filebox.shots_model.remove_shots([shared_drive.path_to_local(path) for path in filepaths])
 
