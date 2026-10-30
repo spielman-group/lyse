@@ -516,8 +516,8 @@ class DataFrameModel(QtCore.QObject):
         try:
             open_file(shot_filepath, 'hdf5_viewer', self.exp_config)
         except Exception as e:
-            lyse.utils.gui.error_dialog(self.app, "Unable to launch hdf5 viewer. Error was: %s. The hdf5 viewer is set in the [programs] section of %s." %
-                         (str(e), self.exp_config.config_path))
+            self.app.error_dialog("Unable to launch hdf5 viewer. Error was: %s. The hdf5 viewer is set in the [programs] section of %s." %
+                (str(e), self.exp_config.config_path))
         
     def set_columns_visible(self, columns_visible):
         self.columns_visible = columns_visible

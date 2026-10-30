@@ -195,8 +195,8 @@ class RoutineBox:
         try:
             open_file(routine_filepath, 'text_editor', self.exp_config)
         except Exception as e:
-            lyse.utils.gui.error_dialog(self.app, "Unable to launch text editor. Error was: %s. The text editor is set in the [programs] section of %s." %
-                         (str(e), self.exp_config.config_path))
+            self.app.error_dialog("Unable to launch text editor. Error was: %s. The text editor is set in the [programs] section of %s." %
+                (str(e), self.exp_config.config_path))
                          
     def on_remove_selection(self):
         self.remove_selection()
