@@ -26,7 +26,7 @@ import numpy
 import pandas
 from labscript_utils.labconfig import save_appconfig
 from labscript_utils.qtwidgets.leftclick import TableView
-from qtutils import UiLoader
+from qtutils import UiLoader, inmain
 from qtutils.qt import QtGui, QtWidgets
 
 import lyse.filebox
@@ -224,6 +224,51 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(events, [('restored', {'n': 3}), ('set up', 'shots')])
         self.assertIs(app.filebox.ui.horizontalLayout_shots_toolbar_plugins.itemAt(0).widget(), widget)
         self.assertIn('Probe', [action.text() for action in app.ui.menuBar.actions()])
+
+    def test_a_plugins_settings_are_saved_and_loaded_and_quitting_closes_it(self):
+        closed = []
+
+        class Plugin(lyse.plugins.BasePlugin):
+            def __init__(self):
+                self.settings = {'n': 3}
+
+            def get_save_data(self):
+                return self.settings
+
+            def restore_save_data(self, data):
+                self.settings = data
+
+            def close(self):
+                # Completes only while the GUI thread serves:
+                inmain(closed.append, True)
+
+        def a_box():
+            return types.SimpleNamespace(
+                routines=[], model=QtGui.QStandardItemModel(), last_opened_routine_folder='',
+                reorder_routines=lambda filepaths: None, update_select_all_checkstate=lambda: None)
+
+        app = object.__new__(self.main.Lyse)
+        app.__dict__.update(
+            ui=UiLoader().load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui')),
+            singleshot_routinebox=a_box(), multishot_routinebox=a_box(), qapplication=self.qapplication,
+            filebox=types.SimpleNamespace(last_opened_shots_folder='', analysis_paused=False,
+                                          stop_on_failure=False, set_stop_on_failure=lambda stop: None),
+            last_save_config_file=None, last_save_data=None)
+        app.init_config_window_title()
+        plugin = Plugin()
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(lyse.plugins.manager, 'plugins', {'probe': plugin}):
+            config = os.path.join(folder, 'lyse.toml')
+            app.save_configuration(config)
+            plugin.settings['n'] = 4
+            cancel = QtWidgets.QMessageBox.StandardButton.Cancel
+            with mock.patch.object(QtWidgets.QMessageBox, 'question', return_value=cancel):
+                self.assertFalse(app.offer_to_save_changes('Quit lyse'))
+            app.load_configuration(config, restore_window_geometry=False)
+            self.assertEqual(plugin.settings, {'n': 3})
+            self.assertTrue(app.on_close_event())
+        self.assertTrue(app.filebox.quitting)
+        self.assertEqual(closed, [True])
 
     def save(self, folder, df):
         """Save df as lyse does, beside its shots, and return the files written."""

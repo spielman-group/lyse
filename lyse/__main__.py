@@ -12,6 +12,7 @@
 #####################################################################
 """Top level Lyse GUI
 """
+import copy
 import os
 import labscript_utils.excepthook
 labscript_utils.excepthook.install()
@@ -292,7 +293,9 @@ class Lyse(LabscriptGuiApplication):
 
         save_data['analysis_paused'] = self.filebox.analysis_paused
         save_data['stop_on_failure'] = self.filebox.stop_on_failure
-        save_data['plugins'] = lyse.plugins.manager.get_save_data()
+        # A copy, since the plugins' own objects would change with them, and the saved
+        # configuration with them:
+        save_data['plugins'] = copy.deepcopy(lyse.plugins.manager.get_save_data())
         save_data.update(self.geometry_save_data())
         return save_data
 
