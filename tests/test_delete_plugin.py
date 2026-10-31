@@ -16,7 +16,6 @@ repeated shot from runmanager once its analysis has ended with every routine don
 and keeps its row."""
 import os
 import tempfile
-import threading
 import types
 import unittest
 
@@ -44,8 +43,10 @@ class DeletePluginTests(unittest.TestCase):
             'by hand': ('dialog', -1, 0, 'done'),
         }
         paths = {name: os.path.join(folder.name, f'{name}.h5') for name in shots_made}
-        for path in paths.values():
-            h5py.File(path, 'w').close()
+        for name, (_, sequence_index, run_repeat, _) in shots_made.items():
+            with h5py.File(paths[name], 'w') as f:
+                f.attrs['sequence_index'] = sequence_index
+                f.attrs['run repeat'] = run_repeat
         app = types.SimpleNamespace(
             output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None),
             filebox=types.SimpleNamespace(add_shots_start_time=None, fire_event=lambda *args: None,
@@ -53,29 +54,17 @@ class DeletePluginTests(unittest.TestCase):
         shots = lyse.filebox.DataFrameModel(
             app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
         shots.add_files(list(paths.values()), pandas.DataFrame({
-            ('filepath', ''): list(paths.values()),
-            ('sequence_index', ''): [made[1] for made in shots_made.values()],
-            ('run repeat', ''): [made[2] for made in shots_made.values()],
-            ('fit', 'atoms'): [100.0] * len(paths),
-        }), ['remote'] * len(paths))
+            ('filepath', ''): list(paths.values()), ('fit', 'atoms'): [100.0] * len(paths),
+        }), ['remote'] * len(paths), done=True)
         plugin = Plugin()
         plugin.plugin_setup_complete({'shots_model': shots, 'output_box': app.output_box})
         for name, (source, _, _, outcome) in shots_made.items():
             plugin.on_shot_received(paths[name], source)
-            shots.end_attempt(paths[name], lyse.filebox.outcome_state({'fit': outcome}))
-            shots.outcomes_recorded[paths[name]] = True
             plugin.on_analysis_done(paths[name], {'fit': outcome})
-        # As lyse closes it, off the GUI thread, which keeps serving:
-        closing = threading.Thread(target=plugin.close)
-        closing.start()
-        while closing.is_alive():
-            qapplication.processEvents()
-            closing.join(0.02)
         self.assertEqual({name: os.path.exists(path) for name, path in paths.items()},
                          {'default': False, 'repeat': False, 'first': True, 'failed': True, 'by hand': True})
-        self.assertEqual(shots.states, ['deleted', 'deleted', 'done', 'failed', 'done'])
+        self.assertEqual(shots.states, ['deleted', 'deleted', 'done', 'done', 'done'])
         self.assertEqual(list(shots.dataframe['fit', 'atoms']), [100.0] * len(paths))
-
 
 if __name__ == '__main__':
     unittest.main()

@@ -228,26 +228,18 @@ writes a new attempt's single-shot outcomes, lyse removes the attributes and
 columns its previous outcomes put there for that shot, and no others, so a
 removed routine leaves no stale failure; a pass replaces the multishot outcomes
 it wrote before in the same way. A failed write, of a missing or read-only file,
-is reported in the output box; the row keeps the outcomes, and the shots model
-notes, in memory, whether every write of the shot's present attempt succeeded. A
-row whose file is gone has the deleted state, which keeps it out of analysis,
-Re-run selected, Re-run failed and every pass.
+is reported in the output box; the row keeps the outcomes. A row whose file is
+gone has the deleted state, which keeps it out of analysis, Re-run selected,
+Re-run failed and every pass.
 
 **E. The first plugin** (10–11).
-`lyse/plugins/delete_default_and_repeated_shots/`, after BLACS's
-`delete_repeated_shots`. On `shot_received` it notes a path from runmanager and
-forgets one from any other source; `add_files` ignores a path already in the
-table, so adding it again changes nothing. On `analysis_done`, for a noted shot
-whose outcomes are all `'done'` and whose `sequence_index` is −1 or `run repeat`
-1 or more, it queues the path for its thread. That thread, holding the shot's
-file lock, `Lock(path_to_agnostic(path))`, checks again, and claims the row, in
-one call on the GUI thread: the row is present, still noted and done, and every
-outcome write of its attempt succeeded, and it is then marked deleted, without
-the warning, so a re-run finds it deleted like any deleted row. Only then does
-it call `labscript_utils.h5_lock.delete_shot_file(path)`, which takes the lock
-again, as zlock allows within a thread, and deletes the file. An `OSError` from
-it is reported in the output box, and the row is done again. Its `close()` lets
-the thread finish the deletions already queued.
+`lyse/plugins/delete_default_and_repeated_shots/` notes at `shot_received` the
+paths runmanager sends. At `analysis_done`, on the analysis thread, if the shot
+is one of them, every outcome is `'done'`, and its file's `sequence_index` is −1
+or its `run repeat` 1 or more, it deletes the file with
+`labscript_utils.h5_lock.delete_shot_file` and marks the row deleted, without
+the warning. An `OSError` is reported in the output box, and the row stays as it
+is.
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
 a plugin under the `lyse.plugins` entry point and handles `analysis_done`. Each

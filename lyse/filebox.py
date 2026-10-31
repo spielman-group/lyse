@@ -438,10 +438,8 @@ class DataFrameModel(QtCore.QObject):
         self._awaiting_since = {}
         self._awaiting_count = itertools.count()
         self._rerun_after_attempt = set()
-        # The shots a failed pass left awaiting the next, and whether every outcome of a
-        # shot's present attempt reached its file:
+        # The shots a failed pass left awaiting the next:
         self._pass_failed = set()
-        self.outcomes_recorded = {}
 
         # Column indices to names and vice versa for fast lookup:
         self.column_indices = {'__status': self.COL_STATUS, ('filepath', ''): self.COL_FILEPATH}
@@ -1292,7 +1290,7 @@ class FileBox:
         # A new attempt's outcomes replace all those lyse wrote for the shot before:
         previous = self._recorded_outcomes.get(filepath, {})
         replaced = previous.get('singleshot', set()) | previous.get('multishot', set())
-        self.shots_model.outcomes_recorded[filepath] = self.record_outcomes(filepath, outcomes, replaced)
+        self.record_outcomes(filepath, outcomes, replaced)
         self._recorded_outcomes[filepath] = {'singleshot': set(outcomes), 'multishot': set()}
         self.fire_event('singleshot_done', filepath, outcomes)
         if any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
@@ -1305,8 +1303,8 @@ class FileBox:
     def record_outcomes(self, filepath, outcomes, replaced):
         """Put outcomes in the shot's row and, under its file's lock, in its file's
         results/lyse group, in place of the outcomes named in replaced, which lyse put
-        there before, and no others. Return whether the file was written; a failure is
-        reported, and the row keeps the outcomes."""
+        there before, and no others. A failure to write the file is reported, and the
+        row keeps the outcomes."""
         row_data = {('lyse', name): np.nan for name in replaced}
         row_data.update({('lyse', name): outcome for name, outcome in outcomes.items()})
         self.shots_model.update_rows({filepath: row_data})
@@ -1321,8 +1319,6 @@ class FileBox:
         except Exception as e:
             self.app.output_box.output(
                 f'Warning: The routines\' outcomes were not written into {filepath}: {e}\n', red=True)
-            return False
-        return True
 
     def do_multishot_analysis(self):
         """Run a pass on the shots awaiting multishot, which ends their attempts. After
@@ -1347,9 +1343,7 @@ class FileBox:
                 break
         for filepath in paths:
             recorded = self._recorded_outcomes.setdefault(filepath, {'singleshot': set(), 'multishot': set()})
-            written = self.record_outcomes(filepath, outcomes, recorded['multishot'])
-            recorded_before = self.shots_model.outcomes_recorded.get(filepath, True)
-            self.shots_model.outcomes_recorded[filepath] = recorded_before and written
+            self.record_outcomes(filepath, outcomes, recorded['multishot'])
             recorded['multishot'] = set(outcomes)
         self.fire_event('multishot_done', paths, outcomes)
         for filepath in paths:
