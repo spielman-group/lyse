@@ -13,10 +13,11 @@
 #####################################################################
 """Deletes the file of a default or repeated shot from runmanager once all its analysis
 has ended with every routine done. Its row stays, with its results, so a run of
-repeated shots that keep the apparatus warm still leaves its record."""
+repeated shots that keep the apparatus warm still leaves its record. It runs last at
+analysis_done, so that the other plugins still find the file."""
 import labscript_utils.h5_lock, h5py
 
-from lyse.plugins import BasePlugin
+from lyse.plugins import BasePlugin, callback
 
 
 class Plugin(BasePlugin):
@@ -62,6 +63,7 @@ class Plugin(BasePlugin):
         else:
             self.from_runmanager.discard(filepath)
 
+    @callback(priority=100)
     def on_analysis_done(self, filepath, outcomes):
         if (not self.enabled or filepath not in self.from_runmanager
                 or any(outcome != 'done' for outcome in outcomes.values())):
