@@ -255,8 +255,7 @@ class Lyse(LabscriptGuiApplication):
         """Answer each plugin's remote commands, as ``<plugin name>.<command>``."""
         self.mounted_plugins = []
         for name, plugin in self.plugins.items():
-            # An optional hook, which BasePlugin does not define:
-            handler = getattr(plugin, 'get_remote_handler', lambda: None)()
+            handler = plugin.get_remote_handler()
             if handler is not None:
                 self.server.mount(name, handler)
                 self.mounted_plugins.append(name)
