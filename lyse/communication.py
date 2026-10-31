@@ -61,6 +61,8 @@ class LyseServer(ZMQServer):
 
     @inmain_decorator()
     def handle_add_routines(self, box, filepaths, active=True):
+        # Absolute, since a routine's worker works in the routine's folder:
+        filepaths = [os.path.abspath(filepath) for filepath in filepaths]
         for filepath in filepaths:
             if not (os.path.isfile(filepath) and filepath.endswith('.py')
                     or os.path.isdir(filepath) and filepath.endswith(GUI_ROUTINE_SUFFIX)):

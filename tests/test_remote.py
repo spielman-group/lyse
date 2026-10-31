@@ -79,7 +79,7 @@ class RemoteTests(unittest.TestCase):
 
     def test_a_client_sets_up_a_routine_box(self):
         a, b = self.scripts
-        self.call('add_routines', 'singleshot', [a, b])
+        self.call('add_routines', 'singleshot', [os.path.relpath(a), b])
         self.call('set_routines_active', 'singleshot', [a], False)
         self.call('reorder_routines', 'singleshot', [b, a])
         self.assertEqual(self.call('get_routines', 'singleshot'), [

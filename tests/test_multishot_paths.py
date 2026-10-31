@@ -76,7 +76,7 @@ class LysePathsTests(unittest.TestCase):
         self.filebox = types.SimpleNamespace(
             multishot_required=True, multishot_requested=False, analysis_paused=False,
             stop_on_failure=False, add_shots_start_time=None, set_add_shots_progress=lambda *args: None,
-            _singleshot_outcomes={}, _recorded_outcomes={},
+            _singleshot_outcomes={},
             fire_event=lambda *args: self.events.append(args),
         )
         app = self.filebox.app = types.SimpleNamespace(
@@ -198,6 +198,18 @@ class LysePathsTests(unittest.TestCase):
                     self.assertEqual(dict(f['results/lyse'].attrs), outcomes)
                 row = self.filebox.shots_model.row_number_by_filepath[path]
                 self.assertEqual(self.filebox.shots_model.dataframe['lyse'].iloc[row].to_dict(), outcomes)
+
+    def test_a_new_attempt_replaces_the_outcomes_the_shot_had(self):
+        path = self.analyse('1.h5')
+        self.multishot_pass()
+        # As a routine since removed left it, before lyse restarted:
+        with h5py.File(path, 'a') as f:
+            f['results/lyse'].attrs['gone'] = 'error'
+        lyse.filebox.FileBox.do_singleshot_analysis(self.filebox, path)
+        self.multishot_pass()
+        with h5py.File(path, 'r') as f:
+            self.assertNotIn('gone', f['results/lyse'].attrs)
+        self.assertEqual(self.state(path), 'done')
 
     def test_a_rerun_during_an_attempt_waits_for_it_to_end(self):
         path = self.analyse('1.h5')

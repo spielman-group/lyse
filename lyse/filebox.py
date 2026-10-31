@@ -973,10 +973,8 @@ class FileBox:
         self.multishot_requested = False
         # Whether a shot's later single-shot routines are skipped after one fails:
         self.stop_on_failure = False
-        # The single-shot routines' outcomes of the shots awaiting multishot, and the
-        # names of the outcomes lyse last wrote for each shot, by phase:
+        # The single-shot routines' outcomes of the shots awaiting multishot:
         self._singleshot_outcomes = {}
-        self._recorded_outcomes = {}
         # Set as lyse quits, after which no plugin is called and no analysis starts:
         self.quitting = False
 
@@ -1287,11 +1285,8 @@ class FileBox:
             # An error is no surprise once the file has gone:
             self.shots_model.mark_deleted(filepath)
             return
-        # A new attempt's outcomes replace all those lyse wrote for the shot before:
-        previous = self._recorded_outcomes.get(filepath, {})
-        replaced = previous.get('singleshot', set()) | previous.get('multishot', set())
-        self.record_outcomes(filepath, outcomes, replaced)
-        self._recorded_outcomes[filepath] = {'singleshot': set(outcomes), 'multishot': set()}
+        # A new attempt's outcomes replace all those the shot had:
+        self.record_outcomes(filepath, outcomes)
         self.fire_event('singleshot_done', filepath, outcomes)
         if any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
             self._singleshot_outcomes[filepath] = outcomes
@@ -1300,25 +1295,25 @@ class FileBox:
             self.shots_model.end_attempt(filepath, outcome_state(outcomes))
             self.fire_event('analysis_done', filepath, outcomes)
 
-    def record_outcomes(self, filepath, outcomes, replaced):
-        """Put outcomes in the shot's row and, under its file's lock, in its file's
-        results/lyse group, in place of the outcomes named in replaced, which lyse put
-        there before, and no others. A failure to write the file is reported, and the
-        row keeps the outcomes."""
-        row_data = {('lyse', name): np.nan for name in replaced}
-        row_data.update({('lyse', name): outcome for name, outcome in outcomes.items()})
-        self.shots_model.update_rows({filepath: row_data})
+    def record_outcomes(self, filepath, outcomes, keep=()):
+        """Put outcomes in, under its lock, the shot file's results/lyse group, and in the
+        shot's row, in place of every outcome already there but those named in keep. A
+        failure to write the file is reported, and the row still gets the outcomes."""
+        replaced = set()
         try:
             with h5py.File(filepath, 'a') as f:
                 group = f.require_group('results/lyse')
+                replaced = set(group.attrs) - set(keep)
                 for name in replaced:
-                    if name in group.attrs:
-                        del group.attrs[name]
+                    del group.attrs[name]
                 for name, outcome in outcomes.items():
                     group.attrs[name] = outcome
         except Exception as e:
             self.app.output_box.output(
                 f'Warning: The routines\' outcomes were not written into {filepath}: {e}\n', red=True)
+        row_data = {('lyse', name): np.nan for name in replaced}
+        row_data.update({('lyse', name): outcome for name, outcome in outcomes.items()})
+        self.shots_model.update_rows({filepath: row_data})
 
     def do_multishot_analysis(self):
         """Run a pass on the shots awaiting multishot, which ends their attempts. After
@@ -1342,9 +1337,8 @@ class FileBox:
             if signal in ('done', 'error'):
                 break
         for filepath in paths:
-            recorded = self._recorded_outcomes.setdefault(filepath, {'singleshot': set(), 'multishot': set()})
-            self.record_outcomes(filepath, outcomes, recorded['multishot'])
-            recorded['multishot'] = set(outcomes)
+            # In place of an earlier pass's, beside this attempt's single-shot outcomes:
+            self.record_outcomes(filepath, outcomes, keep=self._singleshot_outcomes.get(filepath, {}))
         self.fire_event('multishot_done', paths, outcomes)
         for filepath in paths:
             shot_outcomes = {**self._singleshot_outcomes.get(filepath, {}), **outcomes}
