@@ -1,6 +1,6 @@
 ## Unreleased
 
-- A first plugin, `delete_default_and_repeated_shots`, off by default: once all
+- A first plugin, `delete_repeated_shots`, off by default: once all
   analysis of a default or repeated shot from runmanager has ended with every
   routine done, it deletes the shot file and keeps its row, with its results.
 

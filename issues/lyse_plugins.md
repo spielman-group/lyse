@@ -232,11 +232,10 @@ is reported in the output box; the row keeps the outcomes. A row whose file is
 gone has the deleted state, which keeps it out of analysis, Re-run selected,
 Re-run failed and every pass.
 
-**E. The first plugin** (10–11).
-`lyse/plugins/delete_default_and_repeated_shots/` notes at `shot_received` the
-paths runmanager sends. At `analysis_done`, on the analysis thread, if the shot
-is one of them, every outcome is `'done'`, and its file's `sequence_index` is −1
-or its `run repeat` 1 or more, it deletes the file with
+**E. The first plugin** (10–11). `lyse/plugins/delete_repeated_shots/` notes at
+`shot_received` the paths runmanager sends. At `analysis_done`, on the analysis
+thread, if the shot is one of them, every outcome is `'done'`, and its file's
+`sequence_index` is −1 or its `run repeat` 1 or more, it deletes the file with
 `labscript_utils.h5_lock.delete_shot_file` and marks the row deleted, without
 the warning. An `OSError` is reported in the output box, and the row stays as it
 is.
@@ -323,8 +322,8 @@ futures, retires once the optimizer's session runs in a plugin worker.
 - **labscript-utils:** done on its `LysePlugins` branch:
   `labscript_utils.h5_lock.delete_shot_file(path)`, which E and BLACS's
   `delete_repeated_shots` both call, and the `[lyse/plugins]` section documented
-  beside `[blacs/plugins]`, with `delete_default_and_repeated_shots` off by
-  default. To do: the plugin workers (G).
+  beside `[blacs/plugins]`, with lyse's `delete_repeated_shots` off by default.
+  To do: the plugin workers (G).
 - **BLACS:** its `delete_repeated_shots` stays, calling `delete_shot_file`. Later,
   its `Tab` and `Worker` move onto the shared worker parts (G).
 - **labscript-agents**, once A–C and G exist: its plugin (F); ToolSpec bindings for the

@@ -36,7 +36,7 @@ import lyse.plugins
 import lyse.utils
 from lyse.client import LyseClient
 from lyse.communication import LyseServer
-from lyse.plugins.delete_default_and_repeated_shots import Plugin as DeletePlugin
+from lyse.plugins.delete_repeated_shots import Plugin as DeletePlugin
 from lyse.dataframe_utilities import flat_dict_to_hierarchical_dataframe, flatten_dict
 
 
@@ -283,13 +283,13 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         plugin = DeletePlugin()
         app = object.__new__(self.main.Lyse)
-        app.__dict__.update(server=server, plugins={'delete_default_and_repeated_shots': plugin})
+        app.__dict__.update(server=server, plugins={'delete_repeated_shots': plugin})
         self.main.Lyse.mount_plugin_handlers(app)
         client = LyseClient('localhost', port, 5)
-        described = client.request('describe')['children']['delete_default_and_repeated_shots']
+        described = client.request('describe')['children']['delete_repeated_shots']
         self.assertEqual(set(described['commands']), {'enable', 'disable', 'is_enabled'})
-        client.request('delete_default_and_repeated_shots.disable')
-        self.assertFalse(client.request('delete_default_and_repeated_shots.is_enabled'))
+        client.request('delete_repeated_shots.disable')
+        self.assertFalse(client.request('delete_repeated_shots.is_enabled'))
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, 'default.h5')
             with h5py.File(path, 'w') as f:

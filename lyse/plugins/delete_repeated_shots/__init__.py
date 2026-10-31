@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/delete_default_and_repeated_shots/__init__.py            #
+# /plugins/delete_repeated_shots/__init__.py                        #
 #                                                                   #
 # Copyright 2026, JQI                                               #
 # Author: Ian Spielman                                              #
@@ -14,7 +14,8 @@
 """Deletes the file of a default or repeated shot from runmanager once all its analysis
 has ended with every routine done. Its row stays, with its results, so a run of
 repeated shots that keep the apparatus warm still leaves its record. It runs last at
-analysis_done, so that the other plugins still find the file."""
+analysis_done, so that the other plugins still find the file. BLACS's plugin of the
+same name is another app's, flagged in [blacs/plugins], not [lyse/plugins]."""
 import labscript_utils.h5_lock, h5py
 
 from lyse.plugins import BasePlugin, callback

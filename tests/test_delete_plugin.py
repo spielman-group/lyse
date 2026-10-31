@@ -11,7 +11,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""The plugin delete_default_and_repeated_shots deletes the file of a default or
+"""The plugin delete_repeated_shots deletes the file of a default or
 repeated shot from runmanager once its analysis has ended with every routine done,
 and keeps its row."""
 import os
@@ -24,7 +24,7 @@ import pandas
 from qtutils.qt import QtWidgets
 
 import lyse.filebox
-from lyse.plugins.delete_default_and_repeated_shots import Plugin
+from lyse.plugins.delete_repeated_shots import Plugin
 
 qapplication = QtWidgets.QApplication.instance() or QtWidgets.QApplication(['test'])
 
