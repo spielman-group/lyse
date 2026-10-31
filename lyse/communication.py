@@ -52,6 +52,9 @@ class LyseServer(ZMQServer):
 
     @inmain_decorator()
     def handle_get_routines(self, box):
+        """List a routine box's routines, 'singleshot' or 'multishot', in the
+        order they run, each with whether it is active and how its last run
+        ended."""
         routines = []
         for routine in self._box(box).routines:
             status = ('working' if routine.working else 'done' if routine.done
@@ -61,6 +64,8 @@ class LyseServer(ZMQServer):
 
     @inmain_decorator()
     def handle_add_routines(self, box, filepaths, active=True):
+        """Add routines, .py scripts or .lyse folders, to the end of a box; give
+        paths on lyse's computer."""
         # Absolute, since a routine's worker works in the routine's folder:
         filepaths = [os.path.abspath(filepath) for filepath in filepaths]
         for filepath in filepaths:
@@ -73,72 +78,102 @@ class LyseServer(ZMQServer):
 
     @inmain_decorator()
     def handle_remove_routines(self, box, filepaths):
+        """Remove routines from a box, ending their workers."""
         self._box(box).remove_routines(filepaths)
 
     @inmain_decorator()
     def handle_set_routines_active(self, box, filepaths, active):
+        """Make routines of a box active or inactive; an inactive routine is
+        skipped."""
         self._box(box).set_routines_active(filepaths, active)
 
     @inmain_decorator()
     def handle_reorder_routines(self, box, filepaths):
+        """Set the order a box's routines run in; name every routine of the box
+        once."""
         self._box(box).reorder_routines(filepaths)
 
     @inmain_decorator()
     def handle_restart_routines(self, box, filepaths):
+        """Restart routines' workers, as after editing a routine's imported
+        modules."""
         self._box(box).restart_routines(filepaths)
 
     def handle_get_analysis_paused(self):
+        """Return whether analysis is paused."""
         return self.app.filebox.analysis_paused
 
     def handle_set_analysis_paused(self, paused):
+        """Pause or resume analysis. A paused lyse still takes shots in, and
+        analyses them on resuming."""
         self.app.filebox.set_analysis_paused(paused)
 
     @inmain_decorator()
     def handle_abort(self):
+        """Interrupt the routines running and pause analysis, as the Abort
+        button does."""
         self.app.filebox.abort()
 
     @inmain_decorator()
     def handle_run_multishot(self):
+        """Run the multishot routines now, even while analysis is paused."""
         self.app.filebox.run_multishot()
 
     @inmain_decorator()
     def handle_rerun_failed(self):
+        """Analyse again every shot that failed, stopped or was aborted, or
+        whose multishot pass failed."""
         self.app.filebox.rerun_failed()
 
     def handle_get_stop_on_failure(self):
+        """Return whether a shot's later single-shot routines are skipped after
+        one fails."""
         return self.app.filebox.stop_on_failure
 
     def handle_set_stop_on_failure(self, stop):
+        """Set whether a shot's later single-shot routines are skipped after one
+        fails."""
         self.app.filebox.set_stop_on_failure(stop)
 
     @inmain_decorator()
     def handle_rerun_shots(self, filepaths):
+        """Analyse these shots again, in order."""
         self.app.filebox.rerun_shots([shared_drive.path_to_local(path) for path in filepaths])
 
     @inmain_decorator()
     def handle_shot_status(self, filepaths):
+        """Return each shot's analysis state by path: not done, awaiting
+        multishot, done, failed, stopped, aborted or deleted."""
         states = self.app.filebox.shots_model.shot_states(
             [shared_drive.path_to_local(path) for path in filepaths])
         return dict(zip(filepaths, states))
 
     @inmain_decorator()
     def handle_remove_shots(self, filepaths):
+        """Remove shots from lyse's table; their files are kept."""
         self.app.filebox.shots_model.remove_shots([shared_drive.path_to_local(path) for path in filepaths])
 
     @inmain_decorator()
     def handle_save_dataframe(self, folder=None):
+        """Save the dataframe, one file per sequence, in folder or else beside
+        each sequence's shots; return the files written."""
         return self.app.save_dataframe(folder)
 
     @inmain_decorator()
     def handle_load_dataframe(self, filepath):
+        """Add the shots of a saved dataframe file to the table."""
         self.app.load_dataframe(filepath)
 
     def handle_add_shot(self, filepath, source='remote'):
+        """Queue a shot file to be added and analysed; source is 'runmanager' or
+        'remote'."""
         if source not in ('remote', 'runmanager'):
             raise ValueError(f"A shot's source is 'remote' or 'runmanager', not {source!r}")
         self.app.filebox.incoming_queue.put((shared_drive.path_to_local(filepath), source))
 
     def handle_get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None, columns=None):
+        """Return the dataframe, or the rows and columns chosen as lyse.data()
+        chooses them."""
         df = rangeindex_to_multiindex(self._copy_dataframe(n_sequences, where, columns), inplace=True)
         if filter_kwargs is not None:
             df = df.filter(**filter_kwargs)

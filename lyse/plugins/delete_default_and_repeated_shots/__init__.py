@@ -25,10 +25,18 @@ class Plugin(BasePlugin):
         self.shots = None
         self.output_box = None
         self.from_runmanager = set()
+        # Whether it deletes at all, saved with lyse's configuration:
+        self.enabled = True
 
     def plugin_setup_complete(self, data):
         self.shots = data['shots_model']
         self.output_box = data['output_box']
+
+    def get_save_data(self):
+        return {'enabled': self.enabled}
+
+    def restore_save_data(self, data):
+        self.enabled = data.get('enabled', True)
 
     def get_event_handlers(self):
         return {'shot_received': self.on_shot_received, 'analysis_done': self.on_analysis_done}
@@ -40,7 +48,8 @@ class Plugin(BasePlugin):
             self.from_runmanager.discard(filepath)
 
     def on_analysis_done(self, filepath, outcomes):
-        if filepath not in self.from_runmanager or any(outcome != 'done' for outcome in outcomes.values()):
+        if (not self.enabled or filepath not in self.from_runmanager
+                or any(outcome != 'done' for outcome in outcomes.values())):
             return
         try:
             with h5py.File(filepath, 'r') as f:
