@@ -171,9 +171,9 @@ class LyseServer(ZMQServer):
             raise ValueError(f"A shot's source is 'remote' or 'runmanager', not {source!r}")
         self.app.filebox.incoming_queue.put((shared_drive.path_to_local(filepath), source))
 
+    # For lyse.data() and LyseClient; undocumented, so describe does not offer agents a
+    # DataFrame they could not carry:
     def handle_get_dataframe(self, n_sequences=None, filter_kwargs=None, where=None, columns=None):
-        """Return the dataframe, or the rows and columns chosen as lyse.data()
-        chooses them."""
         df = rangeindex_to_multiindex(self._copy_dataframe(n_sequences, where, columns), inplace=True)
         if filter_kwargs is not None:
             df = df.filter(**filter_kwargs)
