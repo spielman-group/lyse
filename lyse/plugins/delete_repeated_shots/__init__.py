@@ -16,7 +16,10 @@ has ended with every routine done. Its row stays, with its results, so a run of
 repeated shots that keep the apparatus warm still leaves its record. It runs last at
 analysis_done, so that the other plugins still find the file. BLACS's plugin of the
 same name is another app's, flagged in [blacs/plugins], not [lyse/plugins]."""
+import os
+
 import labscript_utils.h5_lock, h5py
+from qtutils import UiLoader, inmain
 
 from lyse.plugins import BasePlugin, callback
 
@@ -27,29 +30,47 @@ class Plugin(BasePlugin):
         self.shots = None
         self.output_box = None
         self.from_runmanager = set()
-        # Whether it deletes at all, saved with lyse's configuration and set remotely:
+        # Whether it deletes at all, shown and set by its checkbox, saved with lyse's
+        # configuration and set remotely:
         self.enabled = True
+        self.ui = None
 
     def plugin_setup_complete(self, data):
         self.shots = data['shots_model']
         self.output_box = data['output_box']
 
+    def get_ui_contributions(self):
+        self.ui = UiLoader().load(os.path.join(os.path.dirname(__file__), 'controls.ui'))
+        self.ui.checkBox_enabled.setChecked(self.enabled)
+        self.ui.checkBox_enabled.toggled.connect(self.on_enabled_toggled)
+        return [{'context': 'areas', 'area': 'analysis_controls', 'widget': self.ui}]
+
+    def on_enabled_toggled(self, checked):
+        self.enabled = checked
+
+    def set_enabled(self, enabled):
+        # Through the checkbox, once there is one, whose slot sets self.enabled:
+        if self.ui is None:
+            self.enabled = enabled
+        else:
+            inmain(self.ui.checkBox_enabled.setChecked, enabled)
+
     def get_save_data(self):
         return {'enabled': self.enabled}
 
     def restore_save_data(self, data):
-        self.enabled = data.get('enabled', True)
+        self.set_enabled(data.get('enabled', True))
 
     def get_remote_handler(self):
         return self
 
     def handle_enable(self):
         """Delete the files of finished default and repeated shots from runmanager."""
-        self.enabled = True
+        self.set_enabled(True)
 
     def handle_disable(self):
         """Stop deleting shot files; shots analysed meanwhile keep theirs."""
-        self.enabled = False
+        self.set_enabled(False)
 
     def handle_is_enabled(self):
         """Return whether finished default and repeated shots' files are deleted."""

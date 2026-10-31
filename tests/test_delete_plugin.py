@@ -66,5 +66,15 @@ class DeletePluginTests(unittest.TestCase):
         self.assertEqual(shots.states, ['deleted', 'deleted', 'done', 'done', 'done'])
         self.assertEqual(list(shots.dataframe['fit', 'atoms']), [100.0] * len(paths))
 
+    def test_its_checkbox_shows_its_state_however_it_is_set(self):
+        plugin = Plugin()
+        (contribution,) = plugin.get_ui_contributions()
+        checkbox = contribution['widget'].checkBox_enabled
+        plugin.handle_disable()
+        self.assertEqual((checkbox.isChecked(), plugin.enabled), (False, False))
+        checkbox.setChecked(True)
+        self.assertTrue(plugin.handle_is_enabled())
+
+
 if __name__ == '__main__':
     unittest.main()
