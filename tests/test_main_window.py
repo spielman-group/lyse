@@ -16,6 +16,7 @@ dataframe."""
 import logging
 import os
 import queue
+import socket
 import sys
 import tempfile
 import types
@@ -24,6 +25,7 @@ from unittest import mock
 
 import numpy
 import pandas
+import labscript_utils.h5_lock, h5py
 from labscript_utils.labconfig import save_appconfig
 from labscript_utils.qtwidgets.leftclick import TableView
 from qtutils import UiLoader, inmain
@@ -32,6 +34,9 @@ from qtutils.qt import QtGui, QtWidgets
 import lyse.filebox
 import lyse.plugins
 import lyse.utils
+from lyse.client import LyseClient
+from lyse.communication import LyseServer
+from lyse.plugins.delete_default_and_repeated_shots import Plugin as DeletePlugin
 from lyse.dataframe_utilities import flat_dict_to_hierarchical_dataframe, flatten_dict
 
 
@@ -253,7 +258,7 @@ class MainWindowTests(unittest.TestCase):
             singleshot_routinebox=a_box(), multishot_routinebox=a_box(), qapplication=self.qapplication,
             filebox=types.SimpleNamespace(last_opened_shots_folder='', analysis_paused=False,
                                           stop_on_failure=False, set_stop_on_failure=lambda stop: None),
-            last_save_config_file=None, last_save_data=None)
+            last_save_config_file=None, last_save_data=None, mounted_plugins=[])
         app.init_config_window_title()
         plugin = Plugin()
         with tempfile.TemporaryDirectory() as folder, \
@@ -269,6 +274,29 @@ class MainWindowTests(unittest.TestCase):
             self.assertTrue(app.on_close_event())
         self.assertTrue(app.filebox.quitting)
         self.assertEqual(closed, [True])
+
+    def test_a_client_finds_a_plugins_commands_and_turns_it_off(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        server = LyseServer(None, port, bind_address='tcp://127.0.0.1')
+        self.addCleanup(server.shutdown)
+        plugin = DeletePlugin()
+        app = object.__new__(self.main.Lyse)
+        app.__dict__.update(server=server, plugins={'delete_default_and_repeated_shots': plugin})
+        self.main.Lyse.mount_plugin_handlers(app)
+        client = LyseClient('localhost', port, 5)
+        described = client.request('describe')['children']['delete_default_and_repeated_shots']
+        self.assertEqual(set(described['commands']), {'enable', 'disable', 'is_enabled'})
+        client.request('delete_default_and_repeated_shots.disable')
+        self.assertFalse(client.request('delete_default_and_repeated_shots.is_enabled'))
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, 'default.h5')
+            with h5py.File(path, 'w') as f:
+                f.attrs['sequence_index'] = -1
+            plugin.on_shot_received(path, 'runmanager')
+            plugin.on_analysis_done(path, {'fit': 'done'})
+            self.assertTrue(os.path.exists(path))
 
     def save(self, folder, df):
         """Save df as lyse does, beside its shots, and return the files written."""

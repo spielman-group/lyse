@@ -158,6 +158,7 @@ class Lyse(LabscriptGuiApplication):
             self.error_dialog(str(e))
             sys.exit(1)
         self.logger.info('Started lyse server on port %s', self.server.port)
+        self.mount_plugin_handlers()
 
         self.last_save_config_file = None
         self.last_save_data = None
@@ -250,6 +251,16 @@ class Lyse(LabscriptGuiApplication):
         menus.render()
         manager.setup_complete(data)
 
+    def mount_plugin_handlers(self):
+        """Answer each plugin's remote commands, as ``<plugin name>.<command>``."""
+        self.mounted_plugins = []
+        for name, plugin in self.plugins.items():
+            # An optional hook, which BasePlugin does not define:
+            handler = getattr(plugin, 'get_remote_handler', lambda: None)()
+            if handler is not None:
+                self.server.mount(name, handler)
+                self.mounted_plugins.append(name)
+
     def terminate_all_workers(self):
         for routine in self.singleshot_routinebox.routines + self.multishot_routinebox.routines:
             routine.end_child()
@@ -265,6 +276,8 @@ class Lyse(LabscriptGuiApplication):
         if not self.offer_to_save_changes('Quit lyse', quitting=True):
             return False
         self.filebox.quitting = True
+        for name in self.mounted_plugins:
+            self.server.unmount(name)
         self.terminate_all_workers()
         # Off the GUI thread, which keeps serving, since a plugin's close() may wait for
         # threads of its own that need it:

@@ -25,7 +25,7 @@ class Plugin(BasePlugin):
         self.shots = None
         self.output_box = None
         self.from_runmanager = set()
-        # Whether it deletes at all, saved with lyse's configuration:
+        # Whether it deletes at all, saved with lyse's configuration and set remotely:
         self.enabled = True
 
     def plugin_setup_complete(self, data):
@@ -37,6 +37,21 @@ class Plugin(BasePlugin):
 
     def restore_save_data(self, data):
         self.enabled = data.get('enabled', True)
+
+    def get_remote_handler(self):
+        return self
+
+    def handle_enable(self):
+        """Delete the files of finished default and repeated shots from runmanager."""
+        self.enabled = True
+
+    def handle_disable(self):
+        """Stop deleting shot files; shots analysed meanwhile keep theirs."""
+        self.enabled = False
+
+    def handle_is_enabled(self):
+        """Return whether finished default and repeated shots' files are deleted."""
+        return self.enabled
 
     def get_event_handlers(self):
         return {'shot_received': self.on_shot_received, 'analysis_done': self.on_analysis_done}
