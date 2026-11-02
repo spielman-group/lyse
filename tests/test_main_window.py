@@ -13,6 +13,7 @@
 #####################################################################
 """The lyse main window: a theme change, its plugins, and saving and loading the
 dataframe."""
+import importlib.metadata
 import logging
 import os
 import queue
@@ -26,7 +27,8 @@ from unittest import mock
 import numpy
 import pandas
 import labscript_utils.h5_lock, h5py
-from labscript_utils.labconfig import save_appconfig
+from labscript_utils.labconfig import LabConfig, save_appconfig
+from labscript_utils.plugins import PluginManager
 from labscript_utils.qtwidgets.leftclick import TableView
 from labscript_utils.qtwidgets.fingertab import FingerTabWidget
 from qtutils import UiLoader, inmain
@@ -214,6 +216,9 @@ class MainWindowTests(unittest.TestCase):
             def plugin_setup_complete(self, data):
                 events.append(('set up', data['shots_model']))
 
+            def get_event_handlers(self):
+                return {'analysis_done': lambda *args: events.append(('analysed', args))}
+
         module = types.ModuleType('probe')
         module.Plugin = Plugin
         loader = UiLoader()
@@ -226,12 +231,18 @@ class MainWindowTests(unittest.TestCase):
                 shots_model='shots'),
             output_box=None, singleshot_routinebox=None, multishot_routinebox=None,
             logger=logging.getLogger('test'))
-        manager = lyse.plugins.manager
+        entry_points = [importlib.metadata.EntryPoint(name, 'lyse_probe_plugin', 'lyse.plugins')
+                        for name in ('probe', 'disabled')]
         with tempfile.TemporaryDirectory() as folder, \
-                mock.patch.multiple(manager, modules={'probe': module}, plugins={}, contexts={}):
+                mock.patch.dict(sys.modules, lyse_probe_plugin=module), \
+                mock.patch('importlib.metadata.entry_points', return_value=entry_points):
             config = os.path.join(folder, 'lyse.toml')
             save_appconfig(config, {'lyse_state': {'plugins': {'probe': {'n': 3}}}})
-            app.exp_config = types.SimpleNamespace(get=lambda *args: config)
+            labconfig = os.path.join(folder, 'labconfig.toml')
+            with open(labconfig, 'w') as f:
+                f.write(f'[lyse]\nautoload_config_file = {config!r}\n'
+                        '["lyse/plugins"]\nprobe = true\ndisabled = false\n')
+            app.exp_config = LabConfig(config_path=labconfig)
             self.main.Lyse.setup_plugins(app)
         self.assertEqual(events, [('restored', {'n': 3}), ('set up', 'shots')])
         self.assertIs(app.filebox.ui.horizontalLayout_shots_toolbar_plugins.itemAt(0).widget(), widget)
@@ -241,6 +252,9 @@ class MainWindowTests(unittest.TestCase):
         tabs.setCurrentWidget(panel)
         panel.click()
         self.assertEqual(events[-1], 'clicked')
+        app.filebox.app, app.filebox.quitting = app, False
+        lyse.filebox.FileBox.fire_event(app.filebox, 'analysis_done', 'shot.h5', {'fit': 'done'})
+        self.assertEqual(events[-1], ('analysed', ('shot.h5', {'fit': 'done'})))
 
     def test_a_plugins_settings_are_saved_and_loaded_and_quitting_closes_it(self):
         closed = []
@@ -275,14 +289,15 @@ class MainWindowTests(unittest.TestCase):
             last_save_config_file=None, last_save_data=None, mounted_plugins=[])
         app.init_config_window_title()
         plugin = Plugin()
+        app.plugin_manager = PluginManager('lyse.plugins', os.path.join(lyse.utils.LYSE_DIR, 'plugins'))
+        app.plugin_manager.plugins = {'probe': plugin}
         tabs = app.ui.plugin_tabs
         panels = lyse.plugins.Tabs(tabs)
         panel = QtWidgets.QLabel('probe')
         panels.add('probe', {'widget': panel, 'label': 'Probe'}, {})
         panels.add('other', {'widget': QtWidgets.QLabel('other'), 'label': 'Other'}, {})
         tabs.setCurrentWidget(panel)
-        with tempfile.TemporaryDirectory() as folder, \
-                mock.patch.object(lyse.plugins.manager, 'plugins', {'probe': plugin}):
+        with tempfile.TemporaryDirectory() as folder:
             config = os.path.join(folder, 'lyse.toml')
             app.save_configuration(config)
             plugin.settings['n'] = 4
@@ -310,7 +325,9 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         plugin = DeletePlugin()
         app = object.__new__(self.main.Lyse)
-        app.__dict__.update(server=server, plugins={'delete_repeated_shots': plugin})
+        app.server = server
+        app.plugin_manager = PluginManager('lyse.plugins', os.path.join(lyse.utils.LYSE_DIR, 'plugins'))
+        app.plugin_manager.plugins = {'delete_repeated_shots': plugin}
         self.main.Lyse.mount_plugin_handlers(app)
         client = LyseClient('localhost', port, 5)
         described = client.request('describe')['children']['delete_repeated_shots']

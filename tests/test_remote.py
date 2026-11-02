@@ -26,6 +26,7 @@ from unittest import mock
 
 import labscript_utils.h5_lock, h5py
 from labscript_utils.ls_zprocess import ProcessTree
+from labscript_utils.plugins import PluginManager
 import pandas
 from qtutils.qt import QtWidgets
 
@@ -59,7 +60,8 @@ class RemoteTests(unittest.TestCase):
         self.addCleanup(self.worker_patch.stop)
         exp_config = types.SimpleNamespace(get=lambda *args: folder.name, getboolean=lambda *args: False)
         app = self.app = types.SimpleNamespace(
-            process_tree=None, output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None))
+            process_tree=None, output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None),
+            plugin_manager=PluginManager('lyse.plugins', folder.name))
         queues = [queue.Queue() for _ in range(4)]
         app.singleshot_routinebox = lyse.routines.RoutineBox(
             app, QtWidgets.QVBoxLayout(), exp_config, None, queues[0], queues[1], None)

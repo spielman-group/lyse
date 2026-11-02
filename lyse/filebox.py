@@ -49,7 +49,6 @@ from qtutils.icons import Icon
 # Lyse imports
 from lyse.dataframe_utilities import (concat_with_padding, get_dataframe_from_shot,
                                       flatten_dict, pad_columns)
-import lyse.plugins
 import lyse.utils
 import lyse.utils.gui
 import lyse.widgets
@@ -1275,7 +1274,7 @@ class FileBox:
     def fire_event(self, name, *args):
         """Call the plugins' handlers of the event, unless lyse is quitting."""
         if not self.quitting:
-            lyse.plugins.manager.fire_event(name, *args)
+            self.app.plugin_manager.fire_event(name, *args)
 
     def do_singleshot_analysis(self, filepath):
         """Begin the shot's attempt: run its single-shot routines, then leave it

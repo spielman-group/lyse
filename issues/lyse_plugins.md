@@ -149,11 +149,12 @@ and `get_dataframe` exist; `add_shot` gains the shot's source, `'remote'` by
 default, which runmanager's submission sets to `'runmanager'`. `shot_status` is
 keyed by path, where runmanager's is keyed by shot ID.
 
-**B. Plugin host** (4, 6, 11). `lyse/plugins/__init__.py` builds a
-`labscript_utils.plugins.PluginManager` as `blacs/plugins/__init__.py` does:
+**B. Plugin host** (4, 6, 11). During startup, lyse creates and owns a
+`labscript_utils.plugins.PluginManager` using its existing labconfig:
 plugin folders in `lyse/plugins/`, installed packages through the entry point
-group `lyse.plugins`, flags in the labconfig's `[lyse/plugins]`. Menu items come
-from `get_menu_contributions`, rendered by a `MenuContext` on which lyse
+group `lyse.plugins`, flags in the labconfig's `[lyse/plugins]`. Importing
+`lyse.plugins` supplies interfaces and UI contexts without discovering plugins.
+Menu items come from `get_menu_contributions`, rendered by a `MenuContext` on which lyse
 registers its menu bar as the `'menubar'` location, as BLACS does. Widgets come
 from `get_ui_contributions` through a context lyse registers as `'areas'`, a
 class with `add(plugin_name, contribution, data)` after BLACS's notifications:
