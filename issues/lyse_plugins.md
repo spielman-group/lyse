@@ -6,6 +6,13 @@ and when its analysis ends; analysis that a failing routine does not stop; and,
 as the first plugin, one that deletes analysed default and repeated shots.
 labscript-agents and labscript-optimization become such plugins.
 
+Status, 2026-11-02 on CodeSimplify: this file records the original plan.
+Part G's Future-based parent design has been superseded by the implemented
+generator-based `labscript_utils.workers.WorkersMixin`, shared by BLACS and
+the optimizer; the old `submit_job` descriptions below are historical.
+C3's software checks and independent review have passed; real hardware
+acceptance remains pending. The shared module documents the current API.
+
 ## Requirements
 
 ### Remote interface
