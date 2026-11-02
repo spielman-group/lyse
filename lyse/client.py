@@ -106,7 +106,8 @@ class LyseClient(ZMQClient):
         self.request('set_stop_on_failure', stop)
 
     def remove_shots(self, filepaths):
-        """Remove shots from lyse's dataframe. Their files are kept."""
+        """Remove shots from lyse's dataframe. Their files are kept. A request
+        containing a running shot raises ValueError and removes nothing."""
         self.request('remove_shots', filepaths)
 
     def save_dataframe(self, folder=None):

@@ -18,7 +18,7 @@ analysis_done, so that the other plugins still find the file. BLACS's plugin of 
 same name is another app's, flagged in [blacs/plugins], not [lyse/plugins]."""
 import os
 
-import labscript_utils.h5_lock, h5py
+import labscript_utils.h5_lock
 from qtutils import UiLoader, inmain
 
 from lyse.plugins import BasePlugin, callback
@@ -29,7 +29,6 @@ class Plugin(BasePlugin):
     def __init__(self):
         self.shots = None
         self.output_box = None
-        self.from_runmanager = set()
         # Whether it deletes at all, shown and set by its checkbox, saved with lyse's
         # configuration and set remotely:
         self.enabled = True
@@ -77,23 +76,22 @@ class Plugin(BasePlugin):
         return self.enabled
 
     def get_event_handlers(self):
-        return {'shot_received': self.on_shot_received, 'analysis_done': self.on_analysis_done}
-
-    def on_shot_received(self, filepath, source):
-        if source == 'runmanager':
-            self.from_runmanager.add(filepath)
-        else:
-            self.from_runmanager.discard(filepath)
+        return {'analysis_done': self.on_analysis_done}
 
     @callback(priority=100)
     def on_analysis_done(self, filepath, outcomes):
-        if (not self.enabled or filepath not in self.from_runmanager
-                or any(outcome != 'done' for outcome in outcomes.values())):
+        if not self.enabled or any(outcome != 'done' for outcome in outcomes.values()):
             return
+        source, state, row = inmain(lambda: (
+            self.shots.sources[filepath],
+            self.shots.states[self.shots.row_number_by_filepath[filepath]],
+            self.shots.dataframe.iloc[[self.shots.row_number_by_filepath[filepath]]].sort_index(axis=1),
+        ))
+        if source != 'runmanager' or state == 'deleted':
+            return
+        default = row['sequence_index'].iloc[0] == -1
+        repeat = row['run repeat'].iloc[0] >= 1
         try:
-            with h5py.File(filepath, 'r') as f:
-                default = f.attrs['sequence_index'] == -1
-                repeat = f.attrs.get('run repeat', 0) >= 1
             if default or repeat:
                 labscript_utils.h5_lock.delete_shot_file(filepath)
                 self.shots.mark_deleted(filepath, warn=False)

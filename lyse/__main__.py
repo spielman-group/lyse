@@ -57,6 +57,7 @@ from labscript_utils.qtwidgets.application import (
     exec_qapplication,
     setup_application,
 )
+from labscript_utils.qtwidgets.fingertab import FingerTabWidget
 from labscript_utils.qtwidgets.outputbox import OutputBox
 from labscript_utils.qtwidgets.themed_window import FirstPaintWindow, ThemedWindow
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
@@ -123,6 +124,7 @@ class Lyse(LabscriptGuiApplication):
 
         self.qapplication = qapplication
         loader = UiLoader()
+        loader.registerCustomWidget(FingerTabWidget)
         self.ui = loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui'), LyseMainWindow(self))
         self.logger.info('UI loaded')
         self.init_config_window_title()
@@ -238,6 +240,7 @@ class Lyse(LabscriptGuiApplication):
             'analysis_controls': self.filebox.ui.horizontalLayout_analysis_controls_plugins,
             'shots_toolbar': self.filebox.ui.horizontalLayout_shots_toolbar_plugins,
         }))
+        manager.register_context('tabs', lyse.plugins.Tabs(self.ui.plugin_tabs))
         data = {
             'exp_config': self.exp_config,
             'ui': self.ui,
@@ -305,6 +308,7 @@ class Lyse(LabscriptGuiApplication):
 
         save_data['analysis_paused'] = self.filebox.analysis_paused
         save_data['stop_on_failure'] = self.filebox.stop_on_failure
+        save_data['selected_tab'] = self.ui.plugin_tabs.currentWidget().property('lyse_plugin_name')
         # A copy, since the plugins' own objects would change with them, and the saved
         # configuration with them:
         save_data['plugins'] = copy.deepcopy(lyse.plugins.manager.get_save_data())
@@ -332,6 +336,12 @@ class Lyse(LabscriptGuiApplication):
         if 'stop_on_failure' in save_data:
             self.filebox.set_stop_on_failure(save_data['stop_on_failure'])
         lyse.plugins.manager.restore_save_data(save_data.get('plugins', {}))
+        tabs = self.ui.plugin_tabs
+        selected = save_data.get('selected_tab', '')
+        tabs.setCurrentIndex(next(
+            (i for i in range(tabs.count()) if tabs.widget(i).property('lyse_plugin_name') == selected),
+            0,
+        ))
         if restore_window_geometry:
             self.restore_geometry(save_data)
         self.configuration_loaded(save_target)

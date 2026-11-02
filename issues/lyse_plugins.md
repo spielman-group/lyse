@@ -23,7 +23,8 @@ labscript-agents and labscript-optimization become such plugins.
    loaded remotely.
 3. Each remote command does what the matching button or menu item does, with
    the same result in the window, and refuses an unknown box, routine or shot
-   by name.
+   by name. Removing shots rejects the whole request if any member is currently
+   running; the GUI reports the same refusal.
 
 ### Plugins
 
@@ -43,9 +44,11 @@ labscript-agents and labscript-optimization become such plugins.
      at once. A shot analysed again gets the calls again.
 
    Each call after analysis says how every routine involved ended.
-6. A plugin can put its controls in named places of lyse's window, the menu bar
-   and two areas (B), and can open windows of its own. A plugin's settings and
-   window layout are saved and restored with lyse's configuration.
+6. A plugin can put its controls in named places of lyse's window: the menu bar,
+   two areas, or a finger tab beside Output (B). The tabs cannot be closed.
+   lyse saves the selected tab by plugin identity, falling back to Output if the
+   plugin is unavailable. Plugins save their operational settings; changing tabs
+   never starts or stops a plugin.
 
 ### Robust analysis
 
@@ -63,9 +66,10 @@ labscript-agents and labscript-optimization become such plugins.
 8. lyse records how each routine ended on each shot: done, error (an exception,
    `sys.exit` with a failure status, or its worker dying), aborted (by Abort),
    or not run, as the routine's status icon then shows. The record is kept in
-   the shots table, and so in the dataframe, and written into the shot file; a
-   multishot routine's is on every shot of its pass. Analysing a shot again
-   replaces its record.
+   the shots table and dataframe, including saved dataframes; a multishot
+   routine's is on every shot of its pass. Analysing a shot again replaces its
+   record. Execution outcomes are not written into shot files; user analysis
+   results retain their existing storage behavior.
 9. The shots table shows each shot's state. A **Re-run failed** button, and its
    remote command, analyses all failed, stopped and aborted shots again, and
    those waiting to retry a failed multishot pass, in order, without selecting
@@ -98,10 +102,16 @@ labscript-agents and labscript-optimization become such plugins.
 13. Each becomes a lyse plugin, called at analysis done (5) for every shot.
     labscript-agents publishes its `shot_results` event for the shots it
     engaged; labscript-optimization reads the shot's cost and feeds its
-    session. Each keeps its own window, with its own on/off control there.
+    session. Each contributes its panel as a tab, labelled Agent or Optimizer,
+    rather than opening a floating window. Agent has an Enable agent checkbox;
+    its saved setting is restored, initially off when there is no saved setting.
+    The server stays running while disabled, but tool calls to control labscript
+    perform no requested operation and report that agent control of labscript is
+    currently offline. Status remains readable through `outstanding`.
+    Already-submitted shots continue and their outcomes remain accounted for.
     This is a full port: nothing of their GUI-routine forms remains, no
     `lyse.Routine` subclass and no `.lyse` folder in their examples. Each keeps
-    its window and its call points in lyse's process and does its work in a
+    its panel and its call points in lyse's process and does its work in a
     worker of its own (14).
 
 ### Plugin workers
@@ -149,9 +159,19 @@ from `get_ui_contributions` through a context lyse registers as `'areas'`, a
 class with `add(plugin_name, contribution, data)` after BLACS's notifications:
 `{'context': 'areas', 'area': name, 'widget': widget}` adds the widget to the
 end of a named area, `'analysis_controls'` beside Pause and Abort or
-`'shots_toolbar'`. A plugin's window is its own widget, shown from a menu item
-it contributes, and its geometry is part of its `get_save_data`. The setup dict,
-keyed as BLACS's is, holds the labconfig, the `ui`, the shots model and the two
+`'shots_toolbar'`. The `'tabs'` context is `lyse.plugins.Tabs`, with the same
+`add(plugin_name, contribution, data)` interface. A contribution
+`{'context': 'tabs', 'widget': panel, 'label': 'Agent', 'icon': optional_qicon}`
+embeds one QWidget panel per plugin; omit `icon` if none is needed. The fixed
+Output page and the nonclosable left-side FingerTabWidget live in `main.ui`,
+using `labscript_utils.qtwidgets.fingertab.FingerTabWidget`. The OutputBox and
+its redirection port stay attached to that page. lyse records the selected
+plugin's identity in `lyse_state.selected_tab`, with an empty string for Output;
+it does not save the page's numeric position. A missing plugin selects Output.
+Plugins do not save visibility or floating-window geometry for embedded pages,
+hide or reparent them during restore, or add menu actions to show them. Their
+labconfig loading flags remain separate from their operational settings. The
+setup dict, keyed as BLACS's is, holds the labconfig, the `ui`, the shots model and the two
 routine boxes. At start-up lyse builds its boxes, whose threads wait for shots,
 then instantiates the plugins, restores their data from the configuration it
 autoloads, sets up the contexts and calls `plugin_setup_complete`, and only then
@@ -186,13 +206,20 @@ under way takes effect when that attempt ends, which then sets the shot not done
 in place of its state. Shots that arrive during a pass join the queue for the
 next one. While paused, the shot being analysed finishes its single-shot phase,
 no attempt starts and a due pass waits, so its shots' `analysis_done` waits too,
-unless Run, the button or the remote command, starts the pass. A shot removed
-during its attempt gets no further call. `shot_received(path, source)`, with
+unless Run, the button or the remote command, starts the pass. A running shot,
+or any member of an executing multishot batch, cannot be removed until all of
+that phase's callbacks return. Selection and reservation happen on the GUI
+thread; a shot removed before reservation is not started. Queued shots and
+shots waiting for a pass or retry remain removable. A file that disappears
+ends that shot as deleted, retaining collected outcomes and issuing terminal
+notifications without scheduling further analysis for it. `shot_received(path, source)`, with
 `source` one of `'runmanager'`, `'remote'`, `'dialog'` and `'dataframe'`, fires
 on the GUI thread inside the shots model's `add_files`, once the row is in, so
 before the analysis loop, which asks the GUI thread for its next shot, can take
 it. Each path carries its source from where it was queued, the server or the
-add-shots dialog, through the incoming loop's merging to `add_files`. Load
+add-shots dialog, through the incoming loop's merging to `add_files`. The model
+keeps receipt provenance alongside each accepted row and discards it when that
+row is removed. A retained row keeps its source when reanalysed. Load
 dataframe adds most of its rows itself, with `add_files(..., done=True)` on the
 GUI thread, and queues the files changed since saving; both pass `'dataframe'`,
 and the rows it adds keep their loaded results and take their state from their
@@ -220,37 +247,36 @@ routines running. `get_first_incomplete` reads the state and takes only shots
 not done; Re-run failed sets not done the failed, stopped and aborted shots, and
 those awaiting multishot whose last pass failed. A routine's status icon gains
 `'aborted'` beside `'done'` and `'error'`, and shows none for `'not run'`. At
-the end of each phase lyse puts the outcomes in the shot's row, as `('lyse',
-<routine>)` columns, and writes them into the shot file, in one open under the
-h5 lock, as attributes of a `results/lyse` group, which the dataframe reads on
-reload. A routine may write the same group, as routines can any group. Before it
-writes a new attempt's single-shot outcomes, lyse removes the attributes and
-columns its previous outcomes put there for that shot, and no others, so a
-removed routine leaves no stale failure; a pass replaces the multishot outcomes
-it wrote before in the same way. A failed write, of a missing or read-only file,
-is reported in the output box; the row keeps the outcomes. A row whose file is
+the end of each phase lyse puts the outcomes in the shot's row as `('lyse',
+<routine>)` columns. Saved dataframes retain them; an independent reload from a
+shot file does not recover execution status. Before a new attempt's single-shot
+outcomes are recorded, previous outcome cells for that row are cleared, so a
+removed routine leaves no stale failure; a pass replaces its previous multishot
+outcomes beside the single-shot outcomes. Existing shot-file data is neither
+changed nor migrated by status recording. A row whose file is
 gone has the deleted state, which keeps it out of analysis, Re-run selected,
 Re-run failed and every pass.
 
-**E. The first plugin** (10–11). `lyse/plugins/delete_repeated_shots/` notes at
-`shot_received` the paths runmanager sends. At `analysis_done`, on the analysis
-thread, if the shot is one of them, every outcome is `'done'`, and its file's
-`sequence_index` is −1 or its `run repeat` 1 or more, it deletes the file with
+**E. The first plugin** (10–11). `lyse/plugins/delete_repeated_shots/` has no
+per-shot memory. At `analysis_done`, on the analysis thread, it snapshots the
+row and its receipt provenance on the GUI thread. If its source is runmanager,
+every outcome is `'done'`, and its `sequence_index` is −1 or its `run repeat`
+1 or more, it deletes the file with
 `labscript_utils.h5_lock.delete_shot_file` and marks the row deleted, without
 the warning. An `OSError` is reported in the output box, and the row stays as it
 is.
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
 a plugin under the `lyse.plugins` entry point and handles `analysis_done`. Each
-keeps its window and its handlers in lyse's process and runs its work in a
+keeps its embedded panel and its handlers in lyse's process and runs its work in a
 worker (G): labscript-agents its MCP server, labscript-optimization its session.
 `analysis_done` sends the worker a job with the shot and returns at once; the
 job's result, such as the optimizer's columns, comes back to the plugin, which
 adds them through the shots model's `update_rows`. The plugin reads the
-dataframe for its jobs through the same selection `lyse.data()` uses. A window
+dataframe for its jobs through the same selection `lyse.data()` uses. The panel
 shows its worker's live status, such as the optimizer's progress or the agent's
 activity during a tool call, by asking for it with a job on a timer. A Future's
-callbacks run on the worker's thread, so every window update goes to lyse's GUI
+callbacks run on the worker's thread, so every panel update goes to lyse's GUI
 thread through `inmain_later`. Their `lyse.Routine` subclasses and `.lyse`
 example folders go. The packages' owners port them (below).
 
@@ -331,7 +357,7 @@ futures, retires once the optimizer's session runs in a plugin worker.
   server in its plugin's worker, with the clean-up that ran when its lyse worker
   exited in that worker's `shutdown()`.
 - **labscript-optimization**, once A–C and G exist: its plugin (F); a field in its
-  window holding its configuration file's path, chosen with a file picker and
+  panel holding its configuration file's path, chosen with a file picker and
   saved and restored with the plugin's save data in lyse's configuration, so
   nothing is relative to a routine folder; its session in its plugin's worker;
   the hand-over from `analysis_done` a job sent without blocking, in place of

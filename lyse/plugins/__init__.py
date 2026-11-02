@@ -18,6 +18,7 @@ import logging
 import os
 
 from labscript_utils.labconfig import LabConfig
+from qtutils.qt import QtGui
 # Plugin modules import BasePlugin, callback, Callback and DEFAULT_PRIORITY
 # from here.
 from labscript_utils.plugins import (
@@ -58,3 +59,17 @@ class Areas:
 
     def add(self, plugin_name, contribution, data):
         self.layouts[contribution['area']].addWidget(contribution['widget'])
+
+
+class Tabs:
+    """Embed one panel per plugin beside Output. Contributions have ``widget``,
+    ``label`` and an optional QIcon ``icon``; lyse owns selection and persistence.
+    """
+
+    def __init__(self, widget):
+        self.widget = widget
+
+    def add(self, plugin_name, contribution, data):
+        panel = contribution['widget']
+        panel.setProperty('lyse_plugin_name', plugin_name)
+        self.widget.addTab(panel, contribution.get('icon', QtGui.QIcon()), contribution['label'])

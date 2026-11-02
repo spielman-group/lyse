@@ -18,10 +18,14 @@ import os
 import queue
 import socket
 import tempfile
+import time
 import types
 import unittest
+from pathlib import Path
 from unittest import mock
 
+import labscript_utils.h5_lock, h5py
+from labscript_utils.ls_zprocess import ProcessTree
 import pandas
 from qtutils.qt import QtWidgets
 
@@ -50,9 +54,9 @@ class RemoteTests(unittest.TestCase):
         self.scripts = [os.path.join(folder.name, name) for name in ['a.py', 'b.py']]
         for script in self.scripts:
             open(script, 'w').close()
-        patch = mock.patch.object(lyse.routines, 'start_worker', start_worker)
-        patch.start()
-        self.addCleanup(patch.stop)
+        self.worker_patch = mock.patch.object(lyse.routines, 'start_worker', start_worker)
+        self.worker_patch.start()
+        self.addCleanup(self.worker_patch.stop)
         exp_config = types.SimpleNamespace(get=lambda *args: folder.name, getboolean=lambda *args: False)
         app = self.app = types.SimpleNamespace(
             process_tree=None, output_box=types.SimpleNamespace(output=lambda *args, **kwargs: None))
@@ -110,6 +114,63 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(shots.filepaths, ['0.h5'])
         with self.assertRaisesRegex(ValueError, '2.h5'):
             self.call('rerun_shots', ['2.h5'])
+
+    def test_running_shots_cannot_be_removed_by_the_client_or_selection(self):
+        shots = self.app.filebox.shots_model
+        shots.add_files(['0.h5', '1.h5'], pandas.DataFrame({('filepath', ''): ['0.h5', '1.h5']}),
+                        ['remote'] * 2)
+        shots.start_attempt('0.h5')
+        with self.assertRaisesRegex(ValueError, '0.h5'):
+            self.call('remove_shots', ['0.h5', '1.h5'])
+        shots.finish_analysis(['0.h5'])
+        self.app.filebox.ui.tableView.selectRow(0)
+        # Analysis starts while the confirmation dialog serves GUI events.
+        self.app.question_dialog = lambda message: shots.start_attempt('0.h5')
+        with mock.patch.object(self.app, 'error_dialog', create=True) as warning:
+            shots.remove_selection()
+            self.assertTrue(warning.called)
+        self.assertEqual(shots.filepaths, ['0.h5', '1.h5'])
+        self.call('remove_shots', ['1.h5'])
+        self.assertFalse(shots.start_attempt('1.h5'))
+        shots.finish_analysis(['0.h5'])
+        self.call('remove_shots', ['0.h5'])
+        self.assertEqual(shots.filepaths, [])
+
+    def test_abort_stops_the_shot_even_when_the_worker_returns_success(self):
+        self.worker_patch.stop()
+        self.app.process_tree = ProcessTree.instance()
+        self.client = LyseClient('localhost', self.client.port, 60)
+        first, later = map(Path, self.scripts)
+        first.write_text(
+            'import lyse\nfrom pathlib import Path\nfrom qtutils.qt import QtCore\n'
+            'lyse.delay_results_return()\n'
+            # The timer runs only after the script has returned to the GUI event loop.
+            'QtCore.QTimer.singleShot(0, lambda: Path(__file__).with_suffix(".ready").touch())\n')
+        later.write_text('from pathlib import Path\nPath(__file__).with_suffix(".ran").touch()\n')
+        self.call('add_routines', 'singleshot', self.scripts)
+        for routine in self.app.singleshot_routinebox.routines:
+            self.addCleanup(routine.worker.wait, timeout=10)
+            self.addCleanup(routine.worker.kill)
+        shot = first.with_suffix('.h5')
+        with h5py.File(shot, 'w') as f:
+            f.create_group('globals')
+            f.attrs['sequence_id'] = '20261101T120000_abort'
+            f.attrs['run time'] = '20261101T120001'
+        self.call('add_shot', str(shot))
+        deadline = time.monotonic() + 30
+        while not first.with_suffix('.ready').exists():
+            self.assertLess(time.monotonic(), deadline)
+            self.call('get_analysis_paused')
+            time.sleep(.01)
+        self.call('abort')
+        while self.call('shot_status', [str(shot)])[str(shot)] in ('not done', 'awaiting multishot'):
+            self.assertLess(time.monotonic(), deadline)
+        self.assertEqual(self.call('shot_status', [str(shot)]), {str(shot): 'aborted'})
+        self.assertEqual(self.call('get_dataframe')['lyse'].iloc[0].dropna().to_dict(),
+                         {'a': 'aborted', 'b': 'not run'})
+        with h5py.File(shot, 'r') as f:
+            self.assertNotIn('results', f)
+        self.assertFalse(later.with_suffix('.ran').exists())
 
 
 if __name__ == '__main__':

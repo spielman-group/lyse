@@ -49,8 +49,22 @@
         <layout class="QVBoxLayout" name="verticalLayout_filebox"/>
        </widget>
       </widget>
-      <widget class="QWidget" name="verticalLayoutWidget_4">
-       <layout class="QVBoxLayout" name="verticalLayout_output_box"/>
+      <widget class="FingerTabWidget" name="plugin_tabs">
+       <property name="tabPosition">
+        <enum>QTabWidget::TabPosition::West</enum>
+       </property>
+       <property name="tabsClosable">
+        <bool>false</bool>
+       </property>
+       <widget class="QWidget" name="tab_output">
+        <property name="lyse_plugin_name" stdset="0">
+         <string notr="true"/>
+        </property>
+        <attribute name="title">
+         <string>Output</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="verticalLayout_output_box"/>
+       </widget>
       </widget>
      </widget>
     </item>
@@ -173,6 +187,14 @@
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>FingerTabWidget</class>
+   <extends>QTabWidget</extends>
+   <header>labscript_utils/qtwidgets/fingertab.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="../../Anaconda/Lib/site-packages/qtutils/icons/icons.qrc"/>
  </resources>

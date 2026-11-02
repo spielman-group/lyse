@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Output and plugin panels share nonclosable finger tabs in lyse's main window.
+  Plugins contribute a panel, label and optional icon through the `tabs` UI
+  context. The selected plugin tab is saved with the configuration; if it is
+  unavailable when loading, Output is selected instead.
+
 - A first plugin, `delete_repeated_shots`, off by default: once all
   analysis of a default or repeated shot from runmanager has ended with every
   routine done, it deletes the shot file and keeps its row, with its results.
@@ -7,10 +12,15 @@
 - A failing routine no longer stops analysis: the routines after it run, analysis
   is not paused, and the next shot is analysed. The option *Stop a shot at its first
   failure* skips a shot's later single-shot routines once one fails. How each
-  routine ended, `'done'`, `'error'`, `'aborted'` or `'not run'`, is written into
-  the shot file's `results/lyse` group and shown as `('lyse', <routine>)` columns.
+  routine ended, `'done'`, `'error'`, `'aborted'` or `'not run'`, is shown as
+  `('lyse', <routine>)` dataframe columns and retained by Save dataframe.
   **Re-run failed** analyses all failed, stopped and aborted shots again. A worker
   that dies during an analysis ends it as an error, where lyse used to wait for it.
+
+- Running shots cannot be removed, including every member of an executing
+  multishot batch, until its completion callbacks return. Queued shots and shots
+  waiting for a pass or retry remain removable. A shot whose file disappears is
+  marked deleted and still reports completion.
 
 - Each shot's status shows the state of its analysis: not done, awaiting the
   multishot routines, done, failed, or deleted. A shot whose single-shot routines

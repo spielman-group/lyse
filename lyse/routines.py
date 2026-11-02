@@ -305,20 +305,26 @@ class RoutineBox:
         return self._start_next_routine()
 
     @inmain_decorator()
-    def end_routine(self, routine, success):
+    def end_routine(self, routine, success, filepath):
         """Set the status of a routine that has run, and start the next enabled routine
         that has not run. After a failure, start it only if analysis is not paused and,
         in the single-shot routine box, the option to stop a shot at its first failure
-        is off. Return the next routine, or None, and the percentage of enabled routines
+        is off. Abort or a missing singleshot file always stops the attempt.
+        Return the next routine, or None, and the percentage of enabled routines
         that have run, or (None, None) if the routines after the failed one are not
         run."""
+        if routine.aborted:
+            routine.set_status('aborted')
+            return None, None
         if success:
             routine.set_status('done')
         else:
-            routine.set_status('aborted' if routine.aborted else 'error')
+            routine.set_status('error')
             if (self.app.filebox.analysis_paused
                     or not self.multishot and self.app.filebox.stop_on_failure):
                 return None, None
+        if filepath is not None and not os.path.exists(filepath):
+            return None, None
         enabled_routines = [r for r in self.routines if r.enabled()]
         if enabled_routines:
             n_run = len([r for r in enabled_routines if r.done or r.error])
@@ -336,8 +342,10 @@ class RoutineBox:
         while routine is not None:
             self.logger.info('running analysis routine %s', routine.shortname)
             success, updated_data = routine.do_analysis(filepath, paths)
+            next_routine, status_percent = self.end_routine(routine, success, filepath)
+            success = success and not routine.aborted
             outcome = {routine.name: 'done' if success else 'aborted' if routine.aborted else 'error'}
-            routine, status_percent = self.end_routine(routine, success)
+            routine = next_routine
             if success:
                 self.logger.debug('success')
             else:

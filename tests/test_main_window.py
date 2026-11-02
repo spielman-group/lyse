@@ -28,6 +28,7 @@ import pandas
 import labscript_utils.h5_lock, h5py
 from labscript_utils.labconfig import save_appconfig
 from labscript_utils.qtwidgets.leftclick import TableView
+from labscript_utils.qtwidgets.fingertab import FingerTabWidget
 from qtutils import UiLoader, inmain
 from qtutils.qt import QtGui, QtWidgets
 
@@ -194,13 +195,18 @@ class MainWindowTests(unittest.TestCase):
 
     def test_a_plugin_gets_its_saved_data_then_its_place_in_the_window(self):
         events, widget = [], QtWidgets.QLabel('probe')
+        panel = QtWidgets.QPushButton('Act')
+        panel.clicked.connect(lambda: events.append('clicked'))
 
         class Plugin(lyse.plugins.BasePlugin):
             def restore_save_data(self, data):
                 events.append(('restored', data))
 
             def get_ui_contributions(self):
-                return [{'context': 'areas', 'area': 'shots_toolbar', 'widget': widget}]
+                return [
+                    {'context': 'areas', 'area': 'shots_toolbar', 'widget': widget},
+                    {'context': 'tabs', 'widget': panel, 'label': 'Probe'},
+                ]
 
             def get_menu_contributions(self):
                 return [{'location': 'menubar', 'path': 'Probe', 'name': 'Act', 'action': lambda: None}]
@@ -212,6 +218,7 @@ class MainWindowTests(unittest.TestCase):
         module.Plugin = Plugin
         loader = UiLoader()
         loader.registerCustomWidget(TableView)
+        loader.registerCustomWidget(FingerTabWidget)
         app = types.SimpleNamespace(
             ui=loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui')),
             filebox=types.SimpleNamespace(
@@ -229,6 +236,11 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(events, [('restored', {'n': 3}), ('set up', 'shots')])
         self.assertIs(app.filebox.ui.horizontalLayout_shots_toolbar_plugins.itemAt(0).widget(), widget)
         self.assertIn('Probe', [action.text() for action in app.ui.menuBar.actions()])
+        tabs = app.ui.plugin_tabs
+        self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ['Output', 'Probe'])
+        tabs.setCurrentWidget(panel)
+        panel.click()
+        self.assertEqual(events[-1], 'clicked')
 
     def test_a_plugins_settings_are_saved_and_loaded_and_quitting_closes_it(self):
         closed = []
@@ -253,14 +265,22 @@ class MainWindowTests(unittest.TestCase):
                 reorder_routines=lambda filepaths: None, update_select_all_checkstate=lambda: None)
 
         app = object.__new__(self.main.Lyse)
+        loader = UiLoader()
+        loader.registerCustomWidget(FingerTabWidget)
         app.__dict__.update(
-            ui=UiLoader().load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui')),
+            ui=loader.load(os.path.join(lyse.utils.LYSE_DIR, 'user_interface/main.ui')),
             singleshot_routinebox=a_box(), multishot_routinebox=a_box(), qapplication=self.qapplication,
             filebox=types.SimpleNamespace(last_opened_shots_folder='', analysis_paused=False,
                                           stop_on_failure=False, set_stop_on_failure=lambda stop: None),
             last_save_config_file=None, last_save_data=None, mounted_plugins=[])
         app.init_config_window_title()
         plugin = Plugin()
+        tabs = app.ui.plugin_tabs
+        panels = lyse.plugins.Tabs(tabs)
+        panel = QtWidgets.QLabel('probe')
+        panels.add('probe', {'widget': panel, 'label': 'Probe'}, {})
+        panels.add('other', {'widget': QtWidgets.QLabel('other'), 'label': 'Other'}, {})
+        tabs.setCurrentWidget(panel)
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.object(lyse.plugins.manager, 'plugins', {'probe': plugin}):
             config = os.path.join(folder, 'lyse.toml')
@@ -269,8 +289,15 @@ class MainWindowTests(unittest.TestCase):
             cancel = QtWidgets.QMessageBox.StandardButton.Cancel
             with mock.patch.object(QtWidgets.QMessageBox, 'question', return_value=cancel):
                 self.assertFalse(app.offer_to_save_changes('Quit lyse'))
+            tabs.tabBar().moveTab(1, 2)
+            tabs.setCurrentIndex(0)
             app.load_configuration(config, restore_window_geometry=False)
             self.assertEqual(plugin.settings, {'n': 3})
+            self.assertIs(tabs.currentWidget(), panel)
+            tabs.removeTab(tabs.indexOf(panel))
+            tabs.setCurrentIndex(1)
+            app.load_configuration(config, restore_window_geometry=False)
+            self.assertEqual(tabs.currentIndex(), 0)
             self.assertTrue(app.on_close_event())
         self.assertTrue(app.filebox.quitting)
         self.assertEqual(closed, [True])
@@ -294,7 +321,6 @@ class MainWindowTests(unittest.TestCase):
             path = os.path.join(folder, 'default.h5')
             with h5py.File(path, 'w') as f:
                 f.attrs['sequence_index'] = -1
-            plugin.on_shot_received(path, 'runmanager')
             plugin.on_analysis_done(path, {'fit': 'done'})
             self.assertTrue(os.path.exists(path))
 

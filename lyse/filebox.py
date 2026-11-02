@@ -429,12 +429,14 @@ class DataFrameModel(QtCore.QObject):
         self.status_percent = []
         self.states = []
         self.row_number_by_filepath = {}
+        # How lyse received each retained row; loading a dataframe is a new receipt.
+        self.sources = {}
         # No row before this one is not done:
         self._first_incomplete = 0
-        # The shot whose single-shot routines are running, the order in which the shots
-        # awaiting multishot came to it, and the shots to set not done once their
-        # attempt ends:
-        self.analysing = None
+        # Shots reserved by the executing phase, through its terminal callbacks:
+        self.analysing = set()
+        # The order in which shots awaiting multishot came to it, and the shots to set
+        # not done once their attempt ends:
         self._awaiting_since = {}
         self._awaiting_count = itertools.count()
         self._rerun_after_attempt = set()
@@ -519,10 +521,17 @@ class DataFrameModel(QtCore.QObject):
             return
         if confirm and not self.app.question_dialog(f"Remove {len(filepaths)} shots?"):
             return
-        self.remove_shots(filepaths)
+        try:
+            self.remove_shots(filepaths)
+        except ValueError as e:
+            self.app.error_dialog(str(e))
 
+    @inmain_decorator()
     def remove_shots(self, filepaths):
         selected_rows = self._rows_named(filepaths)
+        running = self.analysing.intersection(filepaths)
+        if running:
+            raise ValueError(f'Cannot remove shots while analysis is running: {", ".join(sorted(running))}')
         if not selected_rows:
             return
         # The view reads the dataframe as it draws, so it changes with the lists inside
@@ -538,11 +547,10 @@ class DataFrameModel(QtCore.QObject):
         self.dataframe.index = pandas.Index(range(len(self.dataframe)))
         removed = set(selected_rows)
         for filepath in filepaths:
+            self.sources.pop(filepath, None)
             self._awaiting_since.pop(filepath, None)
             self._rerun_after_attempt.discard(filepath)
             self._pass_failed.discard(filepath)
-        if self.analysing in filepaths:
-            self.analysing = None
         for values in [self.filepaths, self.status_percent, self.states]:
             values[:] = [value for row, value in enumerate(values) if row not in removed]
         if contiguous:
@@ -570,7 +578,7 @@ class DataFrameModel(QtCore.QObject):
                 continue
             # A shot a failed pass left awaiting the next has no attempt under way:
             awaiting = self.states[row] == 'awaiting multishot' and filepath not in self._pass_failed
-            if filepath == self.analysing or awaiting:
+            if filepath in self.analysing or awaiting:
                 self._rerun_after_attempt.add(filepath)
             else:
                 self._awaiting_since.pop(filepath, None)
@@ -585,12 +593,23 @@ class DataFrameModel(QtCore.QObject):
 
     @inmain_decorator()
     def start_attempt(self, filepath):
-        self.analysing = filepath
+        if filepath not in self.row_number_by_filepath:
+            return False
+        self.analysing.add(filepath)
+        return True
+
+    @inmain_decorator()
+    def finish_analysis(self, filepaths):
+        """Release the phase's shots once its callbacks have returned."""
+        self.analysing.difference_update(filepaths)
+        rerun = [path for path in filepaths if path in self._rerun_after_attempt
+                 and (path not in self._awaiting_since or path in self._pass_failed)]
+        self._rerun_after_attempt.difference_update(rerun)
+        self.mark_not_done(rerun)
 
     @inmain_decorator()
     def await_multishot(self, filepath):
         """Leave a shot whose single-shot routines have run awaiting the next pass."""
-        self.analysing = None
         self._pass_failed.discard(filepath)
         if filepath in self.row_number_by_filepath:
             self._awaiting_since[filepath] = next(self._awaiting_count)
@@ -602,10 +621,16 @@ class DataFrameModel(QtCore.QObject):
         return sorted(self._awaiting_since, key=self._awaiting_since.get)
 
     @inmain_decorator()
+    def start_multishot(self):
+        """Select and reserve the waiting batch together, on the GUI thread."""
+        paths = self.awaiting_multishot()
+        self.analysing.update(paths)
+        return paths
+
+    @inmain_decorator()
     def end_attempt(self, filepath, state):
         """End a shot's attempt in state, which leaves it awaiting multishot after a
         failed pass, or not done if a re-run was asked for during the attempt."""
-        self.analysing = None
         if filepath not in self.row_number_by_filepath:
             return
         if filepath in self._rerun_after_attempt:
@@ -660,8 +685,6 @@ class DataFrameModel(QtCore.QObject):
     def mark_deleted(self, filepath, warn=True):
         """Mark a shot whose file is gone, which ends any attempt of it and keeps it
         out of analysis, warning that it vanished unless warn is False."""
-        if self.analysing == filepath:
-            self.analysing = None
         # On the GUI thread, so the row cannot be removed between this check and its use:
         row_number = self.row_number_by_filepath.get(filepath)
         if row_number is None or self.states[row_number] == 'deleted':
@@ -907,6 +930,7 @@ class DataFrameModel(QtCore.QObject):
             self.status_percent.append(0)
             self.states.append('done' if done else 'not done')
             self.row_number_by_filepath[filepath] = row_number
+            self.sources[filepath] = source_by_filepath[filepath]
         if not done:
             self._first_incomplete = min(self._first_incomplete, first_new_row)
         self._model.endInsertRows()
@@ -1256,62 +1280,48 @@ class FileBox:
     def do_singleshot_analysis(self, filepath):
         """Begin the shot's attempt: run its single-shot routines, then leave it
         awaiting multishot, or, with no multishot routine active, end the attempt."""
-        # A shot file deleted before analysis would make user code raise and fill the
-        # output box with errors, so check first. It can still be deleted after this
-        # check, which the 'error' branch below handles.
-        if not os.path.exists(filepath):
-            self.shots_model.mark_deleted(filepath)
+        if not self.shots_model.start_attempt(filepath):
             return
-        self.shots_model.start_attempt(filepath)
-        self.to_singleshot.put(filepath)
-        previous_status_percent = None
-        outcomes = {}
-        while True:
-            signal, status_percent, updated_data, outcome = self.from_singleshot.get()
-            if updated_data:
-                self.shots_model.update_rows(updated_data)
-            outcomes.update(outcome)
-            # Update the status percent for the the row on which analysis is actually
-            # running:
-            if status_percent is not None and status_percent != previous_status_percent:
-                self.shots_model.set_status_percent(filepath, status_percent)
-                previous_status_percent = status_percent
-            if signal == 'progress':
-                continue
-            if signal not in ('done', 'error'):
-                raise ValueError(f'invalid signal {signal}')
-            break
-        if signal == 'error' and not os.path.exists(filepath):
-            # An error is no surprise once the file has gone:
-            self.shots_model.mark_deleted(filepath)
-            return
-        # A new attempt's outcomes replace all those the shot had:
-        self.record_outcomes(filepath, outcomes)
-        self.fire_event('singleshot_done', filepath, outcomes)
-        if any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
-            self._singleshot_outcomes[filepath] = outcomes
-            self.shots_model.await_multishot(filepath)
-        else:
-            self.shots_model.end_attempt(filepath, outcome_state(outcomes))
-            self.fire_event('analysis_done', filepath, outcomes)
-
-    def record_outcomes(self, filepath, outcomes, keep=()):
-        """Put outcomes in, under its lock, the shot file's results/lyse group, and in the
-        shot's row, in place of every outcome already there but those named in keep. A
-        failure to write the file is reported, and the row still gets the outcomes."""
-        replaced = set()
         try:
-            with h5py.File(filepath, 'a') as f:
-                group = f.require_group('results/lyse')
-                replaced = set(group.attrs) - set(keep)
-                for name in replaced:
-                    del group.attrs[name]
-                for name, outcome in outcomes.items():
-                    group.attrs[name] = outcome
-        except Exception as e:
-            self.app.output_box.output(
-                f'Warning: The routines\' outcomes were not written into {filepath}: {e}\n', red=True)
-        row_data = {('lyse', name): np.nan for name in replaced}
+            outcomes = {}
+            if os.path.exists(filepath):
+                self.to_singleshot.put(filepath)
+                previous_status_percent = None
+                while True:
+                    signal, status_percent, updated_data, outcome = self.from_singleshot.get()
+                    if updated_data:
+                        self.shots_model.update_rows(updated_data)
+                    outcomes.update(outcome)
+                    if status_percent is not None and status_percent != previous_status_percent:
+                        self.shots_model.set_status_percent(filepath, status_percent)
+                        previous_status_percent = status_percent
+                    if signal == 'progress':
+                        continue
+                    if signal not in ('done', 'error'):
+                        raise ValueError(f'invalid signal {signal}')
+                    break
+            self.record_outcomes(filepath, outcomes)
+            missing = not os.path.exists(filepath)
+            if missing:
+                self.shots_model.mark_deleted(filepath)
+            self.fire_event('singleshot_done', filepath, outcomes)
+            if missing:
+                self.fire_event('analysis_done', filepath, outcomes)
+            elif any(routine.enabled() for routine in self.app.multishot_routinebox.routines):
+                self._singleshot_outcomes[filepath] = outcomes
+                self.shots_model.await_multishot(filepath)
+            else:
+                self.shots_model.end_attempt(filepath, outcome_state(outcomes))
+                self.fire_event('analysis_done', filepath, outcomes)
+        finally:
+            self.shots_model.finish_analysis([filepath])
+
+    @inmain_decorator()
+    def record_outcomes(self, filepath, outcomes, keep=()):
+        """Replace the shot's dataframe outcomes, except those named in keep."""
+        # Nested results pad outcome labels, but update_rows takes (group, name) keys.
+        row_data = {label[:2]: np.nan for label in self.shots_model.dataframe.columns
+                    if label[0] == 'lyse' and label[1] not in keep}
         row_data.update({('lyse', name): outcome for name, outcome in outcomes.items()})
         self.shots_model.update_rows({filepath: row_data})
 
@@ -1319,40 +1329,47 @@ class FileBox:
         """Run a pass on the shots awaiting multishot, which ends their attempts. After
         a failed pass they await the next one."""
         self.multishot_requested = False
-        paths = []
-        for filepath in self.shots_model.awaiting_multishot():
-            if os.path.exists(filepath):
-                paths.append(filepath)
-            else:
-                # Its attempt ends here, and the routines are not given its path:
-                self.shots_model.mark_deleted(filepath)
-                self.fire_event('analysis_done', filepath, self._singleshot_outcomes.pop(filepath, {}))
-        self.to_multishot.put(paths)
-        outcomes = {}
-        while True:
-            signal, status_percent, updated_data, outcome = self.from_multishot.get()
-            if updated_data:
-                self.shots_model.update_rows(updated_data)
-            outcomes.update(outcome)
-            if signal in ('done', 'error'):
-                break
-        for filepath in paths:
-            # In place of an earlier pass's, beside this attempt's single-shot outcomes:
-            self.record_outcomes(filepath, outcomes, keep=self._singleshot_outcomes.get(filepath, {}))
-        self.fire_event('multishot_done', paths, outcomes)
-        for filepath in paths:
-            shot_outcomes = {**self._singleshot_outcomes.get(filepath, {}), **outcomes}
+        reserved = self.shots_model.start_multishot()
+        try:
+            paths = []
+            for filepath in reserved:
+                if os.path.exists(filepath):
+                    paths.append(filepath)
+                else:
+                    # Its attempt ends here, and the routines are not given its path:
+                    self.shots_model.mark_deleted(filepath)
+                    self.fire_event('analysis_done', filepath, self._singleshot_outcomes.pop(filepath, {}))
+            self.to_multishot.put(paths)
+            outcomes = {}
+            while True:
+                signal, status_percent, updated_data, outcome = self.from_multishot.get()
+                if updated_data:
+                    self.shots_model.update_rows(updated_data)
+                outcomes.update(outcome)
+                if signal in ('done', 'error'):
+                    break
+            for filepath in paths:
+                # In place of an earlier pass's, beside this attempt's single-shot outcomes:
+                self.record_outcomes(filepath, outcomes, keep=self._singleshot_outcomes.get(filepath, {}))
+            self.fire_event('multishot_done', paths, outcomes)
+            for filepath in paths:
+                shot_outcomes = {**self._singleshot_outcomes.get(filepath, {}), **outcomes}
+                if not os.path.exists(filepath):
+                    self._singleshot_outcomes.pop(filepath, None)
+                    self.shots_model.mark_deleted(filepath)
+                elif signal == 'done':
+                    self._singleshot_outcomes.pop(filepath, None)
+                    self.shots_model.end_attempt(filepath, outcome_state(shot_outcomes))
+                else:
+                    self.shots_model.end_attempt(filepath, 'awaiting multishot')
+                self.fire_event('analysis_done', filepath, shot_outcomes)
             if signal == 'done':
-                del self._singleshot_outcomes[filepath]
-                self.shots_model.end_attempt(filepath, outcome_state(shot_outcomes))
-            else:
-                self.shots_model.end_attempt(filepath, 'awaiting multishot')
-            self.fire_event('analysis_done', filepath, shot_outcomes)
-        if signal == 'done':
-            self.multishot_required = False
-            return True
-        # Unless the routines after the failed one did not run, as when analysis is
-        # paused, in which case all run on resuming:
-        if status_percent is not None:
-            self.multishot_required = False
-        return False
+                self.multishot_required = False
+                return True
+            # Unless the routines after the failed one did not run, as when analysis is
+            # paused, in which case all run on resuming:
+            if status_percent is not None:
+                self.multishot_required = False
+            return False
+        finally:
+            self.shots_model.finish_analysis(reserved)

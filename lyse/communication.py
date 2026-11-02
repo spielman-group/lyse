@@ -150,7 +150,8 @@ class LyseServer(ZMQServer):
 
     @inmain_decorator()
     def handle_remove_shots(self, filepaths):
-        """Remove shots from lyse's table; their files are kept."""
+        """Remove shots from lyse's table; their files are kept. Running shots
+        cannot be removed."""
         self.app.filebox.shots_model.remove_shots([shared_drive.path_to_local(path) for path in filepaths])
 
     @inmain_decorator()

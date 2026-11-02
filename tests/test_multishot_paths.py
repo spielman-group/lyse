@@ -184,6 +184,25 @@ class LysePathsTests(unittest.TestCase):
             ('analysis_done', path, {**singleshot, **multishot}),
         ])
 
+    def test_a_running_batch_is_protected_until_all_completion_callbacks_finish(self):
+        first, second, waiting = [self.analyse(f'{n}.h5') for n in range(3)]
+        shots = self.filebox.shots_model
+        shots.remove_shots([waiting])
+
+        def completed(name, *args):
+            self.events.append((name, *args))
+            if name in ('multishot_done', 'analysis_done'):
+                for path in (first, second):
+                    with self.assertRaisesRegex(ValueError, 'running'):
+                        shots.remove_shots([path])
+                if name == 'analysis_done' and args[0] == first:
+                    shots.mark_not_done([first])
+        self.filebox.fire_event = completed
+        self.multishot_pass()
+        self.assertEqual(self.state(first), 'not done')
+        shots.remove_shots([first, second])
+        self.assertEqual(shots.filepaths, [])
+
     def test_a_failed_routine_is_recorded_and_the_rest_run_unless_the_shot_stops(self):
         for stop, state, later in [(False, 'failed', 'done'), (True, 'stopped', 'not run')]:
             with self.subTest(stop=stop):
@@ -195,20 +214,29 @@ class LysePathsTests(unittest.TestCase):
                 self.assertFalse(self.filebox.analysis_paused)
                 outcomes = {'singleshot': 'error', 'later': later, 'first': 'done', 'second': 'done'}
                 with h5py.File(path, 'r') as f:
-                    self.assertEqual(dict(f['results/lyse'].attrs), outcomes)
+                    self.assertNotIn('lyse', f.get('results', {}))
                 row = self.filebox.shots_model.row_number_by_filepath[path]
                 self.assertEqual(self.filebox.shots_model.dataframe['lyse'].iloc[row].to_dict(), outcomes)
 
     def test_a_new_attempt_replaces_the_outcomes_the_shot_had(self):
+        self.addCleanup(setattr, lyse.utils.worker, 'spinning_top', lyse.spinning_top)
+        lyse.utils.worker.spinning_top = True
+        with open(os.path.join(self.folder, 'singleshot.py'), 'a') as f:
+            f.write("lyse.Run(lyse.path).save_result('profile', {'peak': {'height': 3.0}}, "
+                    "group='results/camera')\n")
         path = self.analyse('1.h5')
         self.multishot_pass()
-        # As a routine since removed left it, before lyse restarted:
+        self.filebox.shots_model.update_rows({path: {('lyse', 'gone'): 'error'}})
+        # Existing HDF data belongs to user analysis and is left alone.
         with h5py.File(path, 'a') as f:
-            f['results/lyse'].attrs['gone'] = 'error'
+            f.require_group('results/lyse').attrs['kept'] = 'user result'
         lyse.filebox.FileBox.do_singleshot_analysis(self.filebox, path)
         self.multishot_pass()
         with h5py.File(path, 'r') as f:
-            self.assertNotIn('gone', f['results/lyse'].attrs)
+            self.assertEqual(dict(f['results/lyse'].attrs), {'kept': 'user result'})
+        frame = self.filebox.shots_model.dataframe
+        self.assertTrue(pandas.isna(frame['lyse', 'gone'].squeeze()))
+        self.assertEqual(frame['camera', 'profile', 'peak', 'height'].iloc[0], 3.0)
         self.assertEqual(self.state(path), 'done')
 
     def test_a_rerun_during_an_attempt_waits_for_it_to_end(self):
@@ -229,6 +257,28 @@ class LysePathsTests(unittest.TestCase):
     def test_a_singleshot_routine_sees_none(self):
         self.analyse('1.h5')
         self.assertEqual(self.calls('singleshot.py'), [None])
+
+    def test_a_missing_file_stops_its_shot_and_still_reports_completion(self):
+        later = os.path.join(self.folder, 'later-ran')
+        with open(os.path.join(self.folder, 'later.py'), 'w') as f:
+            f.write('open("later-ran", "w").close()\n')
+        for fails in (False, True):
+            with self.subTest(fails=fails):
+                with open(os.path.join(self.folder, 'singleshot.py'), 'w') as f:
+                    f.write('import os, lyse\nos.remove(lyse.path)\n'
+                            + ('raise RuntimeError("file gone")\n' if fails else ''))
+                path = self.analyse(f'{fails}.h5')
+                outcomes = {'singleshot': 'error' if fails else 'done', 'later': 'not run'}
+                self.assertEqual(self.state(path), 'deleted')
+                self.assertFalse(os.path.exists(path))
+                self.assertFalse(os.path.exists(later))
+                self.assertEqual([event for event in self.events if event[1] == path], [
+                    ('shot_received', path, 'remote'),
+                    ('singleshot_done', path, outcomes), ('analysis_done', path, outcomes),
+                ])
+                self.assertEqual(self.filebox.shots_model.dataframe['lyse'].iloc[-1].dropna().to_dict(),
+                                 outcomes)
+                self.filebox.shots_model.remove_shots([path])
 
 
 class DeadWorkerTests(unittest.TestCase):
@@ -268,7 +318,7 @@ class FailedPassTests(unittest.TestCase):
             to_multishot=queue.Queue(), from_multishot=queue.Queue(),
             shots_model=types.SimpleNamespace(
                 get_first_incomplete=lambda: incomplete.pop() if incomplete else None,
-                awaiting_multishot=lambda: []),
+                start_multishot=lambda: [], finish_analysis=lambda paths: None),
             do_singleshot_analysis=singleshot,
         )
         box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)
@@ -302,7 +352,7 @@ class FailedPassTests(unittest.TestCase):
             to_multishot=queue.Queue(), from_multishot=queue.Queue(),
             shots_model=types.SimpleNamespace(
                 get_first_incomplete=lambda: incomplete.pop() if incomplete else None,
-                awaiting_multishot=lambda: []),
+                start_multishot=lambda: [], finish_analysis=lambda paths: None),
             do_singleshot_analysis=singleshot,
         )
         box.do_multishot_analysis = types.MethodType(lyse.filebox.FileBox.do_multishot_analysis, box)

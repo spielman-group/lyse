@@ -55,16 +55,34 @@ class DeletePluginTests(unittest.TestCase):
             app, QtWidgets.QTableView(), types.SimpleNamespace(getboolean=lambda *args: False))
         shots.add_files(list(paths.values()), pandas.DataFrame({
             ('filepath', ''): list(paths.values()), ('fit', 'atoms'): [100.0] * len(paths),
-        }), ['remote'] * len(paths), done=True)
+            ('sequence_index', ''): [info[1] for info in shots_made.values()],
+            ('run repeat', ''): [info[2] for info in shots_made.values()],
+        }), [info[0] for info in shots_made.values()], done=True)
         plugin = Plugin()
         plugin.plugin_setup_complete({'shots_model': shots, 'output_box': app.output_box})
         for name, (source, _, _, outcome) in shots_made.items():
-            plugin.on_shot_received(paths[name], source)
             plugin.on_analysis_done(paths[name], {'fit': outcome})
         self.assertEqual({name: os.path.exists(path) for name, path in paths.items()},
                          {'default': False, 'repeat': False, 'first': True, 'failed': True, 'by hand': True})
         self.assertEqual(shots.states, ['deleted', 'deleted', 'done', 'done', 'done'])
         self.assertEqual(list(shots.dataframe['fit', 'atoms']), [100.0] * len(paths))
+        # A retained row can be analysed again, without a receipt reaching this plugin.
+        plugin = Plugin()
+        plugin.plugin_setup_complete({'shots_model': shots, 'output_box': app.output_box})
+        shots.update_rows({paths['first']: {('run repeat', ''): 1}})
+        plugin.on_analysis_done(paths['first'], {'fit': 'done'})
+        self.assertFalse(os.path.exists(paths['first']))
+        # Reusing the path through a manual receipt or a dataframe grants no eligibility.
+        for source in ('dialog', 'dataframe'):
+            shots.remove_shots([paths['first']])
+            with h5py.File(paths['first'], 'w') as f:
+                f.attrs['sequence_index'], f.attrs['run repeat'] = -1, 1
+            shots.add_files([paths['first']], pandas.DataFrame({
+                ('filepath', ''): [paths['first']], ('sequence_index', ''): [-1],
+                ('run repeat', ''): [1],
+            }), [source], done=True)
+            plugin.on_analysis_done(paths['first'], {'fit': 'done'})
+            self.assertTrue(os.path.exists(paths['first']))
 
     def test_its_checkbox_shows_its_state_however_it_is_set(self):
         plugin = Plugin()
