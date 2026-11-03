@@ -11,13 +11,8 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-"""lyse's plugins: each folder here, and each installed package registered under
-the ``lyse.plugins`` entry point, loaded if its flag in the labconfig's
-``[lyse/plugins]`` section is true."""
-import logging
-import os
-
-from labscript_utils.labconfig import LabConfig
+"""Plugin interfaces and UI contexts. lyse discovers enabled plugins at application
+startup, from folders here and installed ``lyse.plugins`` entry points."""
 from qtutils.qt import QtGui
 # Plugin modules import BasePlugin, callback, Callback and DEFAULT_PRIORITY
 # from here.
@@ -25,27 +20,8 @@ from labscript_utils.plugins import (
     DEFAULT_PRIORITY,
     BasePlugin,
     Callback,
-    PluginManager,
     callback,
 )
-from lyse.utils import LYSE_DIR
-
-PLUGINS_DIR = os.path.join(LYSE_DIR, 'plugins')
-
-logger = logging.getLogger('lyse.plugins')
-
-PLUGIN_CONFIG_SECTION = 'lyse/plugins'
-
-manager = PluginManager(
-    'lyse.plugins',
-    PLUGINS_DIR,
-    LabConfig(),
-    PLUGIN_CONFIG_SECTION,
-    (),
-    logger,
-    entry_point_group='lyse.plugins',
-)
-modules = manager.discover_modules()
 
 
 class Areas:

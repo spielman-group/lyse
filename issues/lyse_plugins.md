@@ -6,6 +6,11 @@ and when its analysis ends; analysis that a failing routine does not stop; and,
 as the first plugin, one that deletes analysed default and repeated shots.
 labscript-agents and labscript-optimization become such plugins.
 
+The shared parent state machine and child process are implemented in
+`labscript_utils.workers`, used by BLACS and the optimizer. The agent plugin
+uses background threads in lyse's process. This document describes the current
+software; hardware checks are outside the offline campaign.
+
 ## Requirements
 
 ### Remote interface
@@ -110,18 +115,21 @@ labscript-agents and labscript-optimization become such plugins.
     currently offline. Status remains readable through `outstanding`.
     Already-submitted shots continue and their outcomes remain accounted for.
     This is a full port: nothing of their GUI-routine forms remains, no
-    `lyse.Routine` subclass and no `.lyse` folder in their examples. Each keeps
-    its panel and its call points in lyse's process and does its work in a
-    worker of its own (14).
+    `lyse.Routine` subclass and no `.lyse` folder in their examples. Both panels
+    run on lyse's GUI thread. The optimizer's session runs in a worker process
+    (14); the agent's MCP server, tool execution and batch watcher use background
+    threads in lyse's process.
 
 ### Plugin workers
 
-14. Any plugin can run its work in worker processes of its own, as a BLACS
-    device tab does, so that a crash or slow work stays out of lyse. The plugin
-    starts its workers, sends them jobs, restarts and ends them; sending a job
-    does not block the sender, and the job's result reaches the plugin when the
-    worker has done it. lyse ends a plugin's workers when it closes the plugin.
-    The first plugin (10) needs no worker and has none.
+14. A plugin can use the same shared parent and child implementation as a BLACS
+    device tab to run work in separate processes. Its GUI-thread generator
+    states yield jobs and resume with their results while Qt continues serving
+    events. The parent creates and ends workers; a restart completes termination
+    before creating replacements. At quit, lyse calls the plugin's `close()` on
+    a background thread while its GUI thread keeps serving, so worker cleanup
+    can wait without blocking Qt. The first plugin (10) needs no worker and has
+    none.
 
 ## Architecture
 
@@ -149,11 +157,12 @@ and `get_dataframe` exist; `add_shot` gains the shot's source, `'remote'` by
 default, which runmanager's submission sets to `'runmanager'`. `shot_status` is
 keyed by path, where runmanager's is keyed by shot ID.
 
-**B. Plugin host** (4, 6, 11). `lyse/plugins/__init__.py` builds a
-`labscript_utils.plugins.PluginManager` as `blacs/plugins/__init__.py` does:
+**B. Plugin host** (4, 6, 11). During startup, lyse creates and owns a
+`labscript_utils.plugins.PluginManager` using its existing labconfig:
 plugin folders in `lyse/plugins/`, installed packages through the entry point
-group `lyse.plugins`, flags in the labconfig's `[lyse/plugins]`. Menu items come
-from `get_menu_contributions`, rendered by a `MenuContext` on which lyse
+group `lyse.plugins`, flags in the labconfig's `[lyse/plugins]`. Importing
+`lyse.plugins` supplies interfaces and UI contexts without discovering plugins.
+Menu items come from `get_menu_contributions`, rendered by a `MenuContext` on which lyse
 registers its menu bar as the `'menubar'` location, as BLACS does. Widgets come
 from `get_ui_contributions` through a context lyse registers as `'areas'`, a
 class with `add(plugin_name, contribution, data)` after BLACS's notifications:
@@ -176,14 +185,14 @@ routine boxes. At start-up lyse builds its boxes, whose threads wait for shots,
 then instantiates the plugins, restores their data from the configuration it
 autoloads, sets up the contexts and calls `plugin_setup_complete`, and only then
 starts its server, so no call precedes setup. Loading a configuration later
-restores plugin data again, as BLACS does. Plugins start their workers (G) in
-`plugin_setup_complete`, before the server. At quit, after the save prompt, lyse
+restores plugin data again, as BLACS does. Plugins start their background services
+in `plugin_setup_complete`, before the server; the optimizer queues its worker's
+initialisation there (G). At quit, after the save prompt, lyse
 fires no more calls, starts no more analysis, and ends the routines' workers,
 whose locks a pending deletion may wait on; then it calls the plugins' `close()`
 from a thread of its own while its GUI thread keeps serving, so that a `close()`
 may wait for its workers to end (G) and for its own threads, which may need the
-GUI thread. Plugin data is saved in lyse's configuration. Nothing new is needed
-in labscript-utils.
+GUI thread. Plugin data is saved in lyse's configuration.
 
 **C. Call points and a shot's attempt** (5, 7). An *attempt* of a shot begins
 when the analysis loop takes it, a new shot or one a re-run set not done. Its
@@ -268,68 +277,69 @@ is.
 
 **F. labscript-agents and labscript-optimization** (13). Each package registers
 a plugin under the `lyse.plugins` entry point and handles `analysis_done`. Each
-keeps its embedded panel and its handlers in lyse's process and runs its work in a
-worker (G): labscript-agents its MCP server, labscript-optimization its session.
-`analysis_done` sends the worker a job with the shot and returns at once; the
-job's result, such as the optimizer's columns, comes back to the plugin, which
-adds them through the shots model's `update_rows`. The plugin reads the
-dataframe for its jobs through the same selection `lyse.data()` uses. The panel
-shows its worker's live status, such as the optimizer's progress or the agent's
-activity during a tool call, by asking for it with a job on a timer. A Future's
-callbacks run on the worker's thread, so every panel update goes to lyse's GUI
-thread through `inmain_later`. Their `lyse.Routine` subclasses and `.lyse`
-example folders go. The packages' owners port them (below).
+keeps its embedded panel in lyse's GUI thread. The analysis callback runs on
+lyse's analysis thread and reads the shot's dataframe row through `inmain`.
 
-**G. Plugin workers** (14). The capability is labscript-utils', for plugins in
-general, in a new module `labscript_utils.workers`, modelled on BLACS's tab
-workers (`blacs/tab_base_classes.py`), whose code splits into a shared part and
-BLACS's own:
+The optimizer's `Plugin(BasePlugin, WorkersMixin)` creates a shared worker
+process in `plugin_setup_complete`. Its configuration, session, learners and
+runmanager interface live in that child. `analysis_done` captures the shot's
+cost and queues an `observe` state without waiting for the child. That state
+yields `queue_work`, then resumes on the GUI thread to apply returned columns
+through the shots model's `update_rows` and update the panel. A timer queues
+status states to show progress. Start, Pause and Reset use the same state
+queue; generation checks discard results from a session that has been reset.
+The configuration file is chosen in the panel and its path is saved with
+lyse's configuration. During `close()`, the plugin stops its timer and state
+machine on the GUI thread, then finalises its worker on lyse's background
+plugin-close thread.
 
-- Shared, the worker side: `Worker(Process)` with `init()`, `shutdown()` and job
-  methods; its `run`, which sets up logging, the excepthook and the zlock name
-  and makes each workerarg an attribute; its `mainloop`, which runs jobs in the
-  main thread, receives on a thread of its own and replies to a job twice, the
-  method found, then success, message and results, or once when the method is
-  missing; and its quit: the `'quit'` message, the interrupt of a running job,
-  `shutdown()`, `kill_lock.exit_when_released` and the heartbeat's parent death.
-- Shared, the parent side, a mixin, `WorkersMixin`: `create_worker(name,
-  WorkerClass, workerargs)`, the class or its import path, through
-  `ProcessTree.instance()` with the host's output box; sending a job and reading
-  its replies; `end_workers()`, with `'quit'` and then a kill after
-  `WORKER_QUIT_TIMEOUT`; and `restart_worker(name)`, an end, then a create. The
-  `WORKER_*_TIMEOUT` constants move into the module.
-- BLACS's own, which stays in `Tab` and its `Worker` subclass: the state
-  machine (`define_state`, the event queue, `queue_work` yielded from a state),
-  the connection table's workerargs, remote process clients, the tab's display
-  of its workers, and `_transition_to_buffered`'s path conversion.
+The agent plugin uses threads rather than G's worker processes. Its MCP server
+runs an asynchronous loop on a background thread; tool calls execute on worker
+threads, and a separate batch watcher checks submissions. `analysis_done`
+publishes a result event for an engaged shot and wakes the watcher. Activity
+updates reach the panel through `inmain_later`. Its `close()` stops the link
+indicator, signals the batch watcher to stop, and stops the MCP server.
 
-What plugins need first: the shared worker base and `WorkersMixin`, with
-`submit_job(worker_name, method_name, *args, **kwargs)`, which only queues the
-job and returns a `concurrent.futures.Future`, in place of the state machine.
-One thread per worker takes its jobs in order, sends each and reads its replies,
-and completes its Future, at once with the error when the lookup fails; when the
-worker exits, ends or restarts, that thread fails the futures of its running and
-queued jobs. Other needs: workers started by `create_worker` itself, where `Tab`
-starts them at its first state, with `init()` queued as their first job, before
-any other; a failed `init()` fails its Future, which `create_worker` returns,
-and ends the worker, failing the jobs queued behind it; their output in the
-host's output box, whose port lyse puts in the setup dict; and `end_workers()`
-from the plugin's `close()`. The shared code keeps what BLACS's
-`DESIGN_TAB_STATE_MACHINE.md` fixes (R8–R11, F3, F4, F14): `shutdown()` called
-at most once and never interrupted, the quit skipping it once a shutdown job has
-started; a job that starts after a quit stopped at once; a workerarg refused
-only for a name `Worker` or zprocess's `Process` uses; the `'quit'` message; the
-job tuple `(funcname, args, kwargs)` checked for pickling before it is sent; two
-replies per job, or one for a missing method; the timeouts, `exit_when_released`
-and `on_parent_death`. Its `run` takes the app's name, for `setup_logging` and
-for the logger's name, which is also the zlock process name, where BLACS's says
-`'BLACS.<device>_<worker>.worker'`. BLACS's tab pass is finished (blacs
-`Development` `6ff09fb`), so it can be cut now; the clean-up tests of blacs's
-`tests/test_state_machine.py`, which drive real workers, move with it. Moving
-`Tab` onto it is a later step; lyse's routine workers, whose protocol is one
-reply to `[task, data]`, stay apart for now and share only the timeout
-constants; `labscript_optimization.worker.Worker`, a thread that returns
-futures, retires once the optimizer's session runs in a plugin worker.
+**G. Plugin workers** (14). `labscript_utils.workers` implements both the parent
+and child used by BLACS and the optimizer, using zprocess's processes, queues,
+heartbeat and locks:
+
+- **Parent setup:** a host calls `WorkersMixin._init_workers(app_name,
+  host_name, ...)` on the GUI thread, then `create_worker(name, WorkerClass,
+  workerargs)`. The class or its import path identifies the child. Creation
+  queues worker initialisation ahead of ordinary states; the shared job thread
+  starts the process through `ProcessTree.instance()` and runs `init()` first.
+  A plugin sets `output_redirection_port` from the setup dict's
+  `output_box.port`, keeping child output in lyse's Output tab.
+- **States and results:** `StateQueue`, `StateMachine` and `define_state` are
+  shared. A method decorated with `define_state` is queued under the host's
+  mode rules and runs on the GUI thread. It yields
+  `self.queue_work(worker_name, method_name, *args, **kwargs)`. One job thread
+  per host checks pickling, sends the request and waits for replies; the GUI
+  thread resumes the generator with the result. The host receives job failures
+  and fatal communication errors through `_worker_job_finished` and
+  `_worker_fatal_error`.
+- **Parent close and restart:** `close_workers()` stops the state machine and
+  interrupts communication on the GUI thread. `finalise_workers()` runs on a
+  thread that may block: it interrupts startup, joins the job thread, sends
+  `'quit'`, and ends children using the shared `WORKER_*_TIMEOUT` bounds. It
+  returns whether every exit was confirmed and retains unconfirmed workers.
+  A host must not reinitialise or start replacements until finalisation succeeds.
+- **Child:** `Worker(Process)` runs jobs one at a time on its main thread and
+  receives requests on a separate thread. Subclasses define job methods and may
+  override `init()` and `shutdown()`. The shared `run()` sets up logging, the
+  excepthook, zlock identity and workerarg attributes. A request receives an
+  acknowledgement and completion reply, or one failed reply if its method is
+  missing. A job's exception, `KeyboardInterrupt` or `SystemExit` is reported
+  as a failed job. Quit and parent loss interrupt a running job and call
+  `shutdown()` at most once, without interrupting shutdown. Exit waits for open
+  HDF5 writes under the kill lock, subject to the shared timeout bounds.
+
+BLACS's `Tab` uses `WorkersMixin`; its `Worker` subclasses the shared child.
+Device-specific mode validation, GUI error display, connection-table workerargs,
+logging identity, remote-client configuration and buffered-shot path conversion
+remain in BLACS. lyse's analysis-routine workers have a separate single-reply
+protocol and do not use this parent state machine.
 
 | Requirement | Part |
 | --- | --- |
@@ -341,25 +351,19 @@ futures, retires once the optimizer's session runs in a plugin worker.
 | 13 | F, in labscript-agents and labscript-optimization |
 | 14 | G, in labscript-utils |
 
-## Needed elsewhere
+## Suite integration
 
 - **runmanager:** its analysis submission passes `add_shot(path,
   source='runmanager')`.
-- **labscript-utils:** done on its `LysePlugins` branch:
+- **labscript-utils:** supplies the shared parent and child (G),
   `labscript_utils.h5_lock.delete_shot_file(path)`, which E and BLACS's
   `delete_repeated_shots` both call, and the `[lyse/plugins]` section documented
   beside `[blacs/plugins]`, with lyse's `delete_repeated_shots` off by default.
-  To do: the plugin workers (G).
-- **BLACS:** its `delete_repeated_shots` stays, calling `delete_shot_file`. Later,
-  its `Tab` and `Worker` move onto the shared worker parts (G).
-- **labscript-agents**, once A–C and G exist: its plugin (F); ToolSpec bindings for the
-  new lyse commands; its docs' line that it has no control of lyse goes; its MCP
-  server in its plugin's worker, with the clean-up that ran when its lyse worker
-  exited in that worker's `shutdown()`.
-- **labscript-optimization**, once A–C and G exist: its plugin (F); a field in its
-  panel holding its configuration file's path, chosen with a file picker and
-  saved and restored with the plugin's save data in lyse's configuration, so
-  nothing is relative to a routine folder; its session in its plugin's worker;
-  the hand-over from `analysis_done` a job sent without blocking, in place of
-  the 2 s wait, its late reply delivered as the job's result; the clean-up that
-  ran when its lyse worker exited in that worker's `shutdown()`.
+- **BLACS:** its `Tab` and `Worker` use the shared parent and child (G), and its
+  `delete_repeated_shots` calls `delete_shot_file`.
+- **labscript-agents:** supplies the Agent panel and MCP tools for the remote
+  interfaces; its server, tool execution and batch watcher use threads in lyse's
+  process (F).
+- **labscript-optimization:** supplies the Optimizer panel, stores its chosen
+  configuration path with lyse's settings, and runs its session, learners and
+  runmanager interface in the shared worker process (F, G).

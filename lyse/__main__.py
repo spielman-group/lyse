@@ -50,7 +50,7 @@ from labscript_utils.labconfig import (
     LabConfig,
     load_appconfig,
 )
-from labscript_utils.plugins import MenuContext
+from labscript_utils.plugins import MenuContext, PluginManager
 from labscript_utils.setup_logging import setup_logging
 from labscript_utils.qtwidgets.application import (
     LabscriptGuiApplication,
@@ -222,8 +222,13 @@ class Lyse(LabscriptGuiApplication):
         before the server starts, so that nothing reaches a plugin first. The
         configuration is loaded again once the window shows, as Load configuration
         loads one, and plugins restore their data again then."""
-        manager = lyse.plugins.manager
-        self.plugins = manager.instantiate_plugins()
+        manager = self.plugin_manager = PluginManager(
+            'lyse.plugins', os.path.join(LYSE_DIR, 'plugins'),
+            self.exp_config, 'lyse/plugins', logger=self.logger,
+            entry_point_group='lyse.plugins',
+        )
+        manager.discover_modules()
+        manager.instantiate_plugins()
         try:
             saved = load_appconfig(self.exp_config.get('lyse', 'autoload_config_file'))
         except (LabConfig.NoOptionError, LabConfig.NoSectionError):
@@ -245,7 +250,7 @@ class Lyse(LabscriptGuiApplication):
             'exp_config': self.exp_config,
             'ui': self.ui,
             'output_box': self.output_box,
-            'plugins': self.plugins,
+            'plugins': manager.plugins,
             'shots_model': self.filebox.shots_model,
             'singleshot_routinebox': self.singleshot_routinebox,
             'multishot_routinebox': self.multishot_routinebox,
@@ -257,7 +262,7 @@ class Lyse(LabscriptGuiApplication):
     def mount_plugin_handlers(self):
         """Answer each plugin's remote commands, as ``<plugin name>.<command>``."""
         self.mounted_plugins = []
-        for name, plugin in self.plugins.items():
+        for name, plugin in self.plugin_manager.plugins.items():
             handler = plugin.get_remote_handler()
             if handler is not None:
                 self.server.mount(name, handler)
@@ -283,7 +288,7 @@ class Lyse(LabscriptGuiApplication):
         self.terminate_all_workers()
         # Off the GUI thread, which keeps serving, since a plugin's close() may wait for
         # threads of its own that need it:
-        closing = threading.Thread(target=lyse.plugins.manager.close_plugins)
+        closing = threading.Thread(target=self.plugin_manager.close_plugins)
         closing.start()
         while closing.is_alive():
             self.qapplication.processEvents()
@@ -311,7 +316,7 @@ class Lyse(LabscriptGuiApplication):
         save_data['selected_tab'] = self.ui.plugin_tabs.currentWidget().property('lyse_plugin_name')
         # A copy, since the plugins' own objects would change with them, and the saved
         # configuration with them:
-        save_data['plugins'] = copy.deepcopy(lyse.plugins.manager.get_save_data())
+        save_data['plugins'] = copy.deepcopy(self.plugin_manager.get_save_data())
         save_data.update(self.geometry_save_data())
         return save_data
 
@@ -335,7 +340,7 @@ class Lyse(LabscriptGuiApplication):
             self.filebox.set_analysis_paused(True)
         if 'stop_on_failure' in save_data:
             self.filebox.set_stop_on_failure(save_data['stop_on_failure'])
-        lyse.plugins.manager.restore_save_data(save_data.get('plugins', {}))
+        self.plugin_manager.restore_save_data(save_data.get('plugins', {}))
         tabs = self.ui.plugin_tabs
         selected = save_data.get('selected_tab', '')
         tabs.setCurrentIndex(next(
